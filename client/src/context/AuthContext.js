@@ -1,7 +1,12 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
 
-export const AuthContext = createContext(null);
+import React, { createContext, useState, useEffect } from 'react';
+import axios from 'axios';
+import { jwtDecode } from 'jwt-decode';
+
+// The live URL of your backend server on Render
+const API_URL = 'https://quantum-trade-server.onrender.com';
+
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(localStorage.getItem('token'));
@@ -9,47 +14,45 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [watchlist, setWatchlist] = useState([]);
 
-    // Use your unique Render URL here
-    const API_URL = 'https://quantum-trade-server.onrender.com';
-
-    const loadUser = useCallback(async () => {
-        if (token) {
-            axios.defaults.headers.common['x-auth-token'] = token;
-            try {
-                // No specific user data route yet, so we fetch watchlist as validation
-                const res = await axios.get(`${API_URL}/api/watchlist`);
-                // Placeholder user object, can be expanded later
-                setUser({ id: 'current_user' }); 
-                setWatchlist(res.data);
-            } catch (err) {
-                console.error('Token validation failed', err);
-                localStorage.removeItem('token');
-                setToken(null);
-                setUser(null);
-                axios.defaults.headers.common['x-auth-token'] = null;
+    useEffect(() => {
+        const validateToken = async () => {
+            if (token) {
+                try {
+                    const decoded = jwtDecode(token);
+                    // Check if token is expired
+                    if (decoded.exp * 1000 < Date.now()) {
+                        logout();
+                    } else {
+                        setUser({ id: decoded.user.id });
+                        axios.defaults.headers.common['x-auth-token'] = token;
+                        // Fetch watchlist on initial load if logged in
+                        const res = await axios.get(`${API_URL}/api/watchlist`);
+                        setWatchlist(res.data);
+                    }
+                } catch (err) {
+                    console.error("Token validation failed", err);
+                    logout();
+                }
             }
-        }
-        setLoading(false);
+            setLoading(false);
+        };
+        validateToken();
     }, [token]);
 
-    useEffect(() => {
-        loadUser();
-    }, [loadUser]);
-
-    const login = async (userData) => {
-        try {
-            const res = await axios.post(`${API_URL}/api/users/login`, userData);
-            localStorage.setItem('token', res.data.token);
-            setToken(res.data.token);
-            await loadUser(); // Reload user and watchlist after login
-        } catch (err) {
-            console.error('Login failed:', err.response ? err.response.data : err.message);
-            throw err; // Re-throw error to be caught by the Login component
-        }
+    const login = async (username, password) => {
+        const res = await axios.post(`${API_URL}/api/users/login`, { username, password });
+        localStorage.setItem('token', res.data.token);
+        setToken(res.data.token);
+        axios.defaults.headers.common['x-auth-token'] = res.data.token;
+        const decoded = jwtDecode(res.data.token);
+        setUser({ id: decoded.user.id });
+        // Fetch watchlist immediately after login
+        const watchlistRes = await axios.get(`${API_URL}/api/watchlist`);
+        setWatchlist(watchlistRes.data);
     };
 
-    const register = async (userData) => {
-        await axios.post(`${API_URL}/api/users/register`, userData);
+    const register = async (username, password) => {
+        await axios.post(`${API_URL}/api/users/register`, { username, password });
     };
 
     const logout = () => {

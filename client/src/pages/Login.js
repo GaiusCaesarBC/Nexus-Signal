@@ -1,99 +1,125 @@
 import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-// The fix is on this line:
 import { AuthContext } from '../context/AuthContext';
+import { LogIn } from 'lucide-react';
 
 const LoginContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4rem 2rem;
 `;
 
-const Form = styled.form`
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  background-color: #2c3e50;
-  padding: 2rem;
-  border-radius: 8px;
-  width: 100%;
-  max-width: 400px;
+const LoginForm = styled.form`
+    background-color: #2c3e50;
+    padding: 2.5rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+`;
+
+const Title = styled.h2`
+    color: #ecf0f1;
+    text-align: center;
+    margin-bottom: 1rem;
 `;
 
 const Input = styled.input`
-  padding: 0.75rem;
-  border-radius: 4px;
-  border: 1px solid #34495e;
-  background-color: #34495e;
-  color: #ecf0f1;
-  font-size: 1rem;
+    background: #34495e;
+    border: 1px solid #4a627a;
+    border-radius: 5px;
+    padding: 0.8rem 1rem;
+    color: #ecf0f1;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+
+    &:focus {
+        outline: none;
+        border-color: #3498db;
+    }
 `;
 
 const Button = styled.button`
-  padding: 0.75rem;
-  border-radius: 4px;
-  border: none;
-  background-color: #3498db;
-  color: white;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
+    background-color: #3498db;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    padding: 0.8rem 1.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s ease-in-out;
 
-  &:hover {
-    background-color: #2980b9;
-  }
+    &:hover {
+        background-color: #2980b9;
+    }
 `;
 
 const ErrorMessage = styled.p`
     color: #e74c3c;
     text-align: center;
+    margin: 0;
 `;
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const { login } = useContext(AuthContext);
-  const navigate = useNavigate();
+    const [formData, setFormData] = useState({ username: '', password: '' });
+    const [error, setError] = useState('');
+    const { login } = useContext(AuthContext);
+    const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    const success = await login(username, password);
-    if (success) {
-      navigate('/');
-    } else {
-      setError('Invalid username or password.');
-    }
-  };
+    const { username, password } = formData;
 
-  return (
-    <LoginContainer>
-      <h2>Log In</h2>
-      <Form onSubmit={handleSubmit}>
-        <Input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-        />
-        <Input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <Button type="submit">Log In</Button>
-        {error && <ErrorMessage>{error}</ErrorMessage>}
-      </Form>
-    </LoginContainer>
-  );
+    const onChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            await login(username, password);
+            navigate('/');
+        } catch (err) {
+            setError(err.response?.data?.msg || 'An error occurred');
+        }
+    };
+
+    return (
+        <LoginContainer>
+            <LoginForm onSubmit={handleSubmit}>
+                <Title>Log In</Title>
+                <Input
+                    type="text"
+                    placeholder="Username"
+                    name="username"
+                    value={username}
+                    onChange={onChange}
+                    required
+                />
+                <Input
+                    type="password"
+                    placeholder="Password"
+                    name="password"
+                    value={password}
+                    onChange={onChange}
+                    required
+                />
+                <Button type="submit">
+                    <LogIn size={20} />
+                    Log In
+                </Button>
+                {error && <ErrorMessage>{error}</ErrorMessage>}
+            </LoginForm>
+        </LoginContainer>
+    );
 };
 
 export default Login;
