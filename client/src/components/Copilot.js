@@ -3,7 +3,6 @@ import styled, { keyframes } from 'styled-components';
 import { Bot, X, Send, CornerDownLeft } from 'lucide-react';
 import axios from 'axios';
 
-// --- Animations ---
 const slideIn = keyframes`
   from {
     transform: translateY(100%);
@@ -15,7 +14,6 @@ const slideIn = keyframes`
   }
 `;
 
-// --- Styled Components ---
 const CopilotWrapper = styled.div`
   position: fixed;
   bottom: 20px;
@@ -46,8 +44,8 @@ const ChatWindow = styled.div`
   position: fixed;
   bottom: 90px;
   right: 20px;
-  width: 350px;
-  height: 450px;
+  width: 400px; /* Made wider */
+  height: 550px; /* Made taller */
   background-color: #2c3e50;
   border-radius: 10px;
   box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
@@ -96,11 +94,11 @@ const MessageList = styled.div`
 `;
 
 const MessageBubble = styled.div`
-  padding: 8px 12px;
-  border-radius: 15px;
-  max-width: 80%;
-  font-size: 0.9rem;
-  line-height: 1.4;
+  padding: 10px 15px; /* Increased padding */
+  border-radius: 18px; /* Slightly more rounded */
+  max-width: 85%;
+  font-size: 1rem; /* Increased font size */
+  line-height: 1.5;
 
   &.user {
     background-color: #3498db;
@@ -129,8 +127,8 @@ const TextInput = styled.input`
   background: none;
   outline: none;
   color: #ecf0f1;
-  font-size: 0.9rem;
-  padding: 5px;
+  font-size: 1rem; /* Increased font size */
+  padding: 8px;
 `;
 
 const SendButton = styled.button`
@@ -145,7 +143,6 @@ const SendButton = styled.button`
   }
 `;
 
-// --- Component Logic ---
 const Copilot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
@@ -154,8 +151,10 @@ const Copilot = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messageListRef = useRef(null);
+  
+  // Use your unique Render URL here
+  const API_URL = 'https://quantum-trade-server.onrender.com';
 
-  // Scroll to bottom when new messages are added
   useEffect(() => {
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
@@ -172,8 +171,7 @@ const Copilot = () => {
     setIsLoading(true);
 
     try {
-      // Send message to our backend API
-      const res = await axios.post('/api/copilot/chat', { prompt: input });
+      const res = await axios.post(`${API_URL}/api/copilot/chat`, { prompt: input });
       const aiMessage = { sender: 'ai', text: res.data.reply };
       setMessages(prev => [...prev, aiMessage]);
     } catch (err) {
@@ -228,3 +226,4 @@ const Copilot = () => {
 };
 
 export default Copilot;
+

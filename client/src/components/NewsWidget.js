@@ -2,147 +2,106 @@ import React, { useState, useEffect, useContext } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
-import { Newspaper } from 'lucide-react';
-import Skeleton from 'react-loading-skeleton';
 
 const NewsContainer = styled.div`
-  background-color: #2c3e50;
-  padding: 1.5rem 2rem;
-  border-radius: 8px;
-  width: 100%;
-  max-width: 800px;
-  margin-top: 2rem;
+    background-color: #2c3e50;
+    padding: 1.5rem;
+    border-radius: 8px;
+    width: 100%;
 `;
 
-const WidgetHeader = styled.h3`
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: #ecf0f1;
-  margin-top: 0;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid #34495e;
-  padding-bottom: 1rem;
+const NewsHeader = styled.h3`
+    color: #ecf0f1;
+    margin-top: 0;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #34495e;
+    padding-bottom: 0.5rem;
 `;
 
-const ArticleList = styled.ul`
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+const NewsList = styled.ul`
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 `;
 
-const ArticleItem = styled.li`
-  border-bottom: 1px solid #34495e;
-  padding-bottom: 1.5rem;
+const NewsItem = styled.li`
+    background-color: #34495e;
+    padding: 1rem;
+    border-radius: 5px;
+    transition: background-color 0.2s ease-in-out;
 
-  &:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
+    &:hover {
+        background-color: #465a71;
+    }
 `;
 
-const ArticleLink = styled.a`
-  text-decoration: none;
+const NewsLink = styled.a`
+    text-decoration: none;
+    color: #ecf0f1;
+    font-weight: bold;
 `;
 
-const ArticleHeadline = styled.h4`
-  color: #ecf0f1;
-  margin: 0 0 0.5rem 0;
-  font-size: 1.1rem;
-  transition: color 0.2s ease-in-out;
-
-  &:hover {
-    color: #3498db;
-  }
+const NewsSource = styled.p`
+    color: #bdc3c7;
+    font-size: 0.8rem;
+    margin: 0.3rem 0 0;
 `;
 
-const ArticleMeta = styled.p`
-  color: #bdc3c7;
-  font-size: 0.8rem;
-  margin: 0;
-`;
-
-const ErrorMessage = styled.p`
-    color: #f1c40f;
+const LoadingText = styled.p`
+    color: #bdc3c7;
+    text-align: center;
 `;
 
 const NewsWidget = ({ symbol }) => {
-  const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const { token } = useContext(AuthContext);
+    const [news, setNews] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const { token } = useContext(AuthContext);
+    
+    // Use your unique Render URL here
+    const API_URL = 'https://quantum-trade-server.onrender.com';
 
-  useEffect(() => {
-    if (!symbol || !token) return;
-
-    const fetchNews = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const config = {
-          headers: {
-            'x-auth-token': token,
-          },
+    useEffect(() => {
+        const fetchNews = async () => {
+            if (!symbol || !token) return;
+            setLoading(true);
+            try {
+                const config = {
+                    headers: { 'x-auth-token': token }
+                };
+                const res = await axios.get(`${API_URL}/api/news/${symbol}`, config);
+                setNews(res.data.slice(0, 5)); // Get top 5 articles
+            } catch (err) {
+                console.error("Failed to fetch news:", err);
+            }
+            setLoading(false);
         };
-        const res = await axios.get(`/api/news/${symbol}`, config);
-        setArticles(res.data);
-      } catch (err) {
-        setError('Could not fetch news articles.');
-        console.error('News fetch error:', err);
-      }
-      setLoading(false);
-    };
 
-    fetchNews();
-  }, [symbol, token]);
+        fetchNews();
+    }, [symbol, token]);
 
-  const formatDate = (unixTimestamp) => {
-    const date = new Date(unixTimestamp * 1000);
-    return date.toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' });
-  };
-
-  if (loading) {
     return (
         <NewsContainer>
-            <WidgetHeader><Newspaper size={24} /> Latest News for {symbol}</WidgetHeader>
-            <Skeleton count={3} height={60} style={{ marginBottom: '1rem' }} />
+            <NewsHeader>Latest News for {symbol}</NewsHeader>
+            {loading ? (
+                <LoadingText>Loading news...</LoadingText>
+            ) : (
+                <NewsList>
+                    {news.map((article) => (
+                        <NewsItem key={article.id}>
+                            <NewsLink href={article.url} target="_blank" rel="noopener noreferrer">
+                                {article.headline}
+                            </NewsLink>
+                            <NewsSource>{article.source} - {new Date(article.datetime * 1000).toLocaleDateString()}</NewsSource>
+                        </NewsItem>
+                    ))}
+                </NewsList>
+            )}
         </NewsContainer>
     );
-  }
-
-  if (error) {
-    return <NewsContainer><ErrorMessage>{error}</ErrorMessage></NewsContainer>;
-  }
-
-  if (articles.length === 0) {
-    return (
-        <NewsContainer>
-            <WidgetHeader><Newspaper size={24} /> Latest News for {symbol}</WidgetHeader>
-            <p style={{color: '#bdc3c7'}}>No recent news found for this symbol.</p>
-        </NewsContainer>
-    );
-  }
-
-  return (
-    <NewsContainer>
-      <WidgetHeader><Newspaper size={24} /> Latest News for {symbol}</WidgetHeader>
-      <ArticleList>
-        {articles.map((article) => (
-          <ArticleItem key={article.id}>
-            <ArticleLink href={article.url} target="_blank" rel="noopener noreferrer">
-              <ArticleHeadline>{article.headline}</ArticleHeadline>
-            </ArticleLink>
-            <ArticleMeta>
-              {article.source} &bull; {formatDate(article.datetime)}
-            </ArticleMeta>
-          </ArticleItem>
-        ))}
-      </ArticleList>
-    </NewsContainer>
-  );
 };
 
 export default NewsWidget;
+
