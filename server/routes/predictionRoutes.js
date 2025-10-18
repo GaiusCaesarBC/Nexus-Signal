@@ -10,8 +10,9 @@ router.get('/:symbol', async (req, res) => {
     const symbol = req.params.symbol.toUpperCase();
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
-    // Use the correct, free API endpoint
-    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}&outputsize=compact`;
+    // --- THIS IS THE FIX ---
+    // We've added the '&entitlement=delayed' parameter to the URL
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}&outputsize=compact&entitlement=delayed`;
 
     try {
         const response = await axios.get(url);
@@ -52,24 +53,25 @@ module.exports = router;
 
 ---
 
-#### **Step 2: The Final Push to Deploy the Fix**
+#### **Step 2: Deploy the Fix to Your Live Server**
 
-Now that your local file is guaranteed to be correct, we will upload this change to GitHub. This is the final step that will fix your live website.
+Now that your local file is guaranteed to be correct, we will upload this fix to GitHub. This will automatically tell Render to redeploy your server with the new, improved code.
 
 1.  **Open your terminal** and navigate to your main `quantum-trade` root folder.
-2.  **Run these three commands** one by one:
+2.  **Run these three commands** one by one. Please be careful to **only copy the command itself**.
 
-    ```bash
-    git add .
-    ```
-    *(This stages your corrected file.)*
+    * This command stages your corrected file.
+        ```bash
+        git add .
+        ```
 
-    ```bash
-    git commit -m "Fix production prediction route to use correct API endpoint"
-    ```
-    *(This saves the change with a clear message.)*
+    * This command saves the change with a clear message.
+        ```bash
+        git commit -m "Enable 15-minute delayed data entitlement"
+        ```
 
-    ```bash
-    git push
-    
+    * This command uploads the corrected code to GitHub.
+        ```bash
+        git push
+        
 
