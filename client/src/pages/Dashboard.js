@@ -5,12 +5,10 @@ import { AuthContext } from '../context/AuthContext';
 import StockChart from '../components/StockChart';
 import Watchlist from '../components/Watchlist';
 import Copilot from '../components/Copilot';
-import NewsWidget from '../components/NewsWidget'; // <-- 1. IMPORT THE NEW COMPONENT
+import NewsWidget from '../components/NewsWidget'; // Import NewsWidget
 import { Search, TrendingUp, TrendingDown, MinusCircle, PlusCircle } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-
-// ... (Styled Components remain the same) ...
 
 const DashboardContainer = styled.div`
     padding: 2rem;
@@ -18,6 +16,7 @@ const DashboardContainer = styled.div`
     flex-direction: column;
     align-items: center;
     gap: 2rem;
+    width: 100%;
 `;
 
 const SearchContainer = styled.div`
@@ -56,12 +55,33 @@ const SearchButton = styled.button`
     }
 `;
 
+const MainContent = styled.div`
+    display: flex;
+    gap: 2rem;
+    width: 100%;
+    max-width: 1200px;
+    align-items: flex-start;
+`;
+
+const LeftColumn = styled.div`
+    flex: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+`;
+
+const RightColumn = styled.div`
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+`;
+
 const ResultCard = styled.div`
     background-color: #2c3e50;
     padding: 2rem;
     border-radius: 8px;
     width: 100%;
-    max-width: 800px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -129,13 +149,15 @@ const ErrorMessage = styled.p`
     margin-top: 1rem;
 `;
 
-
 const Dashboard = () => {
     const [symbol, setSymbol] = useState('');
     const [prediction, setPrediction] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const { user, addToWatchlist, watchlist } = useContext(AuthContext);
+    
+    // Use your unique Render URL here
+    const API_URL = 'https://quantum-trade-server.onrender.com';
 
     const handleSearch = async () => {
         if (!symbol) return;
@@ -143,7 +165,7 @@ const Dashboard = () => {
         setError('');
         setPrediction(null);
         try {
-            const res = await axios.get(`/api/predict/${symbol}`);
+            const res = await axios.get(`${API_URL}/api/predict/${symbol}`);
             setPrediction(res.data);
         } catch (err) {
             setError(err.response ? err.response.data.msg : 'An error occurred');
@@ -172,63 +194,65 @@ const Dashboard = () => {
                     placeholder="Enter stock symbol (e.g., AAPL)"
                     onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 />
-                <SearchButton onClick={handleSearch}>
+                <SearchButton onClick={handleSearch} disabled={loading}>
                     <Search size={20} />
-                    Get Prediction
+                    {loading ? 'Analyzing...' : 'Get Prediction'}
                 </SearchButton>
             </SearchContainer>
 
             {error && <ErrorMessage>{error}</ErrorMessage>}
 
-            {loading && (
-                <ResultCard>
-                    <Skeleton height={40} width={200} />
-                    <Skeleton height={30} width={100} />
-                    <AnalysisGrid>
-                        <Skeleton height={60} />
-                        <Skeleton height={60} />
-                        <Skeleton height={60} />
-                    </AnalysisGrid>
-                    <Skeleton height={400} />
-                </ResultCard>
-            )}
+            <MainContent>
+                <LeftColumn>
+                    {loading && (
+                        <ResultCard>
+                            <Skeleton height={40} width={200} />
+                            <Skeleton height={30} width={100} />
+                            <AnalysisGrid>
+                                <Skeleton height={60} />
+                                <Skeleton height={60} />
+                                <Skeleton height={60} />
+                            </AnalysisGrid>
+                            <Skeleton height={400} />
+                        </ResultCard>
+                    )}
 
-            {prediction && (
-                <>
-                    <ResultCard borderColor={getSignalStyle(prediction.signal).borderColor}>
-                        <CardHeader>
-                            <Symbol>{prediction.symbol}</Symbol>
-                            {user && Array.isArray(watchlist) && !watchlist.includes(prediction.symbol) && (
-                                <AddButton onClick={() => addToWatchlist(prediction.symbol)}>
-                                    <PlusCircle size={18} />
-                                    Add to Watchlist
-                                </AddButton>
-                            )}
-                        </CardHeader>
-                        <Signal color={getSignalStyle(prediction.signal).color}>
-                            {getSignalStyle(prediction.signal).icon}
-                            {prediction.signal} (Confidence: {prediction.confidence.toFixed(2)}%)
-                        </Signal>
-                        <AnalysisGrid>
-                            <AnalysisItem><strong>SMA</strong> {prediction.analysis.sma}</AnalysisItem>
-                            <AnalysisItem><strong>RSI</strong> {prediction.analysis.rsi}</AnalysisItem>
-                            <AnalysisItem><strong>MACD</strong> {prediction.analysis.macd}</AnalysisItem>
-                        </AnalysisGrid>
+                    {prediction && (
+                        <>
+                            <ResultCard borderColor={getSignalStyle(prediction.signal).borderColor}>
+                                <CardHeader>
+                                    <Symbol>{prediction.symbol}</Symbol>
+                                    {user && Array.isArray(watchlist) && !watchlist.includes(prediction.symbol) && (
+                                        <AddButton onClick={() => addToWatchlist(prediction.symbol)}>
+                                            <PlusCircle size={18} />
+                                            Add to Watchlist
+                                        </AddButton>
+                                    )}
+                                </CardHeader>
+                                <Signal color={getSignalStyle(prediction.signal).color}>
+                                    {getSignalStyle(prediction.signal).icon}
+                                    {prediction.signal} (Confidence: {prediction.confidence.toFixed(2)}%)
+                                </Signal>
+                                <AnalysisGrid>
+                                    <AnalysisItem><strong>SMA</strong> {prediction.analysis.sma}</AnalysisItem>
+                                    <AnalysisItem><strong>RSI</strong> {prediction.analysis.rsi}</AnalysisItem>
+                                    <AnalysisItem><strong>MACD</strong> {prediction.analysis.macd}</AnalysisItem>
+                                </AnalysisGrid>
 
-                        {prediction.historicalData && prediction.historicalData.length > 0 && (
-                            <StockChart data={prediction.historicalData} />
-                        )}
-                    </ResultCard>
+                                {prediction.historicalData && prediction.historicalData.length > 0 && (
+                                    <StockChart data={prediction.historicalData} />
+                                )}
+                            </ResultCard>
+                            <NewsWidget symbol={prediction.symbol} />
+                        </>
+                    )}
+                </LeftColumn>
+                <RightColumn>
+                    {user && <Watchlist />}
+                </RightColumn>
+            </MainContent>
 
-                    {/* --- 2. ADD THE NEWS WIDGET HERE --- */}
-                    {/* It will only render if a prediction is available */}
-                    <NewsWidget symbol={prediction.symbol} />
-                </>
-            )}
-
-            {user && <Watchlist />}
             {user && <Copilot />}
-
         </DashboardContainer>
     );
 };
