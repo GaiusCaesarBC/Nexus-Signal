@@ -4,7 +4,8 @@ Quantum Trade 📈🤖
 
 Quantum Trade is a full-stack, AI-powered stock market prediction platform designed to provide users with intelligent insights and a personalized dashboard. This project leverages a modern tech stack to deliver real-time data, predictive analysis, and an interactive user experience.
 
-Live Demo Link <!-- Add your live Vercel URL here! -->
+Live Demo Link www.quantumtrade.dev
+
 
 ✨ Core Features
 
