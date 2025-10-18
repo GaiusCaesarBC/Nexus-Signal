@@ -10,8 +10,7 @@ router.get('/:symbol', async (req, res) => {
     const symbol = req.params.symbol.toUpperCase();
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
-    // --- THIS IS THE FIX ---
-    // We've added the '&entitlement=delayed' parameter to the URL
+    // We've added the '&entitlement=delayed' parameter to the URL for premium data
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}&outputsize=compact&entitlement=delayed`;
 
     try {
