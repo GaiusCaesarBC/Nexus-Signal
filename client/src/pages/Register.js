@@ -1,114 +1,166 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import { AuthContext } from '../context/AuthContext';
+import { UserPlus } from 'lucide-react';
 
-const AuthContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  color: #e0e0e0;
+const RegisterContainer = styled.div`
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4rem 2rem;
 `;
 
-const AuthForm = styled.form`
-  display: flex;
-  flex-direction: column;
-  background-color: #2c2f36;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-  width: 100%;
-  max-width: 400px;
+const RegisterForm = styled.form`
+    background-color: #2c3e50;
+    padding: 2.5rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 `;
 
-const Title = styled.h1`
-  margin-bottom: 1.5rem;
-  text-align: center;
-  color: #58a6ff;
+const Title = styled.h2`
+    color: #ecf0f1;
+    text-align: center;
+    margin-bottom: 1rem;
 `;
 
 const Input = styled.input`
-  background-color: #1c1e22;
-  border: 1px solid #444;
-  color: #e0e0e0;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  border-radius: 6px;
-  font-size: 1rem;
+    background: #34495e;
+    border: 1px solid #4a627a;
+    border-radius: 5px;
+    padding: 0.8rem 1rem;
+    color: #ecf0f1;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
 
-  &:focus {
-    outline: none;
-    border-color: #58a6ff;
-  }
+    &:focus {
+        outline: none;
+        border-color: #3498db;
+    }
 `;
 
 const Button = styled.button`
-  background-color: #58a6ff;
-  color: #ffffff;
-  border: none;
-  padding: 0.75rem;
-  border-radius: 6px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
+    background-color: #3498db;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    padding: 0.8rem 1.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s ease-in-out;
 
-  &:hover {
-    background-color: #4895e9;
-  }
+    &:hover {
+        background-color: #2980b9;
+    }
+`;
+
+const ErrorMessage = styled.p`
+    color: #e74c3c;
+    text-align: center;
+    margin: 0;
 `;
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-  });
-  const navigate = useNavigate();
+    const [formData, setFormData] = useState({ username: '', password: '', password2: '' });
+    const [error, setError] = useState('');
+    const { register } = useContext(AuthContext);
+    const navigate = useNavigate();
 
-  const { username, password } = formData;
+    const { username, password, password2 } = formData;
 
-  const onChange = (e) =>
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const onChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await axios.post('http://localhost:5000/api/users/register', formData);
-      console.log('User registered:', res.data);
-      // You can store the token and redirect
-      navigate('/login'); // Redirect to login after successful registration
-    } catch (err) {
-      console.error('Registration error:', err.response.data);
-      // Here you would show an error message to the user
-    }
-  };
+    const handleSubmit = async (e) => {
+        e.preventDefault();
 
-  return (
-    <AuthContainer>
-      <AuthForm onSubmit={onSubmit}>
-        <Title>Create Account</Title>
-        <Input
-          type="text"
-          placeholder="Username"
-          name="username"
-          value={username}
-          onChange={onChange}
-          required
-        />
-        <Input
-          type="password"
-          placeholder="Password"
-          name="password"
-          value={password}
-          onChange={onChange}
-          minLength="6"
-          required
-        />
-        <Button type="submit">Register</Button>
-      </AuthForm>
-    </AuthContainer>
-  );
+        // --- START OF DEBUG LOGGING ---
+        console.log('--- New Registration Submission ---');
+        console.log('DEBUG: handleSubmit function was called on the live site.');
+
+        if (password !== password2) {
+            console.error('DEBUG: Passwords do not match.');
+            setError('Passwords do not match');
+            return;
+        }
+
+        if (!register) {
+            console.error('DEBUG: FATAL - The register function from AuthContext is not available!');
+            setError('A critical error occurred. The register function is missing.');
+            return;
+        }
+
+        try {
+            console.log('DEBUG: Attempting to call register function from context...');
+            await register(username, password);
+            console.log('DEBUG: Register function from context completed successfully.');
+            
+            console.log('DEBUG: Navigating to login page...');
+            navigate('/login');
+            console.log('DEBUG: Navigation complete.');
+        } catch (err) {
+            console.error('DEBUG: An error was caught in handleSubmit on the live site.');
+            console.error('DEBUG: Full error object:', err);
+            
+            const errorMessage = err.response?.data?.msg || err.message || 'An unexpected error occurred.';
+            setError(errorMessage);
+            console.error('DEBUG: Error message set to:', errorMessage);
+        }
+        // --- END OF DEBUG LOGGING ---
+    };
+
+    return (
+        <RegisterContainer>
+            <RegisterForm onSubmit={handleSubmit}>
+                <Title>Create Account</Title>
+                <Input
+                    type="text"
+                    placeholder="Username"
+                    name="username"
+                    value={username}
+                    onChange={onChange}
+                    required
+                />
+                <Input
+                    type="password"
+                    placeholder="Password (min. 6 characters)"
+                    name="password"
+                    value={password}
+                    onChange={onChange}
+                    required
+                    minLength="6"
+                />
+                <Input
+                    type="password"
+                    placeholder="Confirm Password"
+                    name="password2"
+                    value={password2}
+                    onChange={onChange}
+                    required
+                    minLength="6"
+                />
+                <Button type="submit">
+                    <UserPlus size={20} />
+                    Register
+                </Button>
+                {error && <ErrorMessage>{error}</ErrorMessage>}
+            </RegisterForm>
+        </RegisterContainer>
+    );
 };
 
 export default Register;
+
+    
+
