@@ -1,9 +1,8 @@
-
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
-// The live URL of your backend server on Render
+// The live URL of your backend server on Render (or localhost for development)
 const API_URL = 'https://quantum-trade-server.onrender.com';
 
 export const AuthContext = createContext();
@@ -19,13 +18,11 @@ export const AuthProvider = ({ children }) => {
             if (token) {
                 try {
                     const decoded = jwtDecode(token);
-                    // Check if token is expired
                     if (decoded.exp * 1000 < Date.now()) {
                         logout();
                     } else {
                         setUser({ id: decoded.user.id });
                         axios.defaults.headers.common['x-auth-token'] = token;
-                        // Fetch watchlist on initial load if logged in
                         const res = await axios.get(`${API_URL}/api/watchlist`);
                         setWatchlist(res.data);
                     }
@@ -40,13 +37,13 @@ export const AuthProvider = ({ children }) => {
     }, [token]);
 
     const login = async (username, password) => {
+        // --- THIS IS THE FIX: Ensure we use axios.post ---
         const res = await axios.post(`${API_URL}/api/users/login`, { username, password });
         localStorage.setItem('token', res.data.token);
         setToken(res.data.token);
         axios.defaults.headers.common['x-auth-token'] = res.data.token;
         const decoded = jwtDecode(res.data.token);
         setUser({ id: decoded.user.id });
-        // Fetch watchlist immediately after login
         const watchlistRes = await axios.get(`${API_URL}/api/watchlist`);
         setWatchlist(watchlistRes.data);
     };
@@ -84,7 +81,7 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{ token, user, login, register, logout, loading, watchlist, addToWatchlist, removeFromWatchlist }}>
             {children}
-        </AuthContext.Provider>
+        </Auth-Context.Provider>
     );
 };
 
