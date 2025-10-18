@@ -39,7 +39,7 @@ router.get('/:symbol', async (req, res) => {
         res.json({
             symbol,
             ...prediction,
-            historicalData 
+            historicalData
         });
 
     } catch (err) {
@@ -53,12 +53,12 @@ module.exports = router;
 
 ---
 
-#### **Step 2: Deploy the Fix to Your Live Server**
+#### **Step 2: Push the Fix to Your Live Server**
 
-Now that your local file is guaranteed to be correct, we will upload this fix to GitHub. This will automatically tell Render to redeploy your server with the new, improved code.
+Now that your local file is guaranteed to be correct, we will upload this fix to GitHub. This will automatically tell Render to redeploy your server with the working code.
 
 1.  **Open your terminal** and navigate to your main `quantum-trade` root folder.
-2.  **Run these three commands** one by one. Please be careful to **only copy the command itself**.
+2.  **Run these three commands** one by one. Please be careful to **only copy the command itself** and not any of my explanations.
 
     * This command stages your corrected file.
         ```bash
@@ -67,7 +67,7 @@ Now that your local file is guaranteed to be correct, we will upload this fix to
 
     * This command saves the change with a clear message.
         ```bash
-        git commit -m "Enable 15-minute delayed data entitlement"
+        git commit -m "Fix syntax error in predictionRoutes.js"
         ```
 
     * This command uploads the corrected code to GitHub.
