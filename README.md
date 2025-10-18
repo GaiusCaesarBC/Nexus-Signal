@@ -1,1 +1,1 @@
-"# Quantum-Trade" 
+Quantum Trade: A full-stack, AI-powered stock market prediction platform with a personalized watchlist, news feed, and a Gemini-powered AI Copilot. Built with the MERN stack (MongoDB, Express, React, Node.js).
