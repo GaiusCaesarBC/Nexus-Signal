@@ -50,27 +50,3 @@ router.get('/:symbol', async (req, res) => {
 module.exports = router;
 ```
 
----
-
-#### **Step 2: Push the Fix to Your Live Server**
-
-Now that your local file is guaranteed to be correct, we will upload this fix to GitHub. This will automatically tell Render to redeploy your server with the working code.
-
-1.  **Open your terminal** and navigate to your main `quantum-trade` root folder.
-2.  **Run these three commands** one by one. Please be careful to **only copy the command itself** and not any of my explanations.
-
-    * This command stages your corrected file.
-        ```bash
-        git add .
-        ```
-
-    * This command saves the change with a clear message.
-        ```bash
-        git commit -m "Fix syntax error in predictionRoutes.js"
-        ```
-
-    * This command uploads the corrected code to GitHub.
-        ```bash
-        git push
-        
-
