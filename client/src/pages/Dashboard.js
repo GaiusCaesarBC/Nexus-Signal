@@ -5,24 +5,48 @@ import { AuthContext } from '../context/AuthContext';
 import StockChart from '../components/StockChart';
 import Watchlist from '../components/Watchlist';
 import Copilot from '../components/Copilot';
-import NewsWidget from '../components/NewsWidget'; // Import NewsWidget
+import NewsWidget from '../components/NewsWidget';
 import { Search, TrendingUp, TrendingDown, MinusCircle, PlusCircle } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
+// The live URL of your backend server on Render
+const API_URL = 'https://quantum-trade-server.onrender.com';
+
 const DashboardContainer = styled.div`
     padding: 2rem;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-areas:
+        "main sidebar";
+    gap: 2rem;
+    align-items: flex-start;
+
+    @media (max-width: 1024px) {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "main"
+            "sidebar";
+    }
+`;
+
+const MainContent = styled.div`
+    grid-area: main;
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 2rem;
-    width: 100%;
+`;
+
+const Sidebar = styled.div`
+    grid-area: sidebar;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
 `;
 
 const SearchContainer = styled.div`
     display: flex;
     width: 100%;
-    max-width: 600px;
     background-color: #2c3e50;
     border-radius: 8px;
     padding: 8px;
@@ -53,28 +77,6 @@ const SearchButton = styled.button`
     &:hover {
         background-color: #2980b9;
     }
-`;
-
-const MainContent = styled.div`
-    display: flex;
-    gap: 2rem;
-    width: 100%;
-    max-width: 1200px;
-    align-items: flex-start;
-`;
-
-const LeftColumn = styled.div`
-    flex: 3;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-`;
-
-const RightColumn = styled.div`
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
 `;
 
 const ResultCard = styled.div`
@@ -149,15 +151,13 @@ const ErrorMessage = styled.p`
     margin-top: 1rem;
 `;
 
+
 const Dashboard = () => {
     const [symbol, setSymbol] = useState('');
     const [prediction, setPrediction] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const { user, addToWatchlist, watchlist } = useContext(AuthContext);
-    
-    // Use your unique Render URL here
-    const API_URL = 'https://quantum-trade-server.onrender.com';
 
     const handleSearch = async () => {
         if (!symbol) return;
@@ -186,71 +186,69 @@ const Dashboard = () => {
 
     return (
         <DashboardContainer>
-            <SearchContainer>
-                <SearchInput
-                    type="text"
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                    placeholder="Enter stock symbol (e.g., AAPL)"
-                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                />
-                <SearchButton onClick={handleSearch} disabled={loading}>
-                    <Search size={20} />
-                    {loading ? 'Analyzing...' : 'Get Prediction'}
-                </SearchButton>
-            </SearchContainer>
-
-            {error && <ErrorMessage>{error}</ErrorMessage>}
-
             <MainContent>
-                <LeftColumn>
-                    {loading && (
-                        <ResultCard>
-                            <Skeleton height={40} width={200} />
-                            <Skeleton height={30} width={100} />
-                            <AnalysisGrid>
-                                <Skeleton height={60} />
-                                <Skeleton height={60} />
-                                <Skeleton height={60} />
-                            </AnalysisGrid>
-                            <Skeleton height={400} />
-                        </ResultCard>
-                    )}
+                <SearchContainer>
+                    <SearchInput
+                        type="text"
+                        value={symbol}
+                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                        placeholder="Enter stock symbol (e.g., AAPL)"
+                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    />
+                    <SearchButton onClick={handleSearch}>
+                        <Search size={20} />
+                        Get Prediction
+                    </SearchButton>
+                </SearchContainer>
 
-                    {prediction && (
-                        <>
-                            <ResultCard borderColor={getSignalStyle(prediction.signal).borderColor}>
-                                <CardHeader>
-                                    <Symbol>{prediction.symbol}</Symbol>
-                                    {user && Array.isArray(watchlist) && !watchlist.includes(prediction.symbol) && (
-                                        <AddButton onClick={() => addToWatchlist(prediction.symbol)}>
-                                            <PlusCircle size={18} />
-                                            Add to Watchlist
-                                        </AddButton>
-                                    )}
-                                </CardHeader>
-                                <Signal color={getSignalStyle(prediction.signal).color}>
-                                    {getSignalStyle(prediction.signal).icon}
-                                    {prediction.signal} (Confidence: {prediction.confidence.toFixed(2)}%)
-                                </Signal>
-                                <AnalysisGrid>
-                                    <AnalysisItem><strong>SMA</strong> {prediction.analysis.sma}</AnalysisItem>
-                                    <AnalysisItem><strong>RSI</strong> {prediction.analysis.rsi}</AnalysisItem>
-                                    <AnalysisItem><strong>MACD</strong> {prediction.analysis.macd}</AnalysisItem>
-                                </AnalysisGrid>
+                {error && <ErrorMessage>{error}</ErrorMessage>}
 
-                                {prediction.historicalData && prediction.historicalData.length > 0 && (
-                                    <StockChart data={prediction.historicalData} />
+                {loading && (
+                    <ResultCard>
+                        <Skeleton height={40} width={200} />
+                        <Skeleton height={30} width={100} />
+                        <AnalysisGrid>
+                            <Skeleton height={60} />
+                            <Skeleton height={60} />
+                            <Skeleton height={60} />
+                        </AnalysisGrid>
+                        <Skeleton height={400} />
+                    </ResultCard>
+                )}
+
+                {prediction && (
+                    <>
+                        <ResultCard borderColor={getSignalStyle(prediction.signal).borderColor}>
+                            <CardHeader>
+                                <Symbol>{prediction.symbol}</Symbol>
+                                {user && Array.isArray(watchlist) && !watchlist.includes(prediction.symbol) && (
+                                    <AddButton onClick={() => addToWatchlist(prediction.symbol)}>
+                                        <PlusCircle size={18} />
+                                        Add to Watchlist
+                                    </AddButton>
                                 )}
-                            </ResultCard>
-                            <NewsWidget symbol={prediction.symbol} />
-                        </>
-                    )}
-                </LeftColumn>
-                <RightColumn>
-                    {user && <Watchlist />}
-                </RightColumn>
+                            </CardHeader>
+                            <Signal color={getSignalStyle(prediction.signal).color}>
+                                {getSignalStyle(prediction.signal).icon}
+                                {prediction.signal} (Confidence: {prediction.confidence.toFixed(2)}%)
+                            </Signal>
+                            <AnalysisGrid>
+                                <AnalysisItem><strong>SMA</strong> {prediction.analysis.sma}</AnalysisItem>
+                                <AnalysisItem><strong>RSI</strong> {prediction.analysis.rsi}</AnalysisItem>
+                                <AnalysisItem><strong>MACD</strong> {prediction.analysis.macd}</AnalysisItem>
+                            </AnalysisGrid>
+
+                            {prediction.historicalData && prediction.historicalData.length > 0 && (
+                                <StockChart data={prediction.historicalData} />
+                            )}
+                        </ResultCard>
+                        <NewsWidget symbol={prediction.symbol} />
+                    </>
+                )}
             </MainContent>
+            <Sidebar>
+                {user && <Watchlist />}
+            </Sidebar>
 
             {user && <Copilot />}
         </DashboardContainer>

@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-import { AuthContext } from '../context/AuthContext';
+import Skeleton from 'react-loading-skeleton';
+
+// The live URL of your backend server on Render
+const API_URL = 'https://quantum-trade-server.onrender.com';
 
 const NewsContainer = styled.div`
     background-color: #2c3e50;
@@ -10,16 +13,16 @@ const NewsContainer = styled.div`
     width: 100%;
 `;
 
-const NewsHeader = styled.h3`
+const Title = styled.h3`
     color: #ecf0f1;
     margin-top: 0;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
     border-bottom: 1px solid #34495e;
     padding-bottom: 0.5rem;
 `;
 
 const NewsList = styled.ul`
-    list-style: none;
+    list-style-type: none;
     padding: 0;
     margin: 0;
     display: flex;
@@ -29,12 +32,12 @@ const NewsList = styled.ul`
 
 const NewsItem = styled.li`
     background-color: #34495e;
-    padding: 1rem;
     border-radius: 5px;
-    transition: background-color 0.2s ease-in-out;
+    padding: 1rem;
+    transition: background-color 0.2s ease;
 
     &:hover {
-        background-color: #465a71;
+        background-color: #4a627a;
     }
 `;
 
@@ -42,37 +45,28 @@ const NewsLink = styled.a`
     text-decoration: none;
     color: #ecf0f1;
     font-weight: bold;
+    display: block;
+    margin-bottom: 0.5rem;
 `;
 
-const NewsSource = styled.p`
-    color: #bdc3c7;
+const NewsMeta = styled.div`
     font-size: 0.8rem;
-    margin: 0.3rem 0 0;
-`;
-
-const LoadingText = styled.p`
     color: #bdc3c7;
-    text-align: center;
+    display: flex;
+    justify-content: space-between;
 `;
 
 const NewsWidget = ({ symbol }) => {
     const [news, setNews] = useState([]);
     const [loading, setLoading] = useState(true);
-    const { token } = useContext(AuthContext);
-    
-    // Use your unique Render URL here
-    const API_URL = 'https://quantum-trade-server.onrender.com';
 
     useEffect(() => {
         const fetchNews = async () => {
-            if (!symbol || !token) return;
+            if (!symbol) return;
             setLoading(true);
             try {
-                const config = {
-                    headers: { 'x-auth-token': token }
-                };
-                const res = await axios.get(`${API_URL}/api/news/${symbol}`, config);
-                setNews(res.data.slice(0, 5)); // Get top 5 articles
+                const res = await axios.get(`${API_URL}/api/news/${symbol}`);
+                setNews(res.data.slice(0, 5)); // Limit to 5 articles
             } catch (err) {
                 console.error("Failed to fetch news:", err);
             }
@@ -80,13 +74,20 @@ const NewsWidget = ({ symbol }) => {
         };
 
         fetchNews();
-    }, [symbol, token]);
+    }, [symbol]);
 
     return (
         <NewsContainer>
-            <NewsHeader>Latest News for {symbol}</NewsHeader>
+            <Title>Latest News for {symbol}</Title>
             {loading ? (
-                <LoadingText>Loading news...</LoadingText>
+                <NewsList>
+                    {[...Array(3)].map((_, i) => (
+                        <NewsItem key={i}>
+                            <Skeleton height={20} width="80%" />
+                            <Skeleton height={15} width="50%" style={{ marginTop: '0.5rem' }}/>
+                        </NewsItem>
+                    ))}
+                </NewsList>
             ) : (
                 <NewsList>
                     {news.map((article) => (
@@ -94,7 +95,10 @@ const NewsWidget = ({ symbol }) => {
                             <NewsLink href={article.url} target="_blank" rel="noopener noreferrer">
                                 {article.headline}
                             </NewsLink>
-                            <NewsSource>{article.source} - {new Date(article.datetime * 1000).toLocaleDateString()}</NewsSource>
+                            <NewsMeta>
+                                <span>{article.source}</span>
+                                <span>{new Date(article.datetime * 1000).toLocaleDateString()}</span>
+                            </NewsMeta>
                         </NewsItem>
                     ))}
                 </NewsList>
