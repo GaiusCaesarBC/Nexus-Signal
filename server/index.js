@@ -13,11 +13,25 @@ connectDB();
 app.use(express.json({ extended: false }));
 
 // --- THIS IS THE DEFINITIVE FIX ---
-// We are explicitly telling the server to allow requests from your live frontend URL.
+// We create a "VIP list" of all allowed origins.
+const allowedOrigins = [
+    'https://nexus-signal.vercel.app', // Your live Vercel frontend
+    'http://localhost:3000'           // Your local development frontend
+];
+
 const corsOptions = {
-    origin: 'https://nexus-signal.vercel.app',
-    optionsSuccessStatus: 200 // For legacy browser support
+    origin: function (origin, callback) {
+        // Allow requests that are on the VIP list.
+        if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    optionsSuccessStatus: 200
 };
+
+// Use the new, more flexible CORS options
 app.use(cors(corsOptions));
 // ------------------------------------
 
