@@ -13,7 +13,7 @@ connectDB();
 app.use(express.json({ extended: false }));
 
 // --- THIS IS THE DEFINITIVE FIX ---
-// We create a "VIP list" of all allowed origins.
+// We've added your local machine's address to the "VIP list" of allowed origins.
 const allowedOrigins = [
     'https://nexus-signal.vercel.app', // Your live Vercel frontend
     'http://localhost:3000'           // Your local development frontend
@@ -21,7 +21,6 @@ const allowedOrigins = [
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests that are on the VIP list.
         if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
@@ -31,7 +30,6 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
-// Use the new, more flexible CORS options
 app.use(cors(corsOptions));
 // ------------------------------------
 
