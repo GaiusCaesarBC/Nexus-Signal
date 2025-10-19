@@ -2,8 +2,8 @@ import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
-// The live URL of your backend server on Render (or localhost for development)
-const API_URL = 'https://quantum-trade-server.onrender.com';
+// The CORRECT live URL of your NEW backend server on Render
+const API_URL = 'https://nexus-signal-server.onrender.com';
 
 export const AuthContext = createContext();
 
@@ -12,6 +12,8 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [watchlist, setWatchlist] = useState([]);
+
+    const addCacheBust = (url) => `${url}?_t=${new Date().getTime()}`;
 
     useEffect(() => {
         const validateToken = async () => {
@@ -23,7 +25,7 @@ export const AuthProvider = ({ children }) => {
                     } else {
                         setUser({ id: decoded.user.id });
                         axios.defaults.headers.common['x-auth-token'] = token;
-                        const res = await axios.get(`${API_URL}/api/watchlist`);
+                        const res = await axios.get(addCacheBust(`${API_URL}/api/watchlist`));
                         setWatchlist(res.data);
                     }
                 } catch (err) {
@@ -37,19 +39,18 @@ export const AuthProvider = ({ children }) => {
     }, [token]);
 
     const login = async (username, password) => {
-        // --- THIS IS THE FIX: Ensure we use axios.post ---
-        const res = await axios.post(`${API_URL}/api/users/login`, { username, password });
+        const res = await axios.post(addCacheBust(`${API_URL}/api/users/login`), { username, password });
         localStorage.setItem('token', res.data.token);
         setToken(res.data.token);
         axios.defaults.headers.common['x-auth-token'] = res.data.token;
         const decoded = jwtDecode(res.data.token);
         setUser({ id: decoded.user.id });
-        const watchlistRes = await axios.get(`${API_URL}/api/watchlist`);
+        const watchlistRes = await axios.get(addCacheBust(`${API_URL}/api/watchlist`));
         setWatchlist(watchlistRes.data);
     };
 
     const register = async (username, password) => {
-        await axios.post(`${API_URL}/api/users/register`, { username, password });
+        await axios.post(addCacheBust(`${API_URL}/api/users/register`), { username, password });
     };
 
     const logout = () => {
@@ -62,7 +63,7 @@ export const AuthProvider = ({ children }) => {
 
     const addToWatchlist = async (symbol) => {
         try {
-            const res = await axios.post(`${API_URL}/api/watchlist/add`, { symbol });
+            const res = await axios.post(addCacheBust(`${API_URL}/api/watchlist/add`), { symbol });
             setWatchlist(res.data);
         } catch (err) {
             console.error('Failed to add to watchlist', err);
@@ -71,7 +72,7 @@ export const AuthProvider = ({ children }) => {
 
     const removeFromWatchlist = async (symbol) => {
         try {
-            const res = await axios.delete(`${API_URL}/api/watchlist/remove/${symbol}`);
+            const res = await axios.delete(addCacheBust(`${API_URL}/api/watchlist/remove/${symbol}`));
             setWatchlist(res.data);
         } catch (err) {
             console.error('Failed to remove from watchlist', err);
