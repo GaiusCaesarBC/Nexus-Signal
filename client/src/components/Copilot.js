@@ -3,10 +3,8 @@ import styled, { keyframes } from 'styled-components';
 import { Bot, X, Send, CornerDownLeft } from 'lucide-react';
 import axios from 'axios';
 
-// The live URL of your backend server on Render
-const API_URL = 'https://quantum-trade-server.onrender.com';
+const API_URL = 'https://quantum-trade-server.onrender.com'; // We will update this later
 
-// --- Animations ---
 const slideIn = keyframes`
   from {
     transform: translateY(100%);
@@ -18,7 +16,6 @@ const slideIn = keyframes`
   }
 `;
 
-// --- Styled Components ---
 const CopilotWrapper = styled.div`
   position: fixed;
   bottom: 20px;
@@ -148,17 +145,15 @@ const SendButton = styled.button`
   }
 `;
 
-// --- Component Logic ---
 const Copilot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { sender: 'ai', text: 'Hello! I am Quantum Copilot. How can I help you today?' }
+    { sender: 'ai', text: 'Hello! I am Nexus Signal AI. How can I help you today?' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messageListRef = useRef(null);
 
-  // Scroll to bottom when new messages are added
   useEffect(() => {
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
@@ -175,7 +170,6 @@ const Copilot = () => {
     setIsLoading(true);
 
     try {
-      // Send message to our backend API
       const res = await axios.post(`${API_URL}/api/copilot/chat`, { prompt: input });
       const aiMessage = { sender: 'ai', text: res.data.reply };
       setMessages(prev => [...prev, aiMessage]);
@@ -199,7 +193,7 @@ const Copilot = () => {
       {isOpen && (
         <ChatWindow>
           <ChatHeader>
-            <HeaderTitle><Bot size={18} /> Quantum Copilot</HeaderTitle>
+            <HeaderTitle><Bot size={18} /> Nexus Signal AI</HeaderTitle>
             <CloseButton onClick={() => setIsOpen(false)}>
               <X size={20} />
             </CloseButton>
@@ -217,7 +211,7 @@ const Copilot = () => {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Quantum Copilot..."
+              placeholder="Ask Nexus Signal AI..."
               disabled={isLoading}
             />
             <SendButton type="submit" disabled={isLoading}>
