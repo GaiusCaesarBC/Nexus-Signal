@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');
 const path = require('path');
-const cors = require('cors'); // Make sure cors is required
+const cors = require('cors');
 
 const app = express();
 
@@ -12,10 +12,14 @@ connectDB();
 // Init Middleware
 app.use(express.json({ extended: false }));
 
-// --- THIS IS THE FIX ---
-// Enable CORS for all routes. This adds the necessary headers to your server's responses.
-app.use(cors());
-// ---------------------
+// --- THIS IS THE DEFINITIVE FIX ---
+// We are explicitly telling the server to allow requests from your live frontend URL.
+const corsOptions = {
+    origin: 'https://nexus-signal.vercel.app',
+    optionsSuccessStatus: 200 // For legacy browser support
+};
+app.use(cors(corsOptions));
+// ------------------------------------
 
 // Define Routes
 app.use('/api/predict', require('./routes/predictionRoutes'));
