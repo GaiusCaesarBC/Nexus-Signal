@@ -1,44 +1,19 @@
-/* Import Google Fonts for a modern, clean look */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-/* Basic reset and global styling */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 body {
-    font-family: 'Inter', sans-serif; /* Use Inter as the primary font */
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Intellectia.ai inspired gradient background */
-    background: linear-gradient(180deg, #1A1A1A 0%, #222222 100%);
-    color: #E0E0E0; /* Light gray for default text */
-    min-height: 100vh; /* Ensure background covers full height */
-    overflow-x: hidden; /* Prevent horizontal scroll */
+    background: linear-gradient(180deg, #1A1E26 0%, #212936 100%);
+    color: #ecf0f1;
+    min-height: 100vh;
 }
 
-a {
-    text-decoration: none;
-    color: inherit;
+code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
-/* Scrollbar Styling (optional, for a custom look) */
-::-webkit-scrollbar {
-    width: 8px;
+* {
+    box-sizing: border-box;
 }
-
-::-webkit-scrollbar-track {
-    background: #2c3e50;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 10px;
-}
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #777;
-    }

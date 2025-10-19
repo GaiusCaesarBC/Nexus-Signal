@@ -2,16 +2,18 @@ import React, { useState, useContext } from 'react';
 import axios from 'axios';
 import styled from 'styled-components';
 import { AuthContext } from '../context/AuthContext';
-import StockChart from '../components/StockChart';
+import RealTimeChart from '../components/RealTimeChart';
 import Watchlist from '../components/Watchlist';
 import Copilot from '../components/Copilot';
 import NewsWidget from '../components/NewsWidget';
-import { Search, TrendingUp, TrendingDown, MinusCircle, PlusCircle } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, MinusCircle, PlusCircle, PieChart } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 // The live URL of your backend server on Render
-const API_URL = 'https://quantum-trade-server.onrender.com';
+const API_URL = 'https://nexus-signal-server.onrender.com';
+
+const addCacheBust = (url) => `${url}?_t=${new Date().getTime()}`;
 
 const DashboardContainer = styled.div`
     padding: 2rem;
@@ -42,14 +44,26 @@ const Sidebar = styled.div`
     display: flex;
     flex-direction: column;
     gap: 2rem;
+    position: sticky;
+    top: 2rem;
 `;
 
-const SearchContainer = styled.div`
+const GlassCard = styled.div`
+    background: rgba(44, 62, 80, 0.75);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    border: 1px solid rgba(52, 73, 94, 0.5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    padding: 1.5rem;
+`;
+
+const SearchContainer = styled(GlassCard)`
+    padding: 1rem;
+`;
+
+const SearchForm = styled.form`
     display: flex;
     width: 100%;
-    background-color: #2c3e50;
-    border-radius: 8px;
-    padding: 8px;
 `;
 
 const SearchInput = styled.input`
@@ -58,12 +72,16 @@ const SearchInput = styled.input`
     background: none;
     outline: none;
     color: #ecf0f1;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     padding: 0 1rem;
+
+    &::placeholder {
+        color: #95a5a6;
+    }
 `;
 
 const SearchButton = styled.button`
-    background-color: #3498db;
+    background: linear-gradient(45deg, #3498db, #2980b9);
     border: none;
     border-radius: 5px;
     color: white;
@@ -72,21 +90,15 @@ const SearchButton = styled.button`
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    transition: background-color 0.2s ease-in-out;
+    transition: all 0.3s ease;
 
     &:hover {
-        background-color: #2980b9;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
     }
 `;
 
-const ResultCard = styled.div`
-    background-color: #2c3e50;
-    padding: 2rem;
-    border-radius: 8px;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+const ResultCard = styled(GlassCard)`
     border-left: 5px solid ${props => props.borderColor || '#3498db'};
 `;
 
@@ -99,6 +111,7 @@ const CardHeader = styled.div`
 const Symbol = styled.h2`
     color: #ecf0f1;
     font-size: 2rem;
+    text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
 `;
 
 const AddButton = styled.button`
@@ -111,9 +124,12 @@ const AddButton = styled.button`
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    transition: all 0.3s ease;
     
     &:hover {
+        transform: translateY(-2px);
         background-color: #229954;
+        box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
     }
 `;
 
@@ -124,6 +140,7 @@ const Signal = styled.div`
     font-size: 1.5rem;
     font-weight: bold;
     color: ${props => props.color || '#ecf0f1'};
+    text-shadow: 0 0 8px ${props => props.color || '#ecf0f1'};
 `;
 
 const AnalysisGrid = styled.div`
@@ -151,6 +168,33 @@ const ErrorMessage = styled.p`
     margin-top: 1rem;
 `;
 
+const SidebarWidget = styled(GlassCard)``;
+
+const WidgetTitle = styled.h3`
+    color: #ecf0f1;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid #34495e;
+    padding-bottom: 0.5rem;
+    text-shadow: 0 0 5px rgba(236, 240, 241, 0.3);
+`;
+
+const MoversList = styled.ul`
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    li {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        color: #bdc3c7;
+        span:last-child {
+            font-weight: bold;
+        }
+    }
+`;
+const Gainer = styled.span` color: #2ecc71; `;
+const Loser = styled.span` color: #e74c3c; `;
 
 const Dashboard = () => {
     const [symbol, setSymbol] = useState('');
@@ -159,13 +203,14 @@ const Dashboard = () => {
     const [error, setError] = useState('');
     const { user, addToWatchlist, watchlist } = useContext(AuthContext);
 
-    const handleSearch = async () => {
+    const handleSearch = async (e) => {
+        e.preventDefault();
         if (!symbol) return;
         setLoading(true);
         setError('');
         setPrediction(null);
         try {
-            const res = await axios.get(`${API_URL}/api/predict/${symbol}`);
+            const res = await axios.get(addCacheBust(`${API_URL}/api/predict/${symbol}`));
             setPrediction(res.data);
         } catch (err) {
             setError(err.response ? err.response.data.msg : 'An error occurred');
@@ -188,31 +233,32 @@ const Dashboard = () => {
         <DashboardContainer>
             <MainContent>
                 <SearchContainer>
-                    <SearchInput
-                        type="text"
-                        value={symbol}
-                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                        placeholder="Enter stock symbol (e.g., AAPL)"
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                    />
-                    <SearchButton onClick={handleSearch}>
-                        <Search size={20} />
-                        Get Prediction
-                    </SearchButton>
+                    <SearchForm onSubmit={handleSearch}>
+                        <SearchInput
+                            type="text"
+                            value={symbol}
+                            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                            placeholder="Enter stock symbol (e.g., AAPL)"
+                        />
+                        <SearchButton type="submit">
+                            <Search size={20} />
+                            Search
+                        </SearchButton>
+                    </SearchForm>
                 </SearchContainer>
 
                 {error && <ErrorMessage>{error}</ErrorMessage>}
 
                 {loading && (
-                    <ResultCard>
-                        <Skeleton height={40} width={200} />
-                        <Skeleton height={30} width={100} />
+                     <ResultCard>
+                        <Skeleton height={40} width={200} baseColor="#34495e" highlightColor="#4a627a"/>
+                        <Skeleton height={30} width={100} baseColor="#34495e" highlightColor="#4a627a"/>
                         <AnalysisGrid>
-                            <Skeleton height={60} />
-                            <Skeleton height={60} />
-                            <Skeleton height={60} />
+                            <Skeleton height={60} baseColor="#34495e" highlightColor="#4a627a"/>
+                            <Skeleton height={60} baseColor="#34495e" highlightColor="#4a627a"/>
+                            <Skeleton height={60} baseColor="#34495e" highlightColor="#4a627a"/>
                         </AnalysisGrid>
-                        <Skeleton height={400} />
+                        <Skeleton height={400} baseColor="#34495e" highlightColor="#4a627a"/>
                     </ResultCard>
                 )}
 
@@ -239,7 +285,7 @@ const Dashboard = () => {
                             </AnalysisGrid>
 
                             {prediction.historicalData && prediction.historicalData.length > 0 && (
-                                <StockChart data={prediction.historicalData} />
+                                <RealTimeChart data={prediction.historicalData} />
                             )}
                         </ResultCard>
                         <NewsWidget symbol={prediction.symbol} />
@@ -248,6 +294,25 @@ const Dashboard = () => {
             </MainContent>
             <Sidebar>
                 {user && <Watchlist />}
+                
+                <SidebarWidget>
+                    <WidgetTitle>Market Movers</WidgetTitle>
+                    <MoversList>
+                        <li><span>NVDA</span> <Gainer>+5.2%</Gainer></li>
+                        <li><span>TSLA</span> <Gainer>+3.1%</Gainer></li>
+                        <li><span>BA</span> <Loser>-3.8%</Loser></li>
+                        <li><span>NFLX</span> <Gainer>+1.2%</Gainer></li>
+                    </MoversList>
+                </SidebarWidget>
+
+                <SidebarWidget>
+                     <WidgetTitle>Portfolio Snapshot</WidgetTitle>
+                     <div style={{textAlign: 'center', color: '#ecf0f1'}}>
+                        <PieChart size={80} style={{ margin: '0 auto 1rem' }}/>
+                        <h4>+18.7% All Time</h4>
+                     </div>
+                </SidebarWidget>
+
             </Sidebar>
 
             {user && <Copilot />}
