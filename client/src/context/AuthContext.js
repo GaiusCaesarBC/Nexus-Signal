@@ -1,11 +1,26 @@
+// client/src/context/AuthContext.js
+
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
-// The CORRECT live URL of your NEW backend server on Render
-const API_URL = 'https://nexus-signal-server.onrender.com';
+// client/src/context/AuthContext.js
+
+// client/src/context/AuthContext.js
+
+// Make sure this is the CORRECT Forwarded Address from your Codespace Ports tab
+const API_URL = process.env.NODE_ENV === 'production'
+    ? 'https://nexus-signal-server.onrender.com'
+    // Example: Replace with your actual forwarded URL like below
+    : 'https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev'; // <-- EDIT THIS LINE
+
+// ... rest of the component
+
+// ... rest of the component
 
 export const AuthContext = createContext();
+
+// ... (rest of the AuthProvider component remains the same)
 
 export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(localStorage.getItem('token'));
