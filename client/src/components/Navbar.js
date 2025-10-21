@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { AuthContext } from '../context/AuthContext';
-import { LayoutDashboard, UserPlus, LogIn, LogOut, Home } from 'lucide-react';
+import { LayoutDashboard, UserPlus, LogIn, LogOut, Info, Tag, Activity } from 'lucide-react'; // Added Activity icon
 import logo from '../assets/logo.png';
 
 const Nav = styled.nav`
@@ -96,11 +96,16 @@ const Navbar = () => {
                 {user ? (
                     <>
                         <NavLink to="/"><LayoutDashboard size={18} /> Dashboard</NavLink>
+                        <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
+                        <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
+                        <NavLink to="/about"><Info size={18} /> About</NavLink>
                         <LogoutButton onClick={handleLogout}><LogOut size={18} /> Log Out</LogoutButton>
                     </>
                 ) : (
                     <>
-                        <NavLink to="/"><Home size={18} /> Home</NavLink>
+                        <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
+                        <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
+                        <NavLink to="/about"><Info size={18} /> About</NavLink>
                         <NavLink to="/register"><UserPlus size={18} /> Register</NavLink>
                         <NavLink to="/login"><LogIn size={18} /> Log In</NavLink>
                     </>
