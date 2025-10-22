@@ -1,6 +1,9 @@
 import React from 'react';
 import styled, { keyframes } from 'styled-components';
-import { BarChart, Percent, Zap } from 'lucide-react';
+// Import the chart component
+import PerformanceComparisonChart from '../components/PerformanceComparisonChart';
+// Import icons that might be used for metrics or placeholders (not currently used, but keep if needed later)
+// import { Percent, Zap } from 'lucide-react';
 
 // --- Animations ---
 const fadeIn = keyframes`
@@ -39,6 +42,7 @@ const Subtitle = styled.p`
     margin: 0 auto;
 `;
 
+// GlassCard style for consistency
 const GlassCard = styled.div`
     background: rgba(44, 62, 80, 0.75);
     backdrop-filter: blur(10px);
@@ -48,14 +52,16 @@ const GlassCard = styled.div`
     padding: 1.5rem;
 `;
 
+// Container for the top metrics
 const ScorecardContainer = styled.div`
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem;
     max-width: 1000px;
-    margin: 0 auto 4rem auto;
+    margin: 0 auto 4rem auto; // Space below the scorecard
 `;
 
+// Individual metric card
 const MetricCard = styled(GlassCard)`
     padding: 2rem;
     text-align: center;
@@ -74,9 +80,10 @@ const MetricLabel = styled.p`
     font-size: 1rem;
 `;
 
-const ChartContainer = styled(GlassCard)`
+// Container for the chart
+const ChartSectionContainer = styled(GlassCard)` // Use GlassCard style
     max-width: 1200px;
-    margin: 0 auto;
+    margin: 0 auto; // Center the chart container
     padding: 2rem;
 `;
 
@@ -84,8 +91,10 @@ const ChartTitle = styled.h2`
     text-align: center;
     color: #ecf0f1;
     margin-top: 0;
+    margin-bottom: 2rem; // Space below title, above chart
 `;
 
+// The main Performance component
 const Performance = () => {
     return (
         <PerformanceContainer>
@@ -94,32 +103,35 @@ const Performance = () => {
                 <Subtitle>Our commitment to transparency means showing you our results. Here's a look at how the Nexus Signal AI model has performed in backtested simulations.</Subtitle>
             </Header>
 
+            {/* Scorecard Section - This brings back the original metrics */}
             <ScorecardContainer>
                 <MetricCard>
+                    {/* Placeholder value - update later */}
                     <MetricValue>78.2%</MetricValue>
                     <MetricLabel>Signal Win Rate (Backtested)</MetricLabel>
                 </MetricCard>
                 <MetricCard>
+                    {/* Placeholder value - update later */}
                     <MetricValue>1.62</MetricValue>
                     <MetricLabel>Sharpe Ratio (Simulated)</MetricLabel>
                 </MetricCard>
                 <MetricCard>
+                    {/* Placeholder value - update later */}
                     <MetricValue>+127%</MetricValue>
                     <MetricLabel>Simulated 3-Year Return</MetricLabel>
                 </MetricCard>
             </ScorecardContainer>
 
-            <ChartContainer>
+            {/* Chart Section - This uses the new chart component */}
+            <ChartSectionContainer>
                 <ChartTitle>Historical Simulation vs. S&P 500</ChartTitle>
-                {/* We can add a real chart here later using the same charting library */}
-                <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#95a5a6' }}>
-                    <BarChart size={48} />
-                    <p style={{ marginLeft: '1rem' }}>Historical performance chart coming soon.</p>
-                </div>
-            </ChartContainer>
+                {/* Ensure PerformanceComparisonChart.js exists in ../components/ */}
+                <PerformanceComparisonChart />
+            </ChartSectionContainer>
 
         </PerformanceContainer>
     );
 };
 
 export default Performance;
+

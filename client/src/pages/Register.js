@@ -87,7 +87,7 @@ const Register = () => {
 
         // --- START OF DEBUG LOGGING ---
         console.log('--- New Registration Submission ---');
-        console.log('DEBUG: handleSubmit function was called on the live site.');
+        
 
         if (password !== password2) {
             console.error('DEBUG: Passwords do not match.');
