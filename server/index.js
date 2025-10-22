@@ -13,12 +13,14 @@ const app = express();
 // Apply this BEFORE anything else
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  // --- ENSURE VERCEL URL IS IN THIS LIST ---
+
+  // --- ENSURE YOUR VERCEL URL IS LISTED HERE ---
   const allowedOrigins = [
-    'https://nexus-signal.vercel.app', // Your live Vercel frontend
+    'https://nexus-signal.vercel.app', // <<<=== MAKE SURE THIS LINE EXISTS AND IS CORRECT
     'http://localhost:3000',           // Your local development frontend (standard)
-    'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Your Codespace FRONTEND URL
-    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev' // Your Codespace FRONTEND URL if using 8081 backend
+    'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Your Codespace FRONTEND URL (Port 3000)
+    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev' // Your Codespace FRONTEND URL if backend is on 8081
+    // Add any other specific origins if needed
   ];
   // ------------------------------------------
 
@@ -29,13 +31,16 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else if (!origin) {
     console.log(">>> Request has no origin header.");
+    // Allow requests with no origin? Often needed for server-to-server or tools like Postman
+    // res.setHeader('Access-Control-Allow-Origin', '*'); // Less secure, use specific origins if possible
   } else {
     console.warn(`>>> Origin ${origin} not in allowedOrigins.`);
   }
 
   // Set other necessary CORS headers for preflight OPTIONS requests
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,x-auth-token,Authorization'); // Ensure x-auth-token is allowed
+  // Make sure 'x-auth-token' is included here if your AuthContext sends it
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,x-auth-token,Authorization');
   res.setHeader('Access-Control-Allow-Credentials', true);
 
   // If this is an OPTIONS request, end the response here after setting headers
@@ -55,12 +60,8 @@ connectDB();
 // Init Middleware (Body Parser)
 app.use(express.json({ extended: false }));
 
-// Optional: Standard CORS middleware (can likely remain commented out)
-// const corsOptions = { origin: allowedOrigins, optionsSuccessStatus: 200 };
-// app.use(cors(corsOptions));
-
-
 // --- Import and Define API Routes ---
+// (Ensure these require statements are correct based on your file structure)
 console.log('[DEBUG index.js] Requiring route files...');
 const predictionRoutes = require('./routes/predictionRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -79,7 +80,7 @@ app.use('/api/market-data', marketDataRoutes);
 app.use('/api/payments', paymentRoutes);
 // -----------------------------------
 
-// Define the Port (Using 8081 as per previous steps, change back to 5000 if needed, ensure Render matches)
+// Define the Port (Using 8081, ensure Render is configured for this port)
 const PORT = process.env.PORT || 8081;
 
 // Start the Server
