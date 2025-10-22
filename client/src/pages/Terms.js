@@ -52,11 +52,13 @@ const Paragraph = styled.p`
     line-height: 1.8;
 `;
 
-const List = styled.ul`
-    color: #bdc3c7;
-    line-height: 1.8;
-    padding-left: 20px;
-`;
+// --- REMOVED List styled component ---
+// const List = styled.ul`
+//     color: #bdc3c7;
+//     line-height: 1.8;
+//     padding-left: 20px;
+// `;
+// ------------------------------------
 
 const Terms = () => {
     return (
@@ -84,7 +86,7 @@ const Terms = () => {
                     Some parts of the Service are billed on a subscription basis ("Subscription(s)"). You will be billed in advance on a recurring basis. Subscriptions will automatically renew under the exact same conditions unless cancelled by you or Nexus Signal AI. You may cancel your Subscription renewal at any time.
                 </Paragraph>
             </Section>
-            
+
             <Section>
                 <SectionTitle>4. Intellectual Property</SectionTitle>
                 <Paragraph>

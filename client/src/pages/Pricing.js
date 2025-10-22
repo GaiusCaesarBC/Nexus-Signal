@@ -1,9 +1,24 @@
-import React from 'react';
+import React, { useState, useContext } from 'react';
 import styled, { keyframes } from 'styled-components';
-// Only import used icons
-import { CheckCircle, Star } from 'lucide-react';
+import { CheckCircle, Star } from 'lucide-react'; // Only import used icons
+import axios from 'axios';
+import { loadStripe } from '@stripe/stripe-js';
+import { AuthContext } from '../context/AuthContext'; // Import AuthContext
 
-// Animations
+// --- START: Stripe Initialization ---
+// Ensure you have this environment variable set in client/.env
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+
+// Define API URL based on environment (should match AuthContext)
+const API_URL = process.env.NODE_ENV === 'production'
+    ? 'https://nexus-signal-server.onrender.com'
+    // Ensure this is your correct Codespace forwarded URL for the BACKEND (port 5000)
+    : 'https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev';
+
+// --- END: Stripe Initialization ---
+
+
+// --- Animations ---
 const fadeIn = keyframes`
   from {
     opacity: 0;
@@ -15,7 +30,7 @@ const fadeIn = keyframes`
   }
 `;
 
-// Styled Components
+// --- Styled Components ---
 const PricingContainer = styled.div`
     padding: 3rem 2rem;
     animation: ${fadeIn} 0.6s ease-out;
@@ -43,18 +58,24 @@ const Subtitle = styled.p`
 const TiersContainer = styled.div`
     display: flex;
     justify-content: center;
-    gap: 1.5rem;
+    gap: 2rem; // Slightly increased gap
     flex-wrap: wrap;
     align-items: stretch;
 `;
+
+// Base shadow for all cards
+const baseShadow = '0 15px 35px rgba(0, 0, 0, 0.7)';
+// Glow effect variables
+const premiumGlow = '0 0 15px 5px rgba(243, 156, 18, 0.5)'; // Orange glow
+const eliteGlow = '0 0 15px 5px rgba(155, 89, 182, 0.5)'; // Purple glow
+
 
 const TierCard = styled.div`
     background: rgba(44, 62, 80, 0.85);
     backdrop-filter: blur(10px);
     border-radius: 12px;
     border: 1px solid rgba(52, 73, 94, 0.5);
-    /* Base shadow - will be overridden by inline style for glowing cards */
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+    box-shadow: ${baseShadow}; // Apply base shadow here
     width: 100%;
     max-width: 340px;
     padding: 2rem;
@@ -66,8 +87,8 @@ const TierCard = styled.div`
 
     &:hover {
         transform: translateY(-10px);
-        /* Keep hover shadow consistent or enhance it */
-        box-shadow: 0 25px 45px rgba(0, 0, 0, 0.8);
+        // Combine base shadow with potential glow on hover
+        box-shadow: ${props => props.glow ? `${props.glow}, ${baseShadow}` : `0 25px 45px rgba(0, 0, 0, 0.8)`};
     }
 `;
 
@@ -81,6 +102,7 @@ const PopularBadge = styled.div`
     font-size: 0.9rem;
     font-weight: bold;
     box-shadow: 0 5px 10px rgba(243, 156, 18, 0.4);
+    z-index: 1; // Ensure badge is above border glow
 `;
 
 const TierTitle = styled.h2`
@@ -97,6 +119,7 @@ const TierDescription = styled.p`
     min-height: 40px;
     text-align: center;
 `;
+
 
 const TierPrice = styled.p`
     color: #3498db;
@@ -154,14 +177,78 @@ const Button = styled.button`
         transform: translateY(-3px);
         box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
     }
+
+    &:disabled { // Style for disabled state
+      background: #7f8c8d;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+`;
+
+const ErrorMessage = styled.p` // For showing errors
+    color: #e74c3c;
+    text-align: center;
+    margin-top: 1rem;
+    font-size: 0.9rem;
 `;
 
 
 const Pricing = () => {
-    // Define the glow shadow styles
-    const premiumGlow = '0 0 15px 2px #f39c12'; // Orange glow
-    const eliteGlow = '0 0 15px 2px #9b59b6'; // Purple glow
-    const baseShadow = '0 15px 35px rgba(0, 0, 0, 0.7)'; // Original shadow
+    const { user } = useContext(AuthContext); // Get user from context
+    const [loading, setLoading] = useState(''); // Track which button is loading
+    const [error, setError] = useState('');
+
+    const handleCheckout = async (priceId, planName) => {
+        setError(''); // Clear previous errors
+        if (!user) {
+            setError('Please log in or register to choose a plan.');
+            // Optionally redirect to login: navigate('/login');
+            return;
+        }
+        setLoading(planName); // Set loading state for the specific button
+
+        try {
+            // 1. Get Stripe.js instance
+            const stripe = await stripePromise;
+            if (!stripe) {
+              throw new Error('Stripe.js failed to load.');
+            }
+
+            // 2. Call your backend to create the Checkout Session
+             // Add cache-busting parameter to prevent stale requests
+            const cacheBustUrl = `${API_URL}/api/payments/create-checkout-session?_t=${new Date().getTime()}`;
+            const response = await axios.post(cacheBustUrl,
+                { priceId, planName },
+                {
+                    headers: {
+                        'x-auth-token': localStorage.getItem('token') // Send auth token
+                    }
+                }
+            );
+
+            const session = response.data;
+
+            // 3. Redirect to Stripe Checkout
+            const result = await stripe.redirectToCheckout({
+                sessionId: session.id,
+            });
+
+            if (result.error) {
+                // If `redirectToCheckout` fails due to a browser or network
+                // error, display the localized error message to your customer.
+                console.error("Stripe redirect error:", result.error.message);
+                setError(result.error.message);
+            }
+        } catch (err) {
+            console.error('Checkout error:', err);
+            const errMsg = err.response?.data?.msg || err.message || 'An error occurred during checkout.';
+            setError(errMsg);
+        } finally {
+            setLoading(''); // Clear loading state regardless of outcome
+        }
+    };
+
 
     return (
         <PricingContainer>
@@ -169,9 +256,10 @@ const Pricing = () => {
                 <Title>Unlock Your Trading Edge</Title>
                 <Subtitle>Nexus Signal.AI Pricing! Choose the plan that empowers your market strategy.</Subtitle>
             </Header>
+            {error && <ErrorMessage>{error}</ErrorMessage>} {/* Display errors */}
             <TiersContainer>
                 {/* Basic Tier (Free Trial) */}
-                <TierCard> {/* No glow style here */}
+                <TierCard>
                     <TierTitle>Basic</TierTitle>
                     <TierDescription>Explore the Fundamentals</TierDescription>
                     <TierPrice>7-Day Free Trial</TierPrice>
@@ -182,14 +270,17 @@ const Pricing = () => {
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Basic Market Overviews</FeatureItem>
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Email Support (Standard)</FeatureItem>
                     </FeatureList>
-                    <Button>Start Free Trial</Button>
+                    {/* Basic button might navigate to dashboard or just be informational */}
+                    <Button disabled={!user} onClick={() => alert('Free trial activated (logic TBD)!')}>
+                      {user ? 'Start Free Trial' : 'Log in to Start Trial'}
+                    </Button>
                 </TierCard>
 
-                {/* Premium Tier - Added box-shadow */}
-                <TierCard style={{
-                    border: '2px solid #f39c12',
-                    boxShadow: `${premiumGlow}, ${baseShadow}` // Combine glow and base shadow
-                 }}>
+                {/* Premium Tier */}
+                <TierCard
+                    style={{ border: '2px solid #f39c12', boxShadow: `${premiumGlow}, ${baseShadow}` }}
+                    glow={premiumGlow} // Pass glow for hover effect
+                >
                     <PopularBadge>MOST POPULAR</PopularBadge>
                     <TierTitle>Premium</TierTitle>
                     <TierDescription>Master Your Trades</TierDescription>
@@ -202,14 +293,20 @@ const Pricing = () => {
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> In-depth Sector Analysis</FeatureItem>
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Priority Email Support</FeatureItem>
                     </FeatureList>
-                    <Button style={{ background: 'linear-gradient(45deg, #f39c12, #e67e22)' }}>Choose Plan</Button>
+                    <Button
+                        style={{ background: 'linear-gradient(45deg, #f39c12, #e67e22)' }}
+                        onClick={() => handleCheckout(process.env.REACT_APP_STRIPE_PREMIUM_PRICE_ID, 'Premium')}
+                        disabled={loading === 'Premium' || !user}
+                    >
+                        {loading === 'Premium' ? 'Processing...' : (user ? 'Choose Plan' : 'Log in to Choose')}
+                    </Button>
                 </TierCard>
 
-                {/* Elite Tier - Added box-shadow */}
-                <TierCard style={{
-                    border: '2px solid #9b59b6',
-                    boxShadow: `${eliteGlow}, ${baseShadow}` // Combine glow and base shadow
-                }}>
+                {/* Elite Tier */}
+                <TierCard
+                    style={{ border: '2px solid #9b59b6', boxShadow: `${eliteGlow}, ${baseShadow}` }}
+                    glow={eliteGlow} // Pass glow for hover effect
+                 >
                     <TierTitle>Elite</TierTitle>
                      <TierDescription>For the Ultimate Market Edge</TierDescription>
                     <TierPrice>$125 <span>/ month</span></TierPrice>
@@ -222,7 +319,13 @@ const Pricing = () => {
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Personalized Mentorship</FeatureItem>
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> 24/7 Dedicated Account Manager</FeatureItem>
                     </FeatureList>
-                    <Button style={{ background: 'linear-gradient(45deg, #9b59b6, #8e44ad)' }}><Star size={18}/> Go Elite</Button>
+                    <Button
+                        style={{ background: 'linear-gradient(45deg, #9b59b6, #8e44ad)' }}
+                        onClick={() => handleCheckout(process.env.REACT_APP_STRIPE_ELITE_PRICE_ID, 'Elite')}
+                        disabled={loading === 'Elite' || !user}
+                    >
+                      <Star size={18}/> {loading === 'Elite' ? 'Processing...' : (user ? 'Go Elite' : 'Log in to Choose')}
+                    </Button>
                 </TierCard>
 
             </TiersContainer>
