@@ -4,58 +4,67 @@ const connectDB = require('./config/db');
 const path = require('path');
 const cors = require('cors');
 
-// server/index.js
-
-// ... other imports
+// --- Import Route Files ---
+const predictionRoutes = require('./routes/predictionRoutes');
+const userRoutes = require('./routes/userRoutes');
+const watchlistRoutes = require('./routes/watchlistRoutes');
+const copilotRoutes = require('./routes/copilotRoutes');
+const newsRoutes = require('./routes/newsRoutes');
+const marketDataRoutes = require('./routes/marketDataRoutes');
+const paymentRoutes = require('./routes/paymentRoutes'); // <-- Added payment routes
 
 const app = express();
+
+// --- ADDED DEBUG MIDDLEWARE ---
+// Logs incoming requests before other processing
+app.use((req, res, next) => {
+  console.log(`>>> Request Received: ${req.method} ${req.originalUrl} Origin: ${req.headers.origin}`);
+  next();
+});
+// --- END DEBUG MIDDLEWARE ---
+
 
 // Connect Database
 connectDB();
 
 // Init Middleware
-app.use(express.json({ extended: false }));
+app.use(express.json({ extended: false })); // Body parser for JSON
 
-// --- START CHANGE ---
-// Add your frontend Codespace URL to the allowed list
+// --- CORS Configuration ---
 const allowedOrigins = [
     'https://nexus-signal.vercel.app', // Your live Vercel frontend
-    'http://localhost:3000',           // Your local development frontend
-    'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev' // <-- ADD THIS LINE
+    'http://localhost:3000',           // Your local development frontend (standard)
+    'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev' // Your Codespace FRONTEND URL
 ];
-// --- END CHANGE ---
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests) OR matching allowed origins
+        console.log(`[CORS Check] Received Origin: ${origin}`); // Debug log
+
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            console.log(`[CORS Check] Allowing origin: ${origin}`); // Debug log
             callback(null, true);
         } else {
-            console.error(`CORS blocked origin: ${origin}`); // Log blocked origins
+            console.error(`[CORS Check] Blocking origin: ${origin}`); // Debug log
             callback(new Error('Not allowed by CORS'));
         }
     },
     optionsSuccessStatus: 200
 };
 
-app.use(cors(corsOptions));
+app.use(cors(corsOptions)); // Apply CORS options
 
-// Define Routes
-// ... rest of the file
+// --- Define API Routes ---
+app.use('/api/predict', predictionRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/copilot', copilotRoutes);
+app.use('/api/news', newsRoutes);
+app.use('/api/market-data', marketDataRoutes);
+app.use('/api/payments', paymentRoutes); // <-- Use payment routes
 
-app.use(cors(corsOptions));
-// ------------------------------------
-
-// Define Routes
-app.use('/api/predict', require('./routes/predictionRoutes'));
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/watchlist', require('./routes/watchlistRoutes'));
-app.use('/api/copilot', require('./routes/copilotRoutes'));
-app.use('/api/news', require('./routes/newsRoutes'));
-app.use('/api/market-data', require('./routes/marketDataRoutes'));
-
+// --- Define the Port ---
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Nexus Signal AI server running on port ${PORT}`);
-}); // <-- Add this closing brace
+// --- Start the Server ---
+app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
