@@ -1,6 +1,6 @@
-import React from 'react'; // Corrected import statement
+import React from 'react';
 import styled, { keyframes } from 'styled-components';
-// Removed unused 'Mail' import
+// Corrected import: Removed Mail, Added Github, Linkedin, MessageSquare (for Discord)
 import { Send, Twitter, Linkedin, Github, MessageSquare } from 'lucide-react';
 import logo from '../assets/logo.png'; // Assuming logo is here
 
@@ -19,16 +19,16 @@ const pulse = keyframes`
 
 // --- Styled Components ---
 const PageWrapper = styled.div`
-  min-height: 100vh; // Ensure it takes full viewport height
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: linear-gradient(180deg, #1A1E26 0%, #212936 100%);
+  /* Removed background override - will now inherit from body */
   color: #ecf0f1;
   text-align: center;
-  overflow: hidden; // Prevent potential overflows
+  overflow: hidden;
 `;
 
 const Header = styled.header`
@@ -54,6 +54,16 @@ const BrandName = styled.h1`
 const HeroSection = styled.section`
   max-width: 700px;
   animation: ${fadeIn} 1s ease-out 0.2s backwards;
+  /* Add a subtle background to make text readable over complex background if needed */
+  background: rgba(26, 30, 38, 0.5); /* Semi-transparent dark layer */
+  padding: 1.5rem;
+  border-radius: 10px;
+  backdrop-filter: blur(3px); /* Optional: slight blur */
+  margin-bottom: 2rem; /* Add margin below hero */
+
+  /* --- ADD THESE LINES FOR THE BLUE GLOW --- */
+  border: 1px solid rgba(52, 152, 219, 0.3); /* Subtle blue border */
+  box-shadow: 0 0 25px 3px rgba(52, 152, 219, 0.25); /* Blue glow */
 `;
 
 const Headline = styled.h2`
@@ -159,18 +169,26 @@ const SocialLinks = styled.div`
 
 const SocialLink = styled.a`
   color: #95a5a6;
-  transition: color 0.2s ease-in-out, transform 0.2s ease-in-out;
+  /* Add text-shadow to the transition list */
+  transition: color 0.2s ease-in-out, transform 0.2s ease-in-out, text-shadow 0.2s ease-in-out;
+  
+  /* --- ADDED DEFAULT GLOW --- */
+  /* A subtle blue glow, even in the default state */
+  text-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
 
   &:hover {
     color: #3498db;
     transform: scale(1.2);
+    
+    /* --- ENHANCE GLOW ON HOVER --- */
+    text-shadow: 0 0 15px rgba(52, 152, 219, 0.7);
   }
 `;
 
 const Footer = styled.footer`
   color: #7f8c8d;
   font-size: 0.9rem;
-  margin-top: auto; // Push footer towards the bottom if content is short
+  margin-top: auto;
   padding-top: 2rem;
 `;
 
@@ -181,16 +199,13 @@ const LandingPage = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        // Basic email validation (optional)
         if (!email || !/\S+@\S+\.\S+/.test(email)) {
             alert('Please enter a valid email address.');
             return;
         }
-        // Here you would typically send the email to your backend or a mailing list service
         console.log('Email submitted:', email);
         setSubmitted(true);
-        setEmail(''); // Clear input after submission
-        // Hide confirmation after a few seconds (optional)
+        setEmail('');
         setTimeout(() => setSubmitted(false), 5000);
     };
 
@@ -201,6 +216,7 @@ const LandingPage = () => {
                 <BrandName>Nexus Signal.AI</BrandName>
             </Header>
 
+            {/* HeroSection now provides a subtle background for readability */}
             <HeroSection>
                 <Headline>Unlock Your Trading Edge with Advanced AI.</Headline>
                 <Description>
@@ -254,4 +270,6 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
+
+
 
