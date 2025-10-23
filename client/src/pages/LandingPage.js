@@ -1,8 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react'; // Import useState
 import styled, { keyframes } from 'styled-components';
-// Corrected import: Removed Mail, Added Github, Linkedin, MessageSquare (for Discord)
 import { Send, Twitter, Linkedin, Github, MessageSquare } from 'lucide-react';
-import logo from '../assets/logo.png'; // Assuming logo is here
+import logo from '../assets/logo.png';
+import axios from 'axios'; // <-- Import axios
+
+// --- API URL Definition ---
+// Define API URL based on environment (should match AuthContext/Pricing)
+const API_URL = process.env.NODE_ENV === 'production'
+    ? 'https://nexus-signal-server.onrender.com'
+    // Ensure this is your correct Codespace forwarded URL for the BACKEND (e.g., port 8081)
+    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
 
 // --- Animations ---
 const fadeIn = keyframes`
@@ -54,16 +61,15 @@ const BrandName = styled.h1`
 const HeroSection = styled.section`
   max-width: 700px;
   animation: ${fadeIn} 1s ease-out 0.2s backwards;
-  /* Add a subtle background to make text readable over complex background if needed */
+  /* Add a subtle background to make text readable */
   background: rgba(26, 30, 38, 0.5); /* Semi-transparent dark layer */
-  padding: 1.5rem;
-  border-radius: 10px;
+  padding: 1.5rem 2.5rem; /* Added more horizontal padding */
+  border-radius: 12px; /* Soften radius */
   backdrop-filter: blur(3px); /* Optional: slight blur */
   margin-bottom: 2rem; /* Add margin below hero */
-
-  /* --- ADD THESE LINES FOR THE BLUE GLOW --- */
-  border: 1px solid rgba(52, 152, 219, 0.3); /* Subtle blue border */
-  box-shadow: 0 0 25px 3px rgba(52, 152, 219, 0.25); /* Blue glow */
+  /* Glowing blue border */
+  border: 1px solid rgba(52, 152, 219, 0.5);
+  box-shadow: 0 0 20px 5px rgba(52, 152, 219, 0.2);
 `;
 
 const Headline = styled.h2`
@@ -136,12 +142,18 @@ const SubmitButton = styled.button`
   gap: 0.5rem;
   transition: all 0.3s ease;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-  animation: ${pulse} 2s infinite; // Add pulse animation
+  animation: ${pulse} 2s infinite;
 
   &:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
     animation-play-state: paused; // Pause animation on hover
+  }
+  
+  &:disabled { // Style for loading state
+    background: #7f8c8d;
+    cursor: not-allowed;
+    animation: none;
   }
 `;
 
@@ -151,12 +163,22 @@ const CtaText = styled.p`
   margin-bottom: 2.5rem;
 `;
 
-const ConfirmationMessage = styled.p`
-  color: #2ecc71; // Green for success
+// --- Updated Message Components ---
+const MessageBase = styled.p`
   font-weight: bold;
   margin-top: -1rem;
   margin-bottom: 2.5rem;
+  height: 20px; // Reserve space to prevent layout jump
 `;
+
+const ConfirmationMessage = styled(MessageBase)`
+  color: #2ecc71; // Green for success
+`;
+
+const ErrorMessage = styled(MessageBase)`
+  color: #e74c3c; // Red for error
+`;
+// ---------------------------------
 
 
 const SocialLinks = styled.div`
@@ -169,19 +191,13 @@ const SocialLinks = styled.div`
 
 const SocialLink = styled.a`
   color: #95a5a6;
-  /* Add text-shadow to the transition list */
   transition: color 0.2s ease-in-out, transform 0.2s ease-in-out, text-shadow 0.2s ease-in-out;
-  
-  /* --- ADDED DEFAULT GLOW --- */
-  /* A subtle blue glow, even in the default state */
-  text-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+  text-shadow: 0 0 3px rgba(52, 152, 219, 0.3); /* Subtle default glow */
 
   &:hover {
     color: #3498db;
     transform: scale(1.2);
-    
-    /* --- ENHANCE GLOW ON HOVER --- */
-    text-shadow: 0 0 15px rgba(52, 152, 219, 0.7);
+    text-shadow: 0 0 10px rgba(52, 152, 219, 0.7); /* Brighter hover glow */
   }
 `;
 
@@ -194,19 +210,41 @@ const Footer = styled.footer`
 
 
 const LandingPage = () => {
-    const [email, setEmail] = React.useState('');
-    const [submitted, setSubmitted] = React.useState(false);
+    const [email, setEmail] = useState('');
+    const [submitted, setSubmitted] = useState(false);
+    const [error, setError] = useState(''); // State for errors
+    const [loading, setLoading] = useState(false); // State for loading
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        // Reset states
+        setSubmitted(false);
+        setError('');
+
         if (!email || !/\S+@\S+\.\S+/.test(email)) {
-            alert('Please enter a valid email address.');
+            setError('Please enter a valid email address.');
             return;
         }
-        console.log('Email submitted:', email);
-        setSubmitted(true);
-        setEmail('');
-        setTimeout(() => setSubmitted(false), 5000);
+
+        setLoading(true); // Disable button
+
+        try {
+            // --- Send email to backend ---
+            const res = await axios.post(`${API_URL}/api/waitlist/join`, { email });
+            
+            console.log(res.data.msg); // Log success message from server
+            setSubmitted(true);
+            setEmail('');
+        
+        } catch (err) {
+            // Handle errors from the server
+            const errMsg = err.response?.data?.msg || 'An error occurred. Please try again.';
+            console.error('Waitlist submit error:', errMsg);
+            setError(errMsg);
+        } finally {
+            setLoading(false); // Re-enable button
+        }
     };
 
     return (
@@ -216,7 +254,6 @@ const LandingPage = () => {
                 <BrandName>Nexus Signal.AI</BrandName>
             </Header>
 
-            {/* HeroSection now provides a subtle background for readability */}
             <HeroSection>
                 <Headline>Unlock Your Trading Edge with Advanced AI.</Headline>
                 <Description>
@@ -225,39 +262,50 @@ const LandingPage = () => {
                 <LaunchDate>Launching March 2026</LaunchDate>
 
                 <CtaText>Get Early Access & Updates</CtaText>
-                 {submitted ? (
-                     <ConfirmationMessage>
-                        Thank you! We'll keep you updated on our launch.
+                
+                <EmailForm onSubmit={handleSubmit}>
+                    <EmailInput
+                        type="email"
+                        placeholder="Enter your email address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)} // <--- THIS WAS THE FIX
+                        required
+                        disabled={loading}
+                    />
+                    <SubmitButton type="submit" disabled={loading}>
+                        <Send size={18} />
+                        {loading ? 'Submitting...' : 'Notify Me'}
+                    </SubmitButton>
+                </EmailForm>
+
+                {/* Show Success or Error Message */}
+                {submitted && (
+                    <ConfirmationMessage>
+                        Thank you! You're on the list.
                     </ConfirmationMessage>
-                 ) : (
-                    <EmailForm onSubmit={handleSubmit}>
-                        <EmailInput
-                            type="email"
-                            placeholder="Enter your email address"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
-                        <SubmitButton type="submit">
-                            <Send size={18} />
-                            Notify Me
-                        </SubmitButton>
-                    </EmailForm>
-                 )}
+                )}
+                {error && (
+                    <ErrorMessage>
+                        {error}
+                    </ErrorMessage>
+                )}
+                {/* Add a spacer if neither message is showing */}
+                {!submitted && !error && <MessageBase />}
+            
             </HeroSection>
 
             <SocialLinks>
                 {/* Replace # with your actual URLs */}
-                <SocialLink href="https://x.com/NexusSignalAI" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
+                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
                     <Twitter size={28} />
                 </SocialLink>
-                <SocialLink href="https://discord.gg/sPXD2vXz" target="_blank" rel="noopener noreferrer" aria-label="Discord">
-                     <MessageSquare size={28} /> {/* Using MessageSquare for Discord */}
+                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="Discord">
+                     <MessageSquare size={28} />
                 </SocialLink>
-                <SocialLink href="https://github.com/GaiusCaesarBC/Nexus-Signal" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
                     <Github size={28} />
                 </SocialLink>
-                 <SocialLink href="https://www.linkedin.com/in/cody-watkins-b740a1390/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                 <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
                     <Linkedin size={28} />
                 </SocialLink>
             </SocialLinks>
@@ -270,6 +318,4 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
-
-
 

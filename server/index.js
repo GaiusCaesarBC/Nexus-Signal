@@ -10,19 +10,16 @@ console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STR
 const app = express();
 
 // --- VERY EARLY CORS HEADER MIDDLEWARE ---
-// Apply this BEFORE anything else
+// Apply this BEFORE anything else to try and catch the OPTIONS preflight
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-
-  // --- ENSURE YOUR VERCEL URL IS LISTED HERE ---
   const allowedOrigins = [
-    'https://nexus-signal.vercel.app', // <<<=== MAKE SURE THIS LINE EXISTS AND IS CORRECT
+    'https://nexus-signal.vercel.app', // Your live Vercel frontend
     'http://localhost:3000',           // Your local development frontend (standard)
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Your Codespace FRONTEND URL (Port 3000)
     'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev' // Your Codespace FRONTEND URL if backend is on 8081
     // Add any other specific origins if needed
   ];
-  // ------------------------------------------
 
   console.log(`>>> Request Received: ${req.method} ${req.originalUrl} Origin: ${origin}`); // Log every request
 
@@ -31,8 +28,6 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else if (!origin) {
     console.log(">>> Request has no origin header.");
-    // Allow requests with no origin? Often needed for server-to-server or tools like Postman
-    // res.setHeader('Access-Control-Allow-Origin', '*'); // Less secure, use specific origins if possible
   } else {
     console.warn(`>>> Origin ${origin} not in allowedOrigins.`);
   }
@@ -61,7 +56,6 @@ connectDB();
 app.use(express.json({ extended: false }));
 
 // --- Import and Define API Routes ---
-// (Ensure these require statements are correct based on your file structure)
 console.log('[DEBUG index.js] Requiring route files...');
 const predictionRoutes = require('./routes/predictionRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -70,6 +64,7 @@ const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const waitlistRoutes = require('./routes/waitlistRoutes'); // <-- ADDED THIS LINE
 
 app.use('/api/predict', predictionRoutes);
 app.use('/api/users', userRoutes);
@@ -78,6 +73,7 @@ app.use('/api/copilot', copilotRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/waitlist', waitlistRoutes); // <-- ADDED THIS LINE
 // -----------------------------------
 
 // Define the Port (Using 8081, ensure Render is configured for this port)
