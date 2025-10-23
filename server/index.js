@@ -22,7 +22,7 @@ const app = express();
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
-    'https://nexus-signal.vercel.app', // <<<--- THIS IS THE FIX FOR THE LIVE SITE
+    'https://nexus-signal.vercel.app', // Vercel Frontend
     'http://localhost:3000',           // Your local development frontend (standard)
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Codespace Frontend
     'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
@@ -64,7 +64,7 @@ app.use('/api/copilot', require('./routes/copilotRoutes'));
 app.use('/api/news', require('./routes/newsRoutes'));
 app.use('/api/market-data', require('./routes/marketDataRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
-app.use('/api/waitlist', require('./routes/waitlistRoutes')); // <-- THIS IS THE FIX FOR THE ROUTE
+app.use('/api/waitlist', require('./routes/waitlistRoutes')); // <-- Includes waitlist
 
 // 7. Set port and listen.
 const PORT = process.env.PORT || 8081; // Using 8081 as it worked in Codespaces
