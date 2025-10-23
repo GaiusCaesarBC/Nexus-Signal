@@ -1,41 +1,48 @@
 const express = require('express');
 const router = express.Router();
-const Subscriber = require('../models/Subscriber'); // Import the new model
+const Subscriber = require('../models/Subscriber'); // Make sure this path is correct
 
-// @route   POST api/waitlist/join
+// @route   POST /api/waitlist/join
 // @desc    Add a new email to the waitlist
 // @access  Public
 router.post('/join', async (req, res) => {
-  const { email } = req.body;
+    const { email } = req.body;
 
-  // Basic email validation
-  if (!email || !/\S+@\S+\.\S+/.test(email)) {
-    return res.status(400).json({ msg: 'Please provide a valid email address.' });
-  }
+    console.log(`[Waitlist] Received request to add email: ${email}`);
 
-  try {
-    // Check if email already exists
-    let subscriber = await Subscriber.findOne({ email });
-
-    if (subscriber) {
-      // Email is already on the list, just send a success response
-      return res.status(200).json({ msg: 'You are already on our list!' });
+    // Simple validation
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        console.warn(`[Waitlist] Invalid email format: ${email}`);
+        return res.status(400).json({ msg: 'Please provide a valid email address.' });
     }
 
-    // If new, create and save the subscriber
-    subscriber = new Subscriber({
-      email,
-    });
+    try {
+        // Check if email already exists (case-insensitive)
+        let subscriber = await Subscriber.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
 
-    await subscriber.save();
+        if (subscriber) {
+            console.log(`[Waitlist] Email already exists: ${email}`);
+            // Send a 200 OK, but with a specific message
+            return res.status(200).json({ msg: 'You are already on the waitlist!' });
+        }
 
-    // Send success response
-    res.status(201).json({ msg: 'Success! You have been added to the waitlist.' });
+        // Email is new, create and save it
+        console.log(`[Waitlist] Email is new. Creating entry for: ${email}`);
+        subscriber = new Subscriber({
+            email: email.toLowerCase() // Store emails in lowercase
+        });
 
-  } catch (err) {
-    console.error('Waitlist Error:', err.message);
-    res.status(500).send('Server Error');
-  }
+        await subscriber.save();
+        console.log(`[Waitlist] Successfully saved new email: ${email}`);
+
+        // Send a 201 Created status
+        return res.status(201).json({ msg: 'Email successfully added to waitlist.' });
+
+    } catch (err) {
+        console.error('[Waitlist] Server error while saving email:', err.message);
+        return res.status(500).json({ msg: 'Server error. Please try again later.' });
+    }
 });
 
 module.exports = router;
+
