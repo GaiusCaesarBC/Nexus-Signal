@@ -5,9 +5,28 @@ body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: linear-gradient(180deg, #1A1E26 0%, #212936 100%);
+    /* --- START NEW BACKGROUND --- */
+    /* Base dark color */
+    background-color: #1A1E26; /* Dark base */
+
+    /* Layered gradients for glowing effect */
+    background-image:
+        /* Subtle Purple Glow - Bottom Right */
+        radial-gradient(ellipse 50% 50% at 90% 90%, rgba(155, 89, 182, 0.15) 0%, rgba(155, 89, 182, 0) 70%),
+        /* Subtle Orange Glow - Bottom Left */
+        radial-gradient(ellipse 50% 50% at 10% 90%, rgba(243, 156, 18, 0.15) 0%, rgba(243, 156, 18, 0) 70%),
+        /* Subtle Blue Glow - Top Center/Left */
+        radial-gradient(ellipse 60% 60% at 20% 10%, rgba(52, 152, 219, 0.2) 0%, rgba(52, 152, 219, 0) 70%),
+        /* Base dark gradient */
+        linear-gradient(180deg, #1A1E26 0%, #212936 100%);
+
+    /* Ensure background covers the whole area and doesn't repeat */
+    background-repeat: no-repeat;
+    background-attachment: fixed; /* Keep background fixed during scroll */
+    /* --- END NEW BACKGROUND --- */
     color: #ecf0f1;
     min-height: 100vh;
+    overflow-x: hidden; /* Prevent horizontal scrollbars */
 }
 
 code {
