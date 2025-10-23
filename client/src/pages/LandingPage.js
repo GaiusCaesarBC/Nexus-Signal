@@ -2,9 +2,9 @@ import React, { useState } from 'react'; // Import useState
 import styled, { keyframes } from 'styled-components';
 import { Send, Twitter, Linkedin, Github, MessageSquare } from 'lucide-react';
 import logo from '../assets/logo.png';
-import axios from 'axios'; // <-- Import axios
+import axios from 'axios'; // <-- 1. Import axios
 
-// --- API URL Definition ---
+// --- 2. API URL Definition ---
 // Define API URL based on environment
 const API_URL = process.env.NODE_ENV === 'production'
     ? 'https://nexus-signal-server.onrender.com'
@@ -24,7 +24,7 @@ const pulse = keyframes`
 `;
 
 
-// --- Styled Components ---
+// --- Styled Components (No changes here) ---
 const PageWrapper = styled.div`
   min-height: 100vh;
   display: flex;
@@ -162,6 +162,7 @@ const CtaText = styled.p`
   margin-bottom: 2.5rem;
 `;
 
+// --- 3. Styled Components for Messages ---
 const MessageBase = styled.p`
   font-weight: bold;
   margin-top: -1rem;
@@ -176,6 +177,7 @@ const ConfirmationMessage = styled(MessageBase)`
 const ErrorMessage = styled(MessageBase)`
   color: #e74c3c; // Red for error
 `;
+// ------------------------------------
 
 const SocialLinks = styled.div`
   display: flex;
@@ -206,13 +208,14 @@ const Footer = styled.footer`
 
 
 const LandingPage = () => {
-    // States for the form
+    // --- 3. Add States ---
     const [email, setEmail] = useState('');
     const [submitted, setSubmitted] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    // ---------------------
 
-    // --- NEW HANDLE SUBMIT FUNCTION ---
+    // --- 4. NEW HANDLE SUBMIT FUNCTION ---
     const handleSubmit = async (e) => {
         e.preventDefault(); // Prevent default form submission
         
@@ -263,6 +266,7 @@ const LandingPage = () => {
 
                 <CtaText>Get Early Access & Updates</CtaText>
                 
+                {/* 4. Update Form and Button States */}
                 <EmailForm onSubmit={handleSubmit}>
                     <EmailInput
                         type="email"
@@ -272,15 +276,15 @@ const LandingPage = () => {
                         onChange={(e) => setEmail(e.target.value)} 
                         // -------------------------
                         required
-                        disabled={loading}
+                        disabled={loading} // Disable input while loading
                     />
-                    <SubmitButton type="submit" disabled={loading}>
+                    <SubmitButton type="submit" disabled={loading}> {/* Disable button while loading */}
                         <Send size={18} />
                         {loading ? 'Submitting...' : 'Notify Me'}
                     </SubmitButton>
                 </EmailForm>
 
-                {/* Show Success or Error Message */}
+                {/* 4. Show Success or Error Message */}
                 {submitted && (
                     <ConfirmationMessage>
                         Thank you! You're on the list.

@@ -1,5 +1,4 @@
 import React from 'react';
-// --- Add useLocation hook ---
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import Navbar from './components/Navbar';
@@ -13,7 +12,7 @@ import Performance from './pages/Performance';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import Disclaimer from './pages/Disclaimer';
-import LandingPage from './pages/LandingPage';
+import LandingPage from './pages/LandingPage'; // Import the landing page
 
 const AppContainer = styled.div`
     width: 100%;
@@ -22,26 +21,34 @@ const AppContainer = styled.div`
     flex-direction: column;
 `;
 
+// --- FIX: Use $hasNavbar (transient prop) ---
 const MainContent = styled.main`
     flex-grow: 1;
     max-width: 1400px;
     width: 100%;
     margin: 0 auto;
-    padding: 0 1rem;
-    // Add padding top only if navbar is shown to prevent content jump
-    padding-top: ${props => props.hasNavbar ? 'calc(1rem + 60px)' : '1rem'}; // Adjust '60px' if navbar height changes
+    /* Adjust padding based on whether Navbar is present */
+    padding: ${props => props.$hasNavbar ? '2rem 1rem' : '0 1rem'};
+
+    /* On landing page, we remove top padding and allow full width */
+    ${props => !props.$hasNavbar && `
+        padding: 0;
+        max-width: 100%;
+    `}
 `;
 
-// --- Create a new component to handle conditional rendering ---
-function AppContent() {
+// Helper component to use react-router hooks
+const AppContent = () => {
     const location = useLocation();
-    const isLandingPage = location.pathname === '/landing'; // Check if current path is /landing
+    const isLandingPage = location.pathname === '/landing';
 
     return (
         <AppContainer>
-            {!isLandingPage && <Navbar />} {/* Conditionally render Navbar */}
-            {/* Pass prop to MainContent to adjust padding */}
-            <MainContent hasNavbar={!isLandingPage}>
+            {/* Conditionally render Navbar */}
+            {!isLandingPage && <Navbar />}
+            
+            {/* --- FIX: Pass prop as $hasNavbar --- */}
+            <MainContent $hasNavbar={!isLandingPage}>
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/register" element={<Register />} />
@@ -52,19 +59,19 @@ function AppContent() {
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/privacy" element={<Privacy />} />
                     <Route path="/disclaimer" element={<Disclaimer />} />
-                    <Route path="/landing" element={<LandingPage />} />
+                    <Route path="/landing" element={<LandingPage />} /> {/* Use the real component */}
                 </Routes>
             </MainContent>
-            {!isLandingPage && <Footer />} {/* Conditionally render Footer */}
+
+            {/* Conditionally render Footer */}
+            {!isLandingPage && <Footer />}
         </AppContainer>
     );
 }
 
-
 function App() {
     return (
         <Router>
-            {/* Render the new component that uses the location hook */}
             <AppContent />
         </Router>
     );
