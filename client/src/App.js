@@ -16,66 +16,65 @@ import LandingPage from './pages/LandingPage'; // Import the landing page
 
 const AppContainer = styled.div`
     width: 100%;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-`;
+        min-height: 100vh;
+            display: flex;
+                flex-direction: column;
+                `;
 
-// --- FIX: Use $hasNavbar (transient prop) ---
-const MainContent = styled.main`
-    flex-grow: 1;
-    max-width: 1400px;
-    width: 100%;
-    margin: 0 auto;
-    /* Adjust padding based on whether Navbar is present */
-    padding: ${props => props.$hasNavbar ? '2rem 1rem' : '0 1rem'};
+                // --- FIX: Use $hasNavbar (transient prop) ---
+                const MainContent = styled.main`
+                    flex-grow: 1;
+                        max-width: 1400px;
+                            width: 100%;
+                                margin: 0 auto;
+                                    /* Adjust padding based on whether Navbar is present */
+                                        padding: ${props => props.$hasNavbar ? '2rem 1rem' : '0 1rem'};
 
-    /* On landing page, we remove top padding and allow full width */
-    ${props => !props.$hasNavbar && `
-        padding: 0;
-        max-width: 100%;
-    `}
-`;
+                                            /* On landing page, we remove top padding and allow full width */
+                                                ${props => !props.$hasNavbar && `
+                                                        padding: 0;
+                                                                max-width: 100%;
+                                                                    `}
+                                                                    `;
 
-// Helper component to use react-router hooks
-const AppContent = () => {
-    const location = useLocation();
-    const isLandingPage = location.pathname === '/landing';
+                                                                    // Helper component to use react-router hooks
+                                                                    const AppContent = () => {
+                                                                        const location = useLocation();
+                                                                            const isLandingPage = location.pathname === '/landing';
 
-    return (
-        <AppContainer>
-            {/* Conditionally render Navbar */}
-            {!isLandingPage && <Navbar />}
-            
-            {/* --- FIX: Pass prop as $hasNavbar --- */}
-            <MainContent $hasNavbar={!isLandingPage}>
-                <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/about" element={<About />} />
-                    <Route path="/pricing" element={<Pricing />} />
-                    <Route path="/performance" element={<Performance />} />
-                    <Route path="/terms" element={<Terms />} />
-                    <Route path="/privacy" element={<Privacy />} />
-                    <Route path="/disclaimer" element={<Disclaimer />} />
-                    <Route path="/landing" element={<LandingPage />} /> {/* Use the real component */}
-                </Routes>
-            </MainContent>
+                                                                                return (
+                                                                                        <AppContainer>
+                                                                                                    {/* Conditionally render Navbar */}
+                                                                                                                {!isLandingPage && <Navbar />}
+                                                                                                                            
+                                                                                                                                        {/* --- FIX: Pass prop as $hasNavbar --- */}
+                                                                                                                                                    <MainContent $hasNavbar={!isLandingPage}>
+                                                                                                                                                                    <Routes>
+                                                                                                                                                                                        <Route path="/" element={<Dashboard />} />
+                                                                                                                                                                                                            <Route path="/register" element={<Register />} />
+                                                                                                                                                                                                                                <Route path="/login" element={<Login />} />
+                                                                                                                                                                                                                                                    <Route path="/about" element={<About />} />
+                                                                                                                                                                                                                                                                        <Route path="/pricing" element={<Pricing />} />
+                                                                                                                                                                                                                                                                                            <Route path="/performance" element={<Performance />} />
+                                                                                                                                                                                                                                                                                                                <Route path="/terms" element={<Terms />} />
+                                                                                                                                                                                                                                                                                                                                    <Route path="/privacy" element={<Privacy />} />
+                                                                                                                                                                                                                                                                                                                                                        <Route path="/disclaimer" element={<Disclaimer />} />
+                                                                                                                                                                                                                                                                                                                                                                            <Route path="/landing" element={<LandingPage />} /> {/* Use the real component */}
+                                                                                                                                                                                                                                                                                                                                                                                            </Routes>
+                                                                                                                                                                                                                                                                                                                                                                                                        </MainContent>
 
-            {/* Conditionally render Footer */}
-            {!isLandingPage && <Footer />}
-        </AppContainer>
-    );
-}
+                                                                                                                                                                                                                                                                                                                                                                                                                    {/* Conditionally render Footer */}
+                                                                                                                                                                                                                                                                                                                                                                                                                                {!isLandingPage && <Footer />}
+                                                                                                                                                                                                                                                                                                                                                                                                                                        </AppContainer>
+                                                                                                                                                                                                                                                                                                                                                                                                                                            );
+                                                                                                                                                                                                                                                                                                                                                                                                                                            }
 
-function App() {
-    return (
-        <Router>
-            <AppContent />
-        </Router>
-    );
-}
+                                                                                                                                                                                                                                                                                                                                                                                                                                            function App() {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                return (
+                                                                                                                                                                                                                                                                                                                                                                                                                                                        <Router>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <AppContent />
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </Router>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                );
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
 
-export default App;
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                export default App;
