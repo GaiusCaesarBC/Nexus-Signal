@@ -13,13 +13,15 @@ const app = express();
 // Apply this BEFORE anything else to try and catch the OPTIONS preflight
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+
+  // --- THE FIX IS HERE: ADDING YOUR VERCEL URL ---
   const allowedOrigins = [
-    'https://nexus-signal.vercel.app', // Your live Vercel frontend
+    'https://nexus-signal.vercel.app', // <<<=== THIS IS THE FIX
     'http://localhost:3000',           // Your local development frontend (standard)
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Your Codespace FRONTEND URL (Port 3000)
-    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev' // Your Codespace FRONTEND URL if backend is on 8081
-    // Add any other specific origins if needed
+    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev' // Your Codespace FRONTEND URL (if backend is on 8081)
   ];
+  // ------------------------------------------
 
   console.log(`>>> Request Received: ${req.method} ${req.originalUrl} Origin: ${origin}`); // Log every request
 
@@ -34,8 +36,7 @@ app.use((req, res, next) => {
 
   // Set other necessary CORS headers for preflight OPTIONS requests
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  // Make sure 'x-auth-token' is included here if your AuthContext sends it
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,x-auth-token,Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,x-auth-token,Authorization'); // Ensure x-auth-token is allowed
   res.setHeader('Access-Control-Allow-Credentials', true);
 
   // If this is an OPTIONS request, end the response here after setting headers
@@ -55,6 +56,7 @@ connectDB();
 // Init Middleware (Body Parser)
 app.use(express.json({ extended: false }));
 
+
 // --- Import and Define API Routes ---
 console.log('[DEBUG index.js] Requiring route files...');
 const predictionRoutes = require('./routes/predictionRoutes');
@@ -64,21 +66,42 @@ const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-const waitlistRoutes = require('./routes/waitlistRoutes'); // <-- ADDED THIS LINE
+const waitlistRoutes = require('./routes/waitlistRoutes'); // <-- Ensure this is here
 
 app.use('/api/predict', predictionRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/watchlist', watchlistRoutes);
-app.use('/api/copilot', copilotRoutes);
-app.use('/api/news', newsRoutes);
-app.use('/api/market-data', marketDataRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/waitlist', waitlistRoutes); // <-- ADDED THIS LINE
-// -----------------------------------
+app.key in your `.env` file, but the Node.js process isn't picking it up when that specific file (`paymentRoutes.js`) is loaded.
 
-// Define the Port (Using 8081, ensure Render is configured for this port)
-const PORT = process.env.PORT || 8081;
+Let's try the most common fixes for this:
 
-// Start the Server
-app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
+**1. Verify `.env` File Location and Name:**
+* Make absolutely sure the file containing your Stripe key is located at `/workspaces/Nexus-Signal/server/.env`.
+* Ensure the filename is exactly `.env` (starts with a dot, all lowercase).
+
+**2. Verify `.env` Content:**
+* Open `server/.env`.
+* Confirm the line looks like this (with your actual key): `STRIPE_SECRET_KEY=sk_test_YOUR_KEY_HERE`
+* There should be **no quotes** around the key.
+* There should be **no extra spaces** before `STRIPE_SECRET_KEY` or around the `=`.
+* Make sure you **saved** the file after adding the key.
+
+**3. Restart the Codespace Environment:** Sometimes, changes to `.env` files require a more complete reload of the environment than just restarting the Node.js process.
+* **Action:**
+    1.  Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`).
+    2.  Type `Reload Window` and select the command **"Developer: Reload Window"**.
+    3.  Wait for the Codespace to fully reload.
+    4.  Go back to your `server` terminal and try `npm start` again. See if the `STRIPE_SECRET_KEY value:` log now shows your key instead of `undefined`.
+
+**4. Try Moving `dotenv.config()` (Temporary Diagnostic):**
+* If reloading the window doesn't work, let's try explicitly loading the `.env` file inside `paymentRoutes.js` itself just to see if it helps. This isn't the standard way, but it helps diagnose module loading timing issues.
+* **Action:**
+    1.  Edit `server/routes/paymentRoutes.js`.
+    2.  Add `require('dotenv').config();` at the very top of this file, *before* everything else.
+        ```javascript
+        require('dotenv').config(); // <-- ADD THIS LINE AT THE TOP
+        const express = require('express');
+        const router = express.Router();
+        // ... rest of the file ...
+        
 
