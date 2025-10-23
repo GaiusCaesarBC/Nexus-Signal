@@ -6,14 +6,10 @@ import { loadStripe } from '@stripe/stripe-js';
 import { AuthContext } from '../context/AuthContext';
 
 // --- Stripe Initialization ---
-// Ensure you have this environment variable set in client/.env
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
-
-// Define API URL based on environment (should match AuthContext)
 const API_URL = process.env.NODE_ENV === 'production'
     ? 'https://nexus-signal-server.onrender.com'
-    // Ensure this is your correct Codespace forwarded URL for the BACKEND (e.g., port 8081)
-    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
+    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'; // Ensure port matches backend (e.g., 8081)
 
 
 // --- Animations ---
@@ -50,17 +46,20 @@ const Subtitle = styled.p`
 const TiersContainer = styled.div`
     display: flex;
     justify-content: center;
-    gap: 2.5rem; // Increased gap slightly for glow
+    gap: 2.5rem;
     flex-wrap: wrap;
     align-items: stretch;
-    padding: 1rem; // Add padding to container to ensure glow isn't cut off
+    padding: 1rem 0 2rem 0; // Add padding for glow
 `;
 
+// --- START: TierCard modifications for glow ---
 const TierCard = styled.div`
     background: rgba(44, 62, 80, 0.85);
     backdrop-filter: blur(10px);
     border-radius: 12px;
-    border: 1px solid rgba(52, 73, 94, 0.5); // Keep a subtle border
+    /* Base border for all cards */
+    border: 1px solid rgba(52, 73, 94, 0.5);
+    /* Base shadow for all cards */
     box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
     width: 100%;
     max-width: 340px;
@@ -69,76 +68,59 @@ const TierCard = styled.div`
     flex-direction: column;
     align-items: center;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
-    position: relative; // Needed for pseudo-element positioning
-    /* overflow: hidden; */ // <-- REMOVE THIS LINE
- 
-    /* Glow effect using pseudo-element */
-    &::before {
-        content: '';
-        position: absolute;
-        top: -2px; left: -2px; right: -2px; bottom: -2px; // Position slightly outside border
-        border-radius: inherit; // Match parent's border-radius
-        z-index: -1; // Place behind the main card content
-        opacity: 0; // Hidden by default
-        transition: opacity 0.3s ease-in-out;
-        /* Apply gradient only if $glowColor prop is passed */
-        background: ${props => props.$glowColor ? `radial-gradient(ellipse at center, ${props.$glowColor} 0%, transparent 70%)` : 'none'};
-        filter: blur(15px); // Create the soft glow effect
-    }
+    position: relative;
+    /* overflow: hidden; --- This was removed in a previous step to allow badges/glow */
 
-    /* Show glow on cards that have the $glowColor prop */
+    /* Apply conditional glow using multi-layer box-shadow */
     ${props => props.$glowColor && `
-        &::before {
-            opacity: 0.6; // Make glow visible
-        }
+        border-color: ${props.$glowColor}; /* Make border match glow color */
+        box-shadow: 
+            0 0 8px ${props.$glowColor}, /* Inner glow */
+            0 0 15px ${props.$glowColor}, /* Outer glow */
+            0 15px 35px rgba(0, 0, 0, 0.7); /* Original dark shadow */
     `}
 
     &:hover {
         transform: translateY(-10px);
-        box-shadow: 0 25px 45px rgba(0, 0, 0, 0.8); // Enhance shadow on hover
-
-        /* Enhance glow slightly on hover for cards that have it */
-        ${props => props.$glowColor && `
-            &::before {
-                opacity: 0.8;
-            }
-        `}
+        box-shadow: 
+            /* Enhanced glow on hover, if $glowColor is set */
+            ${props => props.$glowColor ? `
+                0 0 15px ${props.$glowColor},
+                0 0 30px ${props.$glowColor},
+            ` : ''}
+            /* Enhanced dark shadow on hover */
+            0 25px 45px rgba(0, 0, 0, 0.8);
     }
 `;
+// --- END: TierCard modifications ---
 
-
-const PopularBadge = styled.div`
+const badgeBase = styled.div`
     position: absolute;
     top: -15px;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    z-index: 1;
+`;
+
+const PopularBadge = styled(badgeBase)`
     background: linear-gradient(45deg, #f39c12, #e67e22);
     color: #1c2833;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: bold;
     box-shadow: 0 5px 10px rgba(243, 156, 18, 0.4);
-    z-index: 1;
 `;
 
-// --- NEW BADGE FOR ELITE ---
-const EliteBadge = styled.div`
-    position: absolute;
-    top: -15px;
-    background: linear-gradient(45deg, #9b59b6, #8e44ad); /* Purple gradient */
-    color: #ecf0f1; /* Light text for contrast */
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: bold;
-    box-shadow: 0 5px 10px rgba(155, 89, 182, 0.4); /* Purple glow */
-    z-index: 1;
+// --- NEW: Elite Badge Style ---
+const EliteBadge = styled(badgeBase)`
+    background: linear-gradient(45deg, #9b59b6, #8e44ad);
+    color: #ecf0f1;
+    box-shadow: 0 5px 10px rgba(155, 89, 182, 0.4);
 `;
-// --- END NEW BADGE ---
 
 const TierTitle = styled.h2`
     color: #ecf0f1;
     font-size: 1.6rem;
-    margin-top: 0;
+    margin-top: 0.5rem; /* Added margin to account for badge */
     margin-bottom: 0.5rem;
 `;
 
@@ -202,7 +184,7 @@ const Button = styled.button`
     margin-top: auto;
     width: 100%;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    position: relative; // Ensure button content is above potential pseudo-elements
+    position: relative;
     z-index: 1;
 
     &:hover {
@@ -245,7 +227,6 @@ const Pricing = () => {
               throw new Error('Stripe.js failed to load.');
             }
 
-            // Add cache-busting parameter
             const cacheBustUrl = `${API_URL}/api/payments/create-checkout-session?_t=${new Date().getTime()}`;
             const response = await axios.post(cacheBustUrl,
                 { priceId, planName },
@@ -276,8 +257,8 @@ const Pricing = () => {
     };
 
     // Define glow colors
-    const premiumGlowColor = 'rgba(243, 156, 18, 0.7)'; // Brighter orange for glow
-    const eliteGlowColor = 'rgba(155, 89, 182, 0.7)'; // Brighter purple for glow
+    const premiumGlowColor = '#f39c12'; // Orange
+    const eliteGlowColor = '#9b59b6'; // Purple
 
     return (
         <PricingContainer>
@@ -329,7 +310,7 @@ const Pricing = () => {
 
                 {/* Elite Tier (Purple glow) */}
                 <TierCard $glowColor={eliteGlowColor}> {/* Pass glow color as transient prop */}
-                    <EliteBadge>Best Deal</EliteBadge> {/* --- ADDED THIS LINE --- */}
+                    <EliteBadge>Best Deal</EliteBadge>
                     <TierTitle>Elite</TierTitle>
                      <TierDescription>For the Ultimate Market Edge</TierDescription>
                     <TierPrice>$125 <span>/ month</span></TierPrice>
@@ -357,6 +338,4 @@ const Pricing = () => {
 };
 
 export default Pricing;
-
-
 
