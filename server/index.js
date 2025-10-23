@@ -25,7 +25,7 @@ app.use((req, res, next) => {
     'https://nexus-signal.vercel.app', // Vercel Frontend
     'http://localhost:3000',           // Your local development frontend (standard)
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Codespace Frontend
-    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
+    'https-refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
   ];
 
   console.log(`>>> Request Received: ${req.method} ${req.originalUrl} Origin: ${origin}`); // Log every request
