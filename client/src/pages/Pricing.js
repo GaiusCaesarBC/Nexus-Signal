@@ -52,7 +52,6 @@ const TiersContainer = styled.div`
     padding: 1rem 0 2rem 0; // Add padding for glow
 `;
 
-// --- START: TierCard modifications for glow ---
 const TierCard = styled.div`
     background: rgba(44, 62, 80, 0.85);
     backdrop-filter: blur(10px);
@@ -92,7 +91,6 @@ const TierCard = styled.div`
             0 25px 45px rgba(0, 0, 0, 0.8);
     }
 `;
-// --- END: TierCard modifications ---
 
 const badgeBase = styled.div`
     position: absolute;
@@ -110,7 +108,6 @@ const PopularBadge = styled(badgeBase)`
     box-shadow: 0 5px 10px rgba(243, 156, 18, 0.4);
 `;
 
-// --- NEW: Elite Badge Style ---
 const EliteBadge = styled(badgeBase)`
     background: linear-gradient(45deg, #9b59b6, #8e44ad);
     color: #ecf0f1;
@@ -315,6 +312,7 @@ const Pricing = () => {
                      <TierDescription>For the Ultimate Market Edge</TierDescription>
                     <TierPrice>$125 <span>/ month</span></TierPrice>
                     <FeatureList>
+                        {/* THIS IS THE SECTION WHERE THE ERROR WAS PASTED */}
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> All Premium Features +</FeatureItem>
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Ultra-Low Latency Data</FeatureItem>
                         <FeatureItem><CheckCircle color="#2ecc71" size={18}/> API Access</FeatureItem>
