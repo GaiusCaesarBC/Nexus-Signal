@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "cors": "^2.8.5",
     "mongodb": "^6.20.0",
     "stripe": "^19.1.0"
   }

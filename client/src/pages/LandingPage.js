@@ -2,9 +2,9 @@ import React, { useState } from 'react'; // Import useState
 import styled, { keyframes } from 'styled-components';
 import { Send, Twitter, Linkedin, Github, MessageSquare } from 'lucide-react';
 import logo from '../assets/logo.png';
-import axios from 'axios'; // <-- 1. Import axios
+import axios from 'axios'; // <-- Import axios
 
-// --- 2. API URL Definition ---
+// --- API URL Definition ---
 // Define API URL based on environment
 const API_URL = process.env.NODE_ENV === 'production'
     ? 'https://nexus-signal-server.onrender.com'
@@ -162,7 +162,6 @@ const CtaText = styled.p`
   margin-bottom: 2.5rem;
 `;
 
-// --- 3. Styled Components for Messages ---
 const MessageBase = styled.p`
   font-weight: bold;
   margin-top: -1rem;
@@ -177,7 +176,6 @@ const ConfirmationMessage = styled(MessageBase)`
 const ErrorMessage = styled(MessageBase)`
   color: #e74c3c; // Red for error
 `;
-// ------------------------------------
 
 const SocialLinks = styled.div`
   display: flex;
@@ -208,14 +206,13 @@ const Footer = styled.footer`
 
 
 const LandingPage = () => {
-    // --- 3. Add States ---
+    // States for the form
     const [email, setEmail] = useState('');
     const [submitted, setSubmitted] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    // ---------------------
 
-    // --- 4. NEW HANDLE SUBMIT FUNCTION ---
+    // --- UPDATED HANDLE SUBMIT FUNCTION ---
     const handleSubmit = async (e) => {
         e.preventDefault(); // Prevent default form submission
         
@@ -266,7 +263,7 @@ const LandingPage = () => {
 
                 <CtaText>Get Early Access & Updates</CtaText>
                 
-                {/* 4. Update Form and Button States */}
+                {/* Update Form and Button States */}
                 <EmailForm onSubmit={handleSubmit}>
                     <EmailInput
                         type="email"
@@ -284,7 +281,7 @@ const LandingPage = () => {
                     </SubmitButton>
                 </EmailForm>
 
-                {/* 4. Show Success or Error Message */}
+                {/* Show Success or Error Message */}
                 {submitted && (
                     <ConfirmationMessage>
                         Thank you! You're on the list.
