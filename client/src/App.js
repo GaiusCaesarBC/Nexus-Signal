@@ -11,7 +11,8 @@ import Pricing from './pages/Pricing';
 import Performance from './pages/Performance';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
-import Disclaimer from './pages/Disclaimer'; // Import the new Disclaimer page
+import Disclaimer from './pages/Disclaimer';
+import LandingPage from './pages/LandingPage'; // <-- IMPORT HERE
 
 const AppContainer = styled.div`
     width: 100%;
@@ -43,7 +44,8 @@ function App() {
                         <Route path="/performance" element={<Performance />} />
                         <Route path="/terms" element={<Terms />} />
                         <Route path="/privacy" element={<Privacy />} />
-                        <Route path="/disclaimer" element={<Disclaimer />} /> {/* Use the real component */}
+                        <Route path="/disclaimer" element={<Disclaimer />} />
+                        <Route path="/landing" element={<LandingPage />} /> {/* <-- ROUTE HERE */}
                     </Routes>
                 </MainContent>
                 <Footer />
@@ -53,4 +55,3 @@ function App() {
 }
 
 export default App;
-
