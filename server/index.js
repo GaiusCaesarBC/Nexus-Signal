@@ -1,10 +1,10 @@
 // 1. Load dotenv *simply*. This works for local/Codespaces.
 // On Render, this will be skipped, and Render's env vars will be used.
-require('dotenv').config(); 
+require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');
 const path = require('path');
-const cors = require('cors'); // Required for the fix
+const cors = require('cors'); // Ensure this is present and the 'cors' package is installed!
 
 // 2. Log key status (will use Render's env vars on live)
 console.log(`[DEBUG index.js Start] CWD: ${process.cwd()}, Dirname: ${__dirname}`);
@@ -12,39 +12,37 @@ console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STR
 
 const app = express();
 
-// --- START Recommended CORS Fix (using the standard 'cors' package) ---
+// --- START SIMPLIFIED CORS Fix (full file provided below) ---
 // Define the allowed origin(s) for your frontend
 const allowedOrigins = [
-  'https://nexus-signal.vercel.app', // Vercel Frontend (The fix is primarily here)
+  'https://nexus-signal.vercel.app', // Vercel Frontend (Ensure this is exact)
   'http://localhost:3000',           // Your local development frontend (standard)
+  // Add any other specific development origins if needed
   'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Codespace Frontend
   'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
 ];
 
-const corsOptions = {
+// Use the 'cors' middleware BEFORE any routes are defined.
+// This simplified setup explicitly checks the origin.
+app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    // or if the origin is in our allowed list
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      // Log the rejected origin for debugging on Render logs
       console.error(`CORS Reject: Origin ${origin} not in allowed list.`);
       callback(new Error('Not allowed by CORS'), false);
     }
   },
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true, // Important if you use cookies or auth tokens
-  optionsSuccessStatus: 204 // For preflight requests
-};
-
-app.use(cors(corsOptions)); // Use the 'cors' middleware with your options
-// --- END Recommended CORS Fix ---
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Explicitly list methods
+  credentials: true, // Only if your frontend sends cookies or authorization headers
+  optionsSuccessStatus: 204 // Good for preflight
+}));
+// --- END SIMPLIFIED CORS Fix ---
 
 
 // 4. Connect DB and add other middleware.
 connectDB();
-app.use(express.json({ extended: false }));
+app.use(express.json({ extended: false })); // This should come AFTER CORS middleware
 
 // 5. Require and use routes.
 console.log('[DEBUG index.js] Requiring route files...');
@@ -59,5 +57,5 @@ app.use('/api/waitlist', require('./routes/waitlistRoutes')); // <-- Includes wa
 
 // 6. Set port and listen.
 // Render provides its own PORT env var, which this will use.
-const PORT = process.env.PORT || 8081; 
+const PORT = process.env.PORT || 8081;
 app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
