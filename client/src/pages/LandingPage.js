@@ -5,10 +5,10 @@ import logo from '../assets/logo.png';
 import axios from 'axios'; // <-- Import axios
 
 // --- API URL Definition ---
-// Define API URL based on environment (should match AuthContext/Pricing)
+// Define API URL based on environment
 const API_URL = process.env.NODE_ENV === 'production'
     ? 'https://nexus-signal-server.onrender.com'
-    // Ensure this is your correct Codespace forwarded URL for the BACKEND (e.g., port 8081)
+    // Ensure this is your correct forwarded URL for the BACKEND (e.g., port 8081)
     : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
 
 // --- Animations ---
@@ -32,7 +32,7 @@ const PageWrapper = styled.div`
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  /* Removed background override - will now inherit from body */
+  /* Will inherit the complex gradient from index.css */
   color: #ecf0f1;
   text-align: center;
   overflow: hidden;
@@ -61,12 +61,11 @@ const BrandName = styled.h1`
 const HeroSection = styled.section`
   max-width: 700px;
   animation: ${fadeIn} 1s ease-out 0.2s backwards;
-  /* Add a subtle background to make text readable */
   background: rgba(26, 30, 38, 0.5); /* Semi-transparent dark layer */
-  padding: 1.5rem 2.5rem; /* Added more horizontal padding */
-  border-radius: 12px; /* Soften radius */
-  backdrop-filter: blur(3px); /* Optional: slight blur */
-  margin-bottom: 2rem; /* Add margin below hero */
+  padding: 1.5rem 2.5rem;
+  border-radius: 12px;
+  backdrop-filter: blur(3px);
+  margin-bottom: 2rem;
   /* Glowing blue border */
   border: 1px solid rgba(52, 152, 219, 0.5);
   box-shadow: 0 0 20px 5px rgba(52, 152, 219, 0.2);
@@ -118,8 +117,8 @@ const EmailInput = styled.input`
   background-color: #34495e;
   color: #ecf0f1;
   font-size: 1rem;
-  min-width: 250px; // Ensure decent width
-  flex-grow: 1; // Allow input to grow
+  min-width: 250px;
+  flex-grow: 1;
 
   &:focus {
     outline: none;
@@ -147,10 +146,10 @@ const SubmitButton = styled.button`
   &:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
-    animation-play-state: paused; // Pause animation on hover
+    animation-play-state: paused;
   }
   
-  &:disabled { // Style for loading state
+  &:disabled {
     background: #7f8c8d;
     cursor: not-allowed;
     animation: none;
@@ -163,7 +162,6 @@ const CtaText = styled.p`
   margin-bottom: 2.5rem;
 `;
 
-// --- Updated Message Components ---
 const MessageBase = styled.p`
   font-weight: bold;
   margin-top: -1rem;
@@ -178,8 +176,6 @@ const ConfirmationMessage = styled(MessageBase)`
 const ErrorMessage = styled(MessageBase)`
   color: #e74c3c; // Red for error
 `;
-// ---------------------------------
-
 
 const SocialLinks = styled.div`
   display: flex;
@@ -210,18 +206,21 @@ const Footer = styled.footer`
 
 
 const LandingPage = () => {
+    // States for the form
     const [email, setEmail] = useState('');
     const [submitted, setSubmitted] = useState(false);
-    const [error, setError] = useState(''); // State for errors
-    const [loading, setLoading] = useState(false); // State for loading
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
 
+    // --- NEW HANDLE SUBMIT FUNCTION ---
     const handleSubmit = async (e) => {
-        e.preventDefault();
+        e.preventDefault(); // Prevent default form submission
         
         // Reset states
         setSubmitted(false);
         setError('');
 
+        // Simple validation
         if (!email || !/\S+@\S+\.\S+/.test(email)) {
             setError('Please enter a valid email address.');
             return;
@@ -230,15 +229,15 @@ const LandingPage = () => {
         setLoading(true); // Disable button
 
         try {
-            // --- Send email to backend ---
+            // Send email to backend API endpoint
             const res = await axios.post(`${API_URL}/api/waitlist/join`, { email });
             
             console.log(res.data.msg); // Log success message from server
-            setSubmitted(true);
-            setEmail('');
+            setSubmitted(true); // Show success message
+            setEmail(''); // Clear input
         
         } catch (err) {
-            // Handle errors from the server
+            // Handle errors from the server (like "Email already exists" or 500)
             const errMsg = err.response?.data?.msg || 'An error occurred. Please try again.';
             console.error('Waitlist submit error:', errMsg);
             setError(errMsg);
@@ -246,6 +245,7 @@ const LandingPage = () => {
             setLoading(false); // Re-enable button
         }
     };
+    // ------------------------------------
 
     return (
         <PageWrapper>
@@ -268,7 +268,9 @@ const LandingPage = () => {
                         type="email"
                         placeholder="Enter your email address"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)} // <--- THIS WAS THE FIX
+                        // --- TYPO FIX IS HERE ---
+                        onChange={(e) => setEmail(e.target.value)} 
+                        // -------------------------
                         required
                         disabled={loading}
                     />
