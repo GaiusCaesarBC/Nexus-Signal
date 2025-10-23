@@ -1,31 +1,25 @@
-// 1. Load dotenv *first* and give it the explicit path.
-const path = require('path');
-const dotenvResult = require('dotenv').config({ path: path.resolve(__dirname, './.env') });
-
-// 2. Log the result of the dotenv load immediately.
-if (dotenvResult.error) {
-  console.error('[DEBUG index.js] Error loading .env file:', dotenvResult.error);
-} else {
-  console.log('[DEBUG index.js] dotenv.config() successful.');
-  // Check for the key here to confirm it's loaded
-  console.log(`[DEBUG index.js] STRIPE_SECRET_KEY loaded?: ${process.env.STRIPE_SECRET_KEY ? 'Yes' : 'No'}`);
-}
-
-// 3. Now, require all other modules *after* dotenv has run.
+// 1. Load dotenv *simply*. This works for local/Codespaces.
+// On Render, this will be skipped, and Render's env vars will be used.
+require('dotenv').config(); 
 const express = require('express');
 const connectDB = require('./config/db');
-const cors = require('cors');
+const path = require('path');
+const cors = require('cors'); // Keep require
+
+// 2. Log key status (will use Render's env vars on live)
+console.log(`[DEBUG index.js Start] CWD: ${process.cwd()}, Dirname: ${__dirname}`);
+console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STRIPE_SECRET_KEY ? 'Yes' : 'No'}`);
 
 const app = express();
 
-// 4. Add the CORS middleware (the manual one we built).
+// 3. Add the CORS middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
     'https://nexus-signal.vercel.app', // Vercel Frontend
     'http://localhost:3000',           // Your local development frontend (standard)
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Codespace Frontend
-    'https-refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
+    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace Frontend (Port 8081)
   ];
 
   console.log(`>>> Request Received: ${req.method} ${req.originalUrl} Origin: ${origin}`); // Log every request
@@ -51,11 +45,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// 5. Connect DB and add other middleware.
+// 4. Connect DB and add other middleware.
 connectDB();
 app.use(express.json({ extended: false }));
 
-// 6. Require and use routes.
+// 5. Require and use routes.
 console.log('[DEBUG index.js] Requiring route files...');
 app.use('/api/predict', require('./routes/predictionRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
@@ -66,7 +60,8 @@ app.use('/api/market-data', require('./routes/marketDataRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/waitlist', require('./routes/waitlistRoutes')); // <-- Includes waitlist
 
-// 7. Set port and listen.
-const PORT = process.env.PORT || 8081; // Using 8081 as it worked in Codespaces
+// 6. Set port and listen.
+// Render provides its own PORT env var, which this will use.
+const PORT = process.env.PORT || 8081; 
 app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
 
