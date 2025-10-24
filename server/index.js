@@ -17,7 +17,8 @@ const allowedOrigins = [
   'https://nexus-signal.vercel.app', // Primary Frontend
   'http://localhost:3000',           // Local Development
   'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev', // Codespace 3000
-  'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'  // Codespace 8081
+  'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev',  // Codespace 8081
+  'https://nexus-signal.onrender.com' // <--- YOUR CORRECT BACKEND URL ADDED HERE
 ];
 
 // This MUST be before any other app.use() or route definitions
