@@ -78,6 +78,12 @@ app.use('/api/market-data', require('./routes/marketDataRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/waitlist', require('./routes/waitlistRoutes'));
 
+// --- START: Simple message for the root URL ---
+app.get('/', (req, res) => {
+  res.send('Nexus Signal AI Backend is running!');
+});
+// --- END: Simple message for the root URL ---
+
 // 6. Set port and listen.
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
