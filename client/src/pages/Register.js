@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { AuthContext } from '../context/AuthContext';
-import { UserPlus } from 'lucide-react';
+import { UserPlus } from 'lucide-react'; // Assuming lucide-react is installed
 
 const RegisterContainer = styled.div`
     display: flex;
@@ -73,21 +73,30 @@ const ErrorMessage = styled.p`
 `;
 
 const Register = () => {
-    const [formData, setFormData] = useState({ username: '', password: '', password2: '' });
+    // --- UPDATED STATE TO INCLUDE 'email' ---
+    const [formData, setFormData] = useState({ username: '', email: '', password: '', password2: '' });
     const [error, setError] = useState('');
-    const { register } = useContext(AuthContext);
+    const { register, user } = useContext(AuthContext); // Added 'user' to check if already logged in
     const navigate = useNavigate();
 
-    const { username, password, password2 } = formData;
+    // Destructure email along with other fields
+    const { username, email, password, password2 } = formData;
+
+    // Redirect if user is already logged in
+    // This is optional, but often good UX
+    // useEffect(() => {
+    //     if (user) {
+    //         navigate('/dashboard'); // Or wherever logged-in users go
+    //     }
+    // }, [user, navigate]);
 
     const onChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // --- START OF DEBUG LOGGING ---
         console.log('--- New Registration Submission ---');
-        
+        console.log('DEBUG: Submitting with data:', { username, email, password }); // Log all submitted data
 
         if (password !== password2) {
             console.error('DEBUG: Passwords do not match.');
@@ -103,21 +112,27 @@ const Register = () => {
 
         try {
             console.log('DEBUG: Attempting to call register function from context...');
-            await register(username, password);
-            console.log('DEBUG: Register function from context completed successfully.');
-            
-            console.log('DEBUG: Navigating to login page...');
-            navigate('/login');
-            console.log('DEBUG: Navigation complete.');
+            // --- UPDATED CALL TO REGISTER FUNCTION TO INCLUDE 'email' ---
+            const result = await register(username, email, password); // Pass email here
+
+            if (result.success) {
+                console.log('DEBUG: Register function from context completed successfully.');
+                // Optionally navigate to dashboard if auto-login successful, otherwise to login
+                console.log('DEBUG: Navigation to login page after successful registration...');
+                navigate('/login');
+                console.log('DEBUG: Navigation complete.');
+            } else {
+                console.error('DEBUG: Registration failed with backend error:', result.error);
+                setError(result.error || 'Registration failed. Please try again.');
+            }
         } catch (err) {
             console.error('DEBUG: An error was caught in handleSubmit on the live site.');
             console.error('DEBUG: Full error object:', err);
-            
+
             const errorMessage = err.response?.data?.msg || err.message || 'An unexpected error occurred.';
             setError(errorMessage);
             console.error('DEBUG: Error message set to:', errorMessage);
         }
-        // --- END OF DEBUG LOGGING ---
     };
 
     return (
@@ -129,6 +144,15 @@ const Register = () => {
                     placeholder="Username"
                     name="username"
                     value={username}
+                    onChange={onChange}
+                    required
+                />
+                {/* --- NEW EMAIL INPUT FIELD --- */}
+                <Input
+                    type="email" // Use type="email" for better mobile keyboard and basic browser validation
+                    placeholder="Email Address"
+                    name="email"
+                    value={email}
                     onChange={onChange}
                     required
                 />
@@ -161,6 +185,3 @@ const Register = () => {
 };
 
 export default Register;
-
-    
-
