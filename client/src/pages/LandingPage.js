@@ -7,10 +7,11 @@ import axios from 'axios'; // <-- Import axios
 // --- API URL Definition ---
 // Define API URL based on environment
 const API_URL = process.env.NODE_ENV === 'production'
-    ? 'https://nexus-signal-server.onrender.com'
+    ? 'https://nexus-signal.onrender.com' // <--- CORRECTED THIS LINE!
     // Ensure this is your correct forwarded URL for the BACKEND (e.g., port 8081)
     : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
 
+// ... (the rest of your LandingPage.js code) ...
 // --- Animations ---
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(20px); }
