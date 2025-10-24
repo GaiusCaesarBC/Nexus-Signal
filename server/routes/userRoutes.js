@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { check, validationResult } = require('express-validator');
 const User = require('../models/User');
-const auth = require('../../middleware/authMiddleware'); // CORRECTED: Pointing to authMiddleware.js
+const auth = require('../middleware/authMiddleware'); // <--- CORRECTED PATH
 
 // @route   POST api/users/register
 // @desc    Register a new user
