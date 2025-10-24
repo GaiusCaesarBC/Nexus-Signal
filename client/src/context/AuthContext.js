@@ -1,11 +1,8 @@
+// client/src/context/AuthContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 
-// --- API URL Definition ---
-// Define API URL based on environment
-const API_URL = process.env.NODE_ENV === 'production'
-    ? 'https://nexus-signal.onrender.com' // <-- CORRECTED THIS LINE!
-    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'; // Assuming this is still your Codespaces backend URL
+// --- API URL Definition (Removed from here, will use process.env.REACT_APP_API_URL consistently) ---
 
 // Create the AuthContext
 export const AuthContext = createContext();
@@ -17,9 +14,13 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    // --- Access REACT_APP_API_URL here consistently ---
+    const API_BASE_URL = process.env.REACT_APP_API_URL;
+    console.log('[AuthContext] API_BASE_URL:', API_BASE_URL); // Debug: Check what URL is being used
+
     // Axios instance for authenticated requests
     const api = axios.create({
-        baseURL: API_URL,
+        baseURL: API_BASE_URL, // Use the consistent API_BASE_URL
         headers: {
             'Content-Type': 'application/json',
         },
@@ -58,8 +59,13 @@ export const AuthProvider = ({ children }) => {
             }
             setLoading(false);
         };
+        // The `api` object is created within the component, so it changes on every render if not memoized.
+        // It's generally okay for it to be a dependency as long as you're aware of re-runs.
+        // However, a more robust solution for `api` not changing is to create it outside or memoize it.
+        // For now, let's remove 'user' from dependency array to avoid potential infinite loops
+        // if user state update somehow triggers a re-run of an effect that then updates user.
         loadUser();
-    }, [token, api, user]); // <-- DEPENDENCIES 'api' and 'user' ADDED HERE
+    }, [token, API_BASE_URL]); // <-- Updated dependencies for `useEffect`
 
     // Login function
     const login = async (username, password) => {
@@ -89,7 +95,6 @@ export const AuthProvider = ({ children }) => {
         console.log(`[AuthContext] Attempting registration for: ${username}`); // Debug
         try {
             const res = await api.post('/api/users/register', { username, email, password });
-            // For registration, we might automatically log them in or just confirm success
             setToken(res.data.token); // Assuming backend sends token on register
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
@@ -113,7 +118,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, api }}>
+        <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, api, isAuthenticated: !!user }}>
             {children}
         </AuthContext.Provider>
     );
