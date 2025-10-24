@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }) => {
             setLoading(false);
         };
         loadUser();
-    }, [token]); // Re-run if token changes
+    }, [token, api, user]); // <-- DEPENDENCIES 'api' and 'user' ADDED HERE
 
     // Login function
     const login = async (username, password) => {
