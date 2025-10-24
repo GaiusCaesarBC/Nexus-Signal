@@ -300,16 +300,16 @@ const LandingPage = () => {
 
             <SocialLinks>
                 {/* Replace # with your actual URLs */}
-                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
+                <SocialLink href="https://x.com/NexusSignalAI" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
                     <Twitter size={28} />
                 </SocialLink>
-                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="Discord">
+                <SocialLink href="https://discord.gg/vU8RTM7Q" target="_blank" rel="noopener noreferrer" aria-label="Discord">
                      <MessageSquare size={28} />
                 </SocialLink>
-                <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                <SocialLink href="https://github.com/GaiusCaesarBC/Nexus-Signal" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
                     <Github size={28} />
                 </SocialLink>
-                 <SocialLink href="#" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                 <SocialLink href="https://www.linkedin.com/in/cody-watkins-b740a1390/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
                     <Linkedin size={28} />
                 </SocialLink>
             </SocialLinks>
