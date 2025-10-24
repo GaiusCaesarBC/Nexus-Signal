@@ -1,5 +1,5 @@
 // client/src/pages/PredictPage.js
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext } from 'react';
 import styled from 'styled-components';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';

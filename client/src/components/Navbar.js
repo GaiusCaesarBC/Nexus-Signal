@@ -2,7 +2,8 @@ import React, { useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { AuthContext } from '../context/AuthContext';
-import { LayoutDashboard, UserPlus, LogIn, LogOut, Info, Tag, Activity } from 'lucide-react'; // Added Activity icon
+// Added BrainCircuit icon for prediction, removed unused icons if any were here
+import { LayoutDashboard, UserPlus, LogIn, LogOut, Info, Tag, Activity, BrainCircuit } from 'lucide-react'; 
 import logo from '../assets/logo.png';
 
 const Nav = styled.nav`
@@ -96,6 +97,8 @@ const Navbar = () => {
                 {user ? (
                     <>
                         <NavLink to="/"><LayoutDashboard size={18} /> Dashboard</NavLink>
+                        {/* <--- NEW: Add Prediction Page Link for Authenticated Users ---> */}
+                        <NavLink to="/predict"><BrainCircuit size={18} /> Predict</NavLink> 
                         <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
                         <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
                         <NavLink to="/about"><Info size={18} /> About</NavLink>
@@ -103,6 +106,10 @@ const Navbar = () => {
                     </>
                 ) : (
                     <>
+                        {/* You might want to allow non-logged-in users to see prediction results too,
+                           or show a "Login to Predict" message on the /predict page itself.
+                           For now, the link is only for logged-in users.
+                        */}
                         <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
                         <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
                         <NavLink to="/about"><Info size={18} /> About</NavLink>
@@ -116,4 +123,3 @@ const Navbar = () => {
 };
 
 export default Navbar;
-

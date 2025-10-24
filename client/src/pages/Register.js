@@ -76,7 +76,7 @@ const Register = () => {
     // --- UPDATED STATE TO INCLUDE 'email' ---
     const [formData, setFormData] = useState({ username: '', email: '', password: '', password2: '' });
     const [error, setError] = useState('');
-    const { register, user } = useContext(AuthContext); // Added 'user' to check if already logged in
+    const { register} = useContext(AuthContext); // Added 'user' to check if already logged in
     const navigate = useNavigate();
 
     // Destructure email along with other fields

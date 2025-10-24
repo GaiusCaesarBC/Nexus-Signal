@@ -2,7 +2,7 @@
   "name": "client",
   "version": "0.1.0",
   "private": true,
-  "proxy": "http://localhost:8081",
+  "proxy": "http://localhost:10000",
   "dependencies": {
     "@stripe/stripe-js": "^8.1.0",
     "@testing-library/jest-dom": "^5.17.0",
