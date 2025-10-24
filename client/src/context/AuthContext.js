@@ -1,150 +1,125 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { jwtDecode } from 'jwt-decode';
 
-// --- API URL Configuration ---
-// This defines where your frontend (this file) looks for your backend server.
+// --- API URL Definition ---
+// Define API URL based on environment
 const API_URL = process.env.NODE_ENV === 'production'
-    // For your LIVE site (Vercel), it uses the Render URL
-    ? 'https://nexus-signal-server.onrender.com'
-    // For your DEVELOPMENT (Codespaces), it uses the 8081 port we set up
-    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
-// ------------------------------
+    ? 'https://nexus-signal.onrender.com' // <-- CORRECTED THIS LINE!
+    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'; // Assuming this is still your Codespaces backend URL
 
+// Create the AuthContext
 export const AuthContext = createContext();
 
-// Helper function to add a timestamp to requests to prevent caching issues
-const addCacheBust = (url) => `${url}?_t=${new Date().getTime()}`;
-
+// Create the AuthProvider component
 export const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(() => localStorage.getItem('token')); // Load token from storage on init
     const [user, setUser] = useState(null);
+    const [token, setToken] = useState(localStorage.getItem('token') || null);
     const [loading, setLoading] = useState(true);
-    const [watchlist, setWatchlist] = useState([]);
+    const [error, setError] = useState(null);
 
-    // --- Logout Function ---
-    // We define logout here so it can be called from anywhere (like validateToken)
-    const logout = useCallback(() => {
-        console.log('[AuthContext] Logging out.');
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
-        setWatchlist([]);
-        delete axios.defaults.headers.common['x-auth-token'];
-        setLoading(false);
-    }, []);
+    // Axios instance for authenticated requests
+    const api = axios.create({
+        baseURL: API_URL,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
 
-    // --- Token Validation & Watchlist Fetching ---
-    // This effect runs whenever the 'token' state changes
-    useEffect(() => {
-        const validateTokenAndFetchData = async () => {
+    // Interceptor to attach token to requests
+    api.interceptors.request.use(
+        (config) => {
             if (token) {
+                config.headers['x-auth-token'] = token;
+            }
+            return config;
+        },
+        (error) => {
+            return Promise.reject(error);
+        }
+    );
+
+    // Effect to check token validity and load user on mount
+    useEffect(() => {
+        const loadUser = async () => {
+            if (token) {
+                console.log('[AuthContext] Provider rendering. User:', user, 'Token exists:', !!token); // Debug
                 try {
-                    console.log('[AuthContext] Token found. Validating...');
-                    const decoded = jwtDecode(token);
-                    
-                    // Check if token is expired
-                    if (decoded.exp * 1000 < Date.now()) {
-                        console.log('[AuthContext] Token is expired.');
-                        logout();
-                    } else {
-                        // Token is valid
-                        console.log('[AuthContext] Token is valid. Setting user and fetching watchlist.');
-                        setUser({ id: decoded.user.id });
-                        axios.defaults.headers.common['x-auth-token'] = token;
-                        
-                        // Fetch user's watchlist
-                        const res = await axios.get(addCacheBust(`${API_URL}/api/watchlist`));
-                        setWatchlist(res.data || []); // Ensure watchlist is an array
-                        console.log('[AuthContext] Watchlist fetched:', res.data);
-                    }
+                    const res = await api.get('/api/users/auth');
+                    setUser(res.data);
+                    console.log('[AuthContext] User loaded:', res.data.username); // Debug
                 } catch (err) {
-                    console.error('[AuthContext] Token validation or data fetching failed', err.message);
-                    logout(); // If any error (bad token, network error), log out
+                    console.error('[AuthContext] Failed to load user from token:', err.response?.data?.msg || err.message); // Debug
+                    localStorage.removeItem('token');
+                    setToken(null);
+                    setUser(null);
                 }
             } else {
-                console.log('[AuthContext] No token found.');
-                // No token, so user is logged out
-                setUser(null);
-                setWatchlist([]);
-                delete axios.defaults.headers.common['x-auth-token'];
+                console.log('[AuthContext] No token found.'); // Debug
             }
-            // Finished initial load
             setLoading(false);
         };
-        
-        validateTokenAndFetchData();
-    }, [token, logout]); // Re-run this check if the token changes
+        loadUser();
+    }, [token]); // Re-run if token changes
 
-    // --- Login Function ---
+    // Login function
     const login = async (username, password) => {
+        setError(null);
+        setLoading(true);
+        console.log(`[AuthContext] Attempting login for: ${username}`); // Debug
         try {
-            console.log(`[AuthContext] Attempting login for: ${username}`);
-            const res = await axios.post(addCacheBust(`${API_URL}/api/users/login`), { username, password });
-            
-            if (res.data.token) {
-                localStorage.setItem('token', res.data.token);
-                setToken(res.data.token); // This will trigger the useEffect above to fetch data
-                console.log('[AuthContext] Login successful.');
-            } else {
-                throw new Error("No token received from login");
-            }
+            const res = await api.post('/api/users/login', { username, password });
+            setToken(res.data.token);
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            console.log('[AuthContext] Login successful. User:', res.data.user.username); // Debug
+            setLoading(false);
+            return { success: true, user: res.data.user };
         } catch (err) {
-            console.error('[AuthContext] Login failed:', err.response ? err.response.data.msg : err.message);
-            throw err; // Re-throw error so the Login page can catch it
+            console.error('[AuthContext] Login failed:', err.response?.data?.msg || err.message); // Debug
+            setError(err.response?.data?.msg || 'Login failed. Please check your credentials.');
+            setLoading(false);
+            return { success: false, error: err.response?.data?.msg || 'Login failed' };
         }
     };
 
-    // --- Register Function ---
-    const register = async (username, password) => {
+    // Register function
+    const register = async (username, email, password) => {
+        setError(null);
+        setLoading(true);
+        console.log(`[AuthContext] Attempting registration for: ${username}`); // Debug
         try {
-            console.log(`[AuthContext] Attempting registration for: ${username}`);
-            // 1. Create the account
-            await axios.post(addCacheBust(`${API_URL}/api/users/register`), { username, password });
-            
-            console.log('[AuthContext] Registration successful. Now logging in...');
-            // 2. Automatically log in the new user
-            await login(username, password);
-            
-            console.log('[AuthContext] Auto-login after register successful.');
-            
+            const res = await api.post('/api/users/register', { username, email, password });
+            // For registration, we might automatically log them in or just confirm success
+            setToken(res.data.token); // Assuming backend sends token on register
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            console.log('[AuthContext] Registration successful. User:', res.data.user.username); // Debug
+            setLoading(false);
+            return { success: true, user: res.data.user };
         } catch (err) {
-            console.error('[AuthContext] Registration or auto-login failed:', err.response ? err.response.data.msg : err.message);
-            throw err; // Re-throw error so the Register page can catch it
+            console.error('[AuthContext] Registration or auto-login failed:', err.response?.data?.msg || err.message); // Debug
+            setError(err.response?.data?.msg || 'Registration failed. Please try again.');
+            setLoading(false);
+            return { success: false, error: err.response?.data?.msg || 'Registration failed' };
         }
     };
 
-    // --- Watchlist Functions ---
-    const addToWatchlist = async (symbol) => {
-        if (!user) return; // Shouldn't be possible if button is hidden, but good safety check
-        try {
-            console.log(`[AuthContext] Adding ${symbol} to watchlist...`);
-            const res = await axios.post(addCacheBust(`${API_URL}/api/watchlist/add`), { symbol });
-            setWatchlist(res.data);
-            console.log('[AuthContext] Watchlist updated:', res.data);
-        } catch (err) {
-            console.error('Failed to add to watchlist', err);
-        }
+    // Logout function
+    const logout = () => {
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem('token');
+        console.log('[AuthContext] User logged out.'); // Debug
     };
 
-    const removeFromWatchlist = async (symbol) => {
-        if (!user) return;
-        try {
-            console.log(`[AuthContext] Removing ${symbol} from watchlist...`);
-            const res = await axios.delete(addCacheBust(`${API_URL}/api/watchlist/remove/${symbol}`));
-            setWatchlist(res.data);
-            console.log('[AuthContext] Watchlist updated:', res.data);
-        } catch (err) {
-            console.error('Failed to remove from watchlist', err);
-        }
-    };
-
-    // --- Provide values to all children components ---
-    console.log(`[AuthContext] Provider rendering. User: ${user ? user.id : 'null'} Token exists: ${!!token}`);
     return (
-        <AuthContext.Provider value={{ token, user, login, register, logout, loading, watchlist, addToWatchlist, removeFromWatchlist }}>
-            {!loading && children} {/* Don't render app until token check is complete */}
+        <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, api }}>
+            {children}
         </AuthContext.Provider>
     );
 };
 
+// Custom hook to use AuthContext
+export const useAuth = () => {
+    return useContext(AuthContext);
+};
