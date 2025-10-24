@@ -9,7 +9,7 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "@vercel/analytics": "^1.5.0",
-    "axios": "^1.7.2",
+    "axios": "^1.12.2",
     "chart.js": "^4.4.3",
     "jwt-decode": "^4.0.0",
     "lightweight-charts": "4.1.0",
@@ -20,7 +20,7 @@
     "react-loading-skeleton": "^3.4.0",
     "react-router-dom": "^6.24.0",
     "react-scripts": "5.0.1",
-    "styled-components": "^6.1.11",
+    "styled-components": "^6.1.19",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
