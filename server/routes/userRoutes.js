@@ -1,11 +1,13 @@
+// server/routes/userRoutes.js
+
 const express = require('express');
-const router = express = require('express'); // This line was incorrect
-const router = express.Router(); // Corrected this line to properly initialize router
+const router = express.Router(); // Correctly initialize router once
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { check, validationResult } = require('express-validator'); // Import express-validator
+const { check, validationResult } = require('express-validator');
 const User = require('../models/User');
-const auth = require('../../middleware/auth'); // Assuming you have an auth middleware
+const auth = require('../../middleware/auth'); // Assuming this path is correct for your auth middleware
 
 // @route   POST api/users/register
 // @desc    Register a new user
