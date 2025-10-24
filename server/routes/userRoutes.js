@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { check, validationResult } = require('express-validator');
 const User = require('../models/User');
-const auth = require('../../middleware/auth'); // Assuming this path is correct for your auth middleware
+const auth = require('../../middleware/authMiddleware'); // CORRECTED: Pointing to authMiddleware.js
 
 // @route   POST api/users/register
 // @desc    Register a new user
@@ -133,7 +133,7 @@ router.post(
 // @desc    Get authenticated user (for token validation)
 // @access  Private
 // This route uses an 'auth' middleware to verify the token
-// You MUST have a `server/middleware/auth.js` file for this to work.
+// You MUST have a `server/middleware/authMiddleware.js` file for this to work.
 router.get('/auth', auth, async (req, res) => {
     try {
         // req.user is set by the auth middleware if token is valid
