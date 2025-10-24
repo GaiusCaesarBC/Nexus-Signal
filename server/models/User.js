@@ -6,6 +6,12 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  email: { // <-- ADDED THIS FIELD
+    type: String,
+    required: true,
+    unique: true,
+    match: [/.+@.+\..+/, 'Please enter a valid email address'] // Optional: basic email format validation
+  },
   password: {
     type: String,
     required: true,
@@ -14,21 +20,19 @@ const UserSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
-  // --- NEW FIELDS ---
-  stripeCustomerId: { // To link this user to a Stripe customer object
+  stripeCustomerId: {
     type: String,
-    // unique: true, // Customer ID should be unique if used
-    // sparse: true  // Allows null/undefined values if not everyone is a customer
+    // unique: true,
+    // sparse: true
   },
-  subscriptionTier: { // e.g., 'free', 'premium', 'elite'
+  subscriptionTier: {
     type: String,
-    default: 'free', // Or maybe 'basic' depending on your trial logic
+    default: 'free',
   },
-  subscriptionStatus: { // e.g., 'active', 'trialing', 'canceled', 'past_due'
+  subscriptionStatus: {
     type: String,
-    default: 'inactive', // Or 'trialing' if they start with a trial
+    default: 'inactive',
   },
-  // --- END NEW FIELDS ---
   date: {
     type: Date,
     default: Date.now,
