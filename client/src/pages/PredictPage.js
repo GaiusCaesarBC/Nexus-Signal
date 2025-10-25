@@ -1,276 +1,299 @@
 // client/src/pages/PredictPage.js
-import React, { useState, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { AuthContext } from '../context/AuthContext';
-import axios from 'axios';
-import { Search, TrendingUp, AlertTriangle } from 'lucide-react'; // Assuming lucide-react is installed
+import { Line } from 'react-chartjs-2';
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend,
+} from 'chart.js';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
+
+// Register Chart.js components
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+);
 
 const PredictContainer = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 3rem 1.5rem;
-    min-height: calc(100vh - var(--navbar-height)); // Adjust based on your navbar height
-    background-color: #1a1a2e; // Dark background
-    color: #e0e0e0; // Light text
+    min-height: calc(100vh - var(--navbar-height));
+    background-color: transparent; // <-- Changed this from #1a1a2e to transparent
+    color: #e0e0e0;
 `;
 
 const PredictBox = styled.div`
-    background-color: #2c3e50;
+    background-color: #2c3e50; // Dark blue-gray for the inner box
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     padding: 2.5rem;
-    border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    max-width: 900px;
     width: 100%;
-    max-width: 600px;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-`;
-
-const Title = styled.h2`
-    color: #ecf0f1;
+    margin-bottom: 2rem;
     text-align: center;
-    margin-bottom: 1rem;
-    font-size: 2.5rem;
-    font-weight: 700;
 `;
 
 const InputGroup = styled.div`
     display: flex;
-    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    width: 100%;
+    max-width: 400px;
 `;
 
 const Input = styled.input`
+    padding: 0.8rem 1rem;
+    border: 1px solid #3f51b5;
+    border-radius: 4px;
+    font-size: 1rem;
     flex-grow: 1;
-    background: #34495e;
-    border: 1px solid #4a627a;
-    border-radius: 8px;
-    padding: 0.9rem 1.2rem;
-    color: #ecf0f1;
-    font-size: 1.1rem;
-    box-sizing: border-box;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    margin-right: 0.5rem;
+    background-color: #34495e;
+    color: #e0e0e0;
 
     &:focus {
         outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.3);
-    }
-    &::placeholder {
-        color: #95a5a6;
+        border-color: #5d74e3;
+        box-shadow: 0 0 0 3px rgba(93, 116, 227, 0.5);
     }
 `;
 
 const Button = styled.button`
-    background-color: #3498db;
-    border: none;
-    border-radius: 8px;
+    padding: 0.8rem 1.5rem;
+    background-color: #3f51b5;
     color: white;
-    padding: 0.9rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
     cursor: pointer;
-    font-size: 1.1rem;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
-    transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+    transition: background-color 0.3s ease;
 
     &:hover {
-        background-color: #2980b9;
-        transform: translateY(-1px);
+        background-color: #5d74e3;
     }
-    &:active {
-        transform: translateY(0);
-    }
+
     &:disabled {
-        background-color: #7f8c8d;
+        background-color: #5a6a7c;
         cursor: not-allowed;
     }
 `;
 
-const ResultCard = styled.div`
-    background-color: ${props => {
-        if (props.signal === 'Buy') return '#27ae60'; // Green for Buy
-        if (props.signal === 'Sell') return '#e74c3c'; // Red for Sell
-        return '#34495e'; // Blue-gray for Hold
-    }};
-    padding: 1.8rem;
-    border-radius: 10px;
-    margin-top: 2rem;
-    color: white;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    text-align: center;
-`;
-
-const ResultTitle = styled.h3`
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.8rem;
-`;
-
-const ConfidenceText = styled.p`
-    font-size: 1.4rem;
-    font-weight: bold;
-`;
-
-const AnalysisGrid = styled.div`
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
+const PredictionResult = styled.div`
+    margin-top: 1.5rem;
     text-align: left;
+    background-color: #34495e;
+    padding: 1.5rem;
+    border-radius: 8px;
 `;
 
-const AnalysisItem = styled.div`
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: 0.8rem 1.2rem;
-    border-radius: 6px;
-
-    strong {
-        display: block;
-        font-size: 0.9rem;
-        margin-bottom: 0.3rem;
-        color: #bdc3c7;
-    }
-    span {
-        font-size: 1rem;
-    }
+const ChartContainer = styled.div`
+    margin-top: 2rem;
+    width: 100%;
+    height: 400px; // Fixed height for consistency
+    background-color: #34495e;
+    padding: 1rem;
+    border-radius: 8px;
 `;
 
 const ErrorMessage = styled.p`
-    color: #e74c3c;
-    text-align: center;
-    margin-top: 1.5rem;
-    font-size: 1.1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    color: #ff6b6b;
+    margin-top: 1rem;
+    font-size: 0.95rem;
 `;
 
-const LoadingMessage = styled.p`
-    color: #3498db;
-    text-align: center;
-    margin-top: 1.5rem;
-    font-size: 1.1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+const InfoMessage = styled.p`
+    color: #6a9955;
+    margin-top: 1rem;
+    font-size: 0.95rem;
 `;
 
 
 const PredictPage = () => {
+    const { api, isAuthenticated, loading: authLoading } = useAuth();
+    const navigate = useNavigate();
     const [symbol, setSymbol] = useState('');
     const [prediction, setPrediction] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const { isAuthenticated } = useContext(AuthContext);
+    const [error, setError] = useState(null);
+    const [chartData, setChartData] = useState(null);
+    const [predictionMessage, setPredictionMessage] = useState('');
 
-    // API_URL will be provided by environment variables in production (Vercel)
-    // For local development, it might default to localhost
-    const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:10000';
+    useEffect(() => {
+        // Redirect if not authenticated and authLoading is false
+        if (!authLoading && !isAuthenticated) {
+            navigate('/login');
+        }
+    }, [isAuthenticated, authLoading, navigate]);
 
-    const handlePredict = async (e) => {
+
+    const onSubmit = async (e) => {
         e.preventDefault();
-        setError('');
+        setError(null);
         setPrediction(null);
-        setLoading(true);
+        setChartData(null);
+        setPredictionMessage('');
 
-        if (!isAuthenticated) {
+        if (!symbol) {
+            setError('Please enter a stock symbol.');
+            return;
+        }
+        if (!isAuthenticated) { // This check should ideally not be reached if useEffect redirects
             setError('Please log in to get predictions.');
             setLoading(false);
             return;
         }
-        if (!symbol) {
-            setError('Please enter a stock symbol.');
-            setLoading(false);
-            return;
-        }
 
+        setLoading(true);
         try {
-            console.log(`Fetching prediction for ${symbol} from ${API_URL}/api/predict/${symbol}`);
-            const res = await axios.get(`${API_URL}/api/predict/${symbol}`, {
-                headers: {
-                    'x-auth-token': localStorage.getItem('token') // Send token for authentication
-                }
-            });
-            console.log('Prediction API response:', res.data);
+            console.log(`Fetching prediction for ${symbol} from ${api.defaults.baseURL}/api/predict/${symbol}`); // Debug log
+            const res = await api.get(`/api/predict/${symbol}`);
+            console.log('Prediction API response:', res.data); // Debug log
+
             setPrediction(res.data);
+            setPredictionMessage(res.data.predictionMessage);
+
+            const labels = res.data.historicalData.map(d => d.time);
+            const closePrices = res.data.historicalData.map(d => d.close);
+
+            setChartData({
+                labels: labels,
+                datasets: [
+                    {
+                        label: `${symbol} Close Price`,
+                        data: closePrices,
+                        fill: false,
+                        backgroundColor: 'rgb(75, 192, 192)',
+                        borderColor: 'rgba(75, 192, 192, 0.8)',
+                        tension: 0.1,
+                        pointRadius: 0 // Hide individual points
+                    },
+                ],
+            });
+
         } catch (err) {
-            console.error('Error fetching prediction:', err.response?.data?.msg || err.message);
+            console.error('Error fetching prediction:', err.response?.data?.msg || err.message); // Detailed error log
             setError(err.response?.data?.msg || 'Failed to fetch prediction. Please try again.');
         } finally {
             setLoading(false);
         }
     };
 
+    if (authLoading) {
+        return <Loader />;
+    }
+
+    if (!isAuthenticated) {
+        return (
+            <PredictContainer>
+                <PredictBox>
+                    <ErrorMessage>You need to be logged in to view this page.</ErrorMessage>
+                    <Button onClick={() => navigate('/login')}>Login Now</Button>
+                </PredictBox>
+            </PredictContainer>
+        );
+    }
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: {
+                    color: '#e0e0e0',
+                },
+            },
+            title: {
+                display: true,
+                text: `${symbol} Historical Close Prices`,
+                color: '#e0e0e0',
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+            }
+        },
+        scales: {
+            x: {
+                ticks: {
+                    color: '#e0e0e0',
+                    maxTicksLimit: 10 // Limit x-axis labels
+                },
+                grid: {
+                    color: 'rgba(255, 255, 255, 0.1)',
+                },
+            },
+            y: {
+                ticks: {
+                    color: '#e0e0e0',
+                    callback: function(value) {
+                        return `$${value.toFixed(2)}`; // Format as currency
+                    }
+                },
+                grid: {
+                    color: 'rgba(255, 255, 255, 0.1)',
+                },
+            },
+        },
+    };
+
+
     return (
         <PredictContainer>
             <PredictBox>
-                <Title>Stock Prediction AI</Title>
-                <form onSubmit={handlePredict}>
-                    <InputGroup>
-                        <Input
-                            type="text"
-                            placeholder="Enter Stock Symbol (e.g., AAPL)"
-                            value={symbol}
-                            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                            disabled={loading}
-                            required
-                        />
-                        <Button type="submit" disabled={loading}>
-                            {loading ? 'Predicting...' : 'Get Prediction'}
-                            <Search size={20} />
-                        </Button>
-                    </InputGroup>
-                </form>
+                <h2>Stock Prediction AI</h2>
+                <p>Get AI-driven predictions for your favorite stocks.</p>
+                <InputGroup>
+                    <Input
+                        type="text"
+                        placeholder="Enter stock symbol (e.g., AAPL)"
+                        value={symbol}
+                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                        onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                                onSubmit(e);
+                            }
+                        }}
+                    />
+                    <Button onClick={onSubmit} disabled={loading}>
+                        {loading ? 'Getting Prediction...' : 'Get Prediction'}
+                    </Button>
+                </InputGroup>
 
-                {loading && (
-                    <LoadingMessage>
-                        <TrendingUp size={24} /> Fetching historical data and analyzing...
-                    </LoadingMessage>
-                )}
-                {error && (
-                    <ErrorMessage>
-                        <AlertTriangle size={24} /> {error}
-                    </ErrorMessage>
-                )}
+                {error && <ErrorMessage>{error}</ErrorMessage>}
+                {loading && <Loader />} {/* Use your Loader component here */}
+
 
                 {prediction && (
-                    <ResultCard signal={prediction.signal}>
-                        <ResultTitle>
-                            {prediction.signal === 'Buy' && <TrendingUp size={32} />}
-                            {prediction.signal === 'Sell' && <AlertTriangle size={32} />}
-                            {prediction.signal === 'Hold' && <Search size={32} />}
-                            {prediction.signal} {prediction.symbol}
-                        </ResultTitle>
-                        <ConfidenceText>Confidence: {prediction.confidence.toFixed(2)}%</ConfidenceText>
-                        <AnalysisGrid>
-                            <AnalysisItem>
-                                <strong>SMA Analysis:</strong> <span>{prediction.analysis.sma}</span>
-                            </AnalysisItem>
-                            <AnalysisItem>
-                                <strong>RSI Analysis:</strong> <span>{prediction.analysis.rsi}</span>
-                            </AnalysisItem>
-                            <AnalysisItem>
-                                <strong>MACD Analysis:</strong> <span>{prediction.analysis.macd}</span>
-                            </AnalysisItem>
-                            <AnalysisItem>
-                                <strong>Volume Analysis:</strong> <span>{prediction.analysis.volume}</span>
-                            </AnalysisItem>
-                        </AnalysisGrid>
-                    </ResultCard>
+                    <PredictionResult>
+                        <h3>Prediction for {prediction.symbol}:</h3>
+                        <p><strong>Predicted Direction:</strong> {prediction.predictedDirection}</p>
+                        <p><strong>Confidence:</strong> {prediction.confidence.toFixed(2)}%</p>
+                        <p><strong>Message:</strong> {predictionMessage}</p>
+                    </PredictionResult>
                 )}
             </PredictBox>
-            {/* TODO: Add Chart component here in future if desired */}
+
+            {chartData && (
+                <ChartContainer>
+                    <Line data={chartData} options={chartOptions} />
+                </ChartContainer>
+            )}
         </PredictContainer>
     );
 };
