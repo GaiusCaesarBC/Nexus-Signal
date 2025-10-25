@@ -1,85 +1,210 @@
-// client/src/pages/PricingPage.js - Reverted styling, only "Coming Soon" on buttons
+// client/src/pages/PricingPage.js - Recreated based on provided image, buttons "Coming Soon"
 import React from 'react';
-import styled from 'styled-components';
-import { Check, X } from 'lucide-react'; // Assuming lucide-react is installed
+import styled, { keyframes } from 'styled-components';
+import { Check, ArrowUp } from 'lucide-react'; // Replaced X with Check, added ArrowUp for header icon
+
+// --- Keyframes for subtle animations ---
+const fadeIn = keyframes`
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+`;
+
+// --- Styled Components based on the provided image ---
 
 const PricingContainer = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 3rem 1.5rem;
-    min-height: calc(100vh - var(--navbar-height));
-    background-color: #f4f7f6; /* Light background for contrast */
-    color: #333; /* Dark text for readability */
+    min-height: calc(100vh - var(--navbar-height)); /* Ensure it fills screen below navbar */
+    background-color: #0f172a; /* Dark background matching the image */
+    color: #f8fafc; /* Light text color */
+    padding: 4rem 1.5rem; /* Generous padding top/bottom */
+    position: relative;
+    overflow: hidden; /* Hide overflowing lines */
+
+    /* Background glowing lines (simplified representation) */
+    &::before, &::after {
+        content: '';
+        position: absolute;
+        width: 150vw;
+        height: 150vw;
+        border-radius: 50%;
+        opacity: 0.1;
+        z-index: 0;
+        filter: blur(80px); /* Soft glow */
+    }
+
+    &::before { /* Top-left blue glow */
+        background: radial-gradient(circle, #3b82f6, transparent 50%);
+        top: -70vw;
+        left: -70vw;
+    }
+
+    &::after { /* Bottom-right orange/purple glow */
+        background: radial-gradient(circle, #f97316, transparent 50%);
+        bottom: -70vw;
+        right: -70vw;
+    }
+
+    /* Additional subtle lines for effect */
+    .line-effect {
+        position: absolute;
+        background: rgba(59, 130, 246, 0.2); /* Blue */
+        height: 1px;
+        z-index: 1;
+        animation: line-fade 3s infinite alternate;
+    }
+    .line-effect:nth-child(1) { top: 20%; left: -10%; width: 120%; transform: rotate(15deg); }
+    .line-effect:nth-child(2) { bottom: 15%; right: -10%; width: 120%; transform: rotate(-10deg); background: rgba(249, 115, 22, 0.2); } /* Orange */
+
+    @keyframes line-fade {
+        0% { opacity: 0.1; }
+        100% { opacity: 0.3; }
+    }
+`;
+
+const HeaderIcon = styled.div`
+    background-color: #3b82f6; /* Blue background for the arrow icon */
+    border-radius: 50%;
+    padding: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 2rem;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); /* Blue glow */
+    animation: ${fadeIn} 0.8s ease-out;
+
+    svg {
+        color: white;
+        width: 30px;
+        height: 30px;
+    }
 `;
 
 const Title = styled.h1`
-    font-size: 2.8rem;
+    font-size: 3.2rem;
     margin-bottom: 1.5rem;
-    color: #2c3e50;
+    color: #f8fafc;
     text-align: center;
+    line-height: 1.2;
+    animation: ${fadeIn} 1s ease-out 0.2s backwards;
+    
+    strong {
+        color: #3b82f6; /* Blue for the brand part of the title */
+    }
+
+    @media (max-width: 768px) {
+        font-size: 2.5rem;
+    }
 `;
 
 const Subtitle = styled.p`
-    font-size: 1.1rem;
-    color: #6c7a89;
-    margin-bottom: 3rem;
+    font-size: 1.2rem;
+    color: #94a3b8; /* Lighter grey for subtitle */
+    margin-bottom: 3.5rem;
     max-width: 800px;
     text-align: center;
     line-height: 1.6;
+    animation: ${fadeIn} 1.2s ease-out 0.4s backwards;
+
+    @media (max-width: 768px) {
+        font-size: 1rem;
+        margin-bottom: 2.5rem;
+    }
 `;
 
 const PricingCards = styled.div`
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(3, 1fr); /* Exactly 3 columns as per image */
     gap: 2rem;
-    max-width: 1000px;
+    max-width: 1200px;
     width: 100%;
+    z-index: 2; /* Bring cards above background lines */
 
-    @media (max-width: 768px) {
-        grid-template-columns: 1fr;
+    @media (max-width: 1024px) {
+        grid-template-columns: 1fr; /* Stack vertically on smaller screens */
         padding: 0 1rem;
     }
 `;
 
 const Card = styled.div`
-    background-color: #ffffff;
-    border-radius: 10px;
-    padding: 2rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    background-color: #1e293b; /* Slightly lighter dark blue for cards */
+    border-radius: 12px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     text-align: center;
     transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    min-height: 500px; /* Ensure cards have similar height */
+    animation: ${fadeIn} 1s ease-out forwards; /* Fade in animation */
 
     &:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        transform: translateY(-8px);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
     }
 
-    ${props => props.featured && `
-        border: 2px solid #3498db;
-        box-shadow: 0 6px 20px rgba(52, 152, 219, 0.2);
+    ${props => props.planType === 'basic' && `
+        border: 1px solid #3b82f6; /* Blue border */
+        background-color: #1e293b;
+        animation-delay: 0.4s;
     `}
+    ${props => props.planType === 'premium' && `
+        border: 1px solid #f97316; /* Orange border */
+        background-color: #1e293b;
+        position: relative;
+        animation-delay: 0.6s;
+    `}
+    ${props => props.planType === 'elite' && `
+        border: 1px solid #8b5cf6; /* Purple border */
+        background-color: #1e293b;
+        animation-delay: 0.8s;
+    `}
+`;
+
+const PlanHeader = styled.div`
+    margin-bottom: 1.5rem;
+`;
+
+const PlanTag = styled.span`
+    background-color: #f97316; /* Orange tag for 'MOST POPULAR' */
+    color: white;
+    padding: 0.3rem 0.8rem;
+    border-radius: 9999px; /* Pill shape */
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.8rem;
+    display: inline-block;
 `;
 
 const PlanName = styled.h2`
     font-size: 1.8rem;
-    color: #34495e;
+    color: ${props => props.planType === 'basic' ? '#3b82f6' : props.planType === 'premium' ? '#f97316' : '#8b5cf6'}; /* Color from image */
+    margin-bottom: 0.5rem;
+`;
+
+const PlanDescription = styled.p`
+    font-size: 0.95rem;
+    color: #94a3b8;
     margin-bottom: 1rem;
 `;
 
 const Price = styled.div`
-    font-size: 3rem;
+    font-size: 2.8rem; /* Smaller price font */
     font-weight: bold;
-    color: #2c3e50;
-    margin-bottom: 1rem;
+    color: #f8fafc;
+    margin-bottom: 1.5rem;
     span {
         font-size: 1.2rem;
         font-weight: normal;
-        color: #7f8c8d;
+        color: #94a3b8;
     }
+    ${props => props.planType === 'basic' && `
+        font-size: 1.8rem; /* For '7-Day Free Trial' */
+    `}
 `;
 
 const FeatureList = styled.ul`
@@ -87,100 +212,153 @@ const FeatureList = styled.ul`
     padding: 0;
     margin: 1.5rem 0;
     flex-grow: 1;
+    text-align: left; /* Features aligned left as in image */
 `;
 
 const FeatureItem = styled.li`
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    color: #555;
-    margin-bottom: 0.8rem;
-    gap: 0.5rem;
+    font-size: 0.95rem;
+    color: #cbd5e1; /* Lighter grey for features */
+    margin-bottom: 0.7rem;
+    gap: 0.6rem;
 
     svg {
-        color: ${props => props.included ? '#2ecc71' : '#e74c3c'};
-        min-width: 18px;
+        color: ${props => props.included ? '#22c55e' : '#ef4444'}; /* Green check, Red X */
+        min-width: 16px;
+        height: 16px;
     }
 `;
 
 const ActionButton = styled.button`
-    background-color: #3498db;
+    background-color: ${props => props.planType === 'basic' ? '#3b82f6' : props.planType === 'premium' ? '#f97316' : '#8b5cf6'};
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     color: white;
-    padding: 0.8rem 1.5rem;
-    font-size: 1rem;
+    padding: 0.9rem 1.8rem;
+    font-size: 1.1rem;
     font-weight: bold;
     cursor: pointer;
-    transition: background-color 0.3s ease;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
     width: 100%;
-    margin-top: 1rem;
+    margin-top: 2rem;
 
     &:hover {
-        background-color: #2980b9;
+        transform: translateY(-3px);
+        opacity: 0.9;
     }
 
     &:disabled {
-        background-color: #cccccc; /* Grey out when disabled */
+        background-color: #64748b; /* Grey out when disabled */
         cursor: not-allowed;
+        opacity: 0.7;
+        transform: none;
+        box-shadow: none;
+    }
+`;
+
+const FooterHashtags = styled.div`
+    z-index: 2;
+    margin-top: 5rem;
+    font-size: 1rem;
+    color: #64748b; /* Subtle grey for hashtags */
+    animation: ${fadeIn} 1.5s ease-out 1s backwards;
+
+    span {
+        margin: 0 0.5rem;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+        font-size: 0.8rem;
+        span {
+            margin: 0 0.3rem;
+        }
     }
 `;
 
 const PricingPage = () => {
     return (
         <PricingContainer>
-            <Title>Simple, Transparent Pricing</Title>
+            {/* Background line effects (optional, for visual flair) */}
+            <div className="line-effect"></div>
+            <div className="line-effect"></div>
+
+            <HeaderIcon>
+                <ArrowUp />
+            </HeaderIcon>
+            <Title>Unlock Your Trading Edge: <strong>Nexus Signal.AI</strong> Pricing!</Title>
             <Subtitle>
-                Choose the plan that best fits your trading journey. From fundamental insights to advanced AI predictions, we have a solution for every level of expertise.
+                Gain an unfair advantage with AI-powered insights, real-time analytics, and advanced predictive models. Choose the plan that elevates your trading strategy.
             </Subtitle>
 
             <PricingCards>
-                {/* Free Tier Card */}
-                <Card>
-                    <PlanName>Free Tier</PlanName>
-                    <Price>$0<span>/month</span></Price>
+                {/* Basic Tier Card */}
+                <Card planType="basic">
+                    <PlanHeader>
+                        <PlanName planType="basic">Basic</PlanName>
+                        <PlanDescription>Explore the Fundamentals</PlanDescription>
+                    </PlanHeader>
+                    <Price planType="basic">7-Day Free Trial<span> (No Credit Card Required)</span></Price>
                     <FeatureList>
-                        <FeatureItem included><Check size={20} /> Limited Market Watchlist</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Basic News & Sentiment</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Daily Market Summaries</FeatureItem>
-                        <FeatureItem included={false}><X size={20} /> Advanced AI Predictions</FeatureItem>
-                        <FeatureItem included={false}><X size={20} /> Real-Time Strategy Backtesting</FeatureItem>
-                        <FeatureItem included={false}><X size={20} /> Priority Support</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Limited Daily Signals (2/day)</FeatureItem>
+                        <FeatureItem included><Check size={16} /> 1 Watchlist (upo 10 assets)</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Basic Market Overvews</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Email Support (Standard)</FeatureItem>
+                        {/* Features not included in basic but shown for spacing/comparison if needed
+                        <FeatureItem included={false}><X size={16} /> Feature X</FeatureItem>
+                        <FeatureItem included={false}><X size={16} /> Feature Y</FeatureItem>
+                        */}
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
+                    <ActionButton planType="basic" disabled>Coming Soon</ActionButton>
                 </Card>
 
-                {/* Pro Tier Card */}
-                <Card featured>
-                    <PlanName>Pro Tier</PlanName>
-                    <Price>$29<span>/month</span></Price>
+                {/* Premium Tier Card */}
+                <Card planType="premium">
+                    <PlanHeader>
+                        <PlanTag>Most Popular</PlanTag>
+                        <PlanName planType="premium">Premium</PlanName>
+                        <PlanDescription>Master Your Trades</PlanDescription>
+                    </PlanHeader>
+                    <Price planType="premium">$49<span>/month</span></Price>
                     <FeatureList>
-                        <FeatureItem included><Check size={20} /> Expanded Market Watchlist</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Comprehensive News & Sentiment</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Advanced AI Predictions</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Basic Strategy Backtesting</FeatureItem>
-                        <FeatureItem included={false}><X size={20} /> Real-Time Strategy Optimization</FeatureItem>
-                        <FeatureItem included={false}><X size={20} /> Dedicated Account Manager</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Comprehensive Daily Signals</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Live Market Data (Minute)</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Real-Time Price & Insights</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Algorithmic Analysis</FeatureItem>
+                        <FeatureItem included><Check size={16} /> In-depth Sector Analysis</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Priority Email Support</FeatureItem>
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
+                    <ActionButton planType="premium" disabled>Coming Soon</ActionButton>
                 </Card>
 
-                {/* Enterprise Tier Card */}
-                <Card>
-                    <PlanName>Enterprise</PlanName>
-                    <Price>$99<span>/month</span></Price>
+                {/* Elite Tier Card */}
+                <Card planType="elite">
+                    <PlanHeader>
+                        <PlanName planType="elite">Elite</PlanName>
+                        <PlanDescription>For the Ultimate Market Edge</PlanDescription>
+                    </PlanHeader>
+                    <Price planType="elite">$125<span>/month</span></Price>
                     <FeatureList>
-                        <FeatureItem included><Check size={20} /> Unlimited Market Access</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Premium News & AI Insights</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Advanced AI Predictions & Custom Models</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Real-Time Strategy Optimization</FeatureItem>
-                        <FeatureItem included><Check size={20} /> Dedicated Account Manager</FeatureItem>
-                        <FeatureItem included><Check size={20} /> API Access & Integrations</FeatureItem>
+                        <FeatureItem included><Check size={16} /> All Premium Features +</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Ultra-Low Latency Data</FeatureItem>
+                        <FeatureItem included><Check size={16} /> API Access</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Unlimited Literacy Reports</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Custom Research Insights</FeatureItem>
+                        <FeatureItem included><Check size={16} /> Personalized Mentorships</FeatureItem>
+                        <FeatureItem included><Check size={16} /> 24/7 Dedicated Account Manager</FeatureItem>
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
+                    <ActionButton planType="elite" disabled>Coming Soon</ActionButton>
                 </Card>
             </PricingCards>
+
+            <FooterHashtags>
+                <span>#NexusSignalAI</span>
+                <span>#AITrading</span>
+                <span>#MarketPredictions</span>
+                <span>#ComingSoon</span>
+            </FooterHashtags>
         </PricingContainer>
     );
 };
