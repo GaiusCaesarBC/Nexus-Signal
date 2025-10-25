@@ -1,5 +1,6 @@
-// client/src/App.js - Navbar with Hamburger Menu for Mobile
-import React, { useState } from 'react'; // <--- Import useState
+// client/src/App.js - Latest Version with Logo, Mobile Menu, and Routes
+
+import React, { useState, useEffect } from 'react'; // <--- Import useState, useEffect
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { Menu, X } from 'lucide-react'; // <--- Import Menu and X icons for hamburger
@@ -28,7 +29,7 @@ const NavbarContainer = styled.nav`
     position: sticky;
     top: 0;
     z-index: 1000;
-    height: var(--navbar-height, 60px);
+    height: var(--navbar-height, 60px); /* Define navbar height as a CSS variable */
 
     .logo-link { /* Wrapper for the logo image and text */
         display: flex;
@@ -134,11 +135,14 @@ const AppContent = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu
 
     // Close menu when navigating to a new page
-    React.useEffect(() => {
+    useEffect(() => { // <--- Corrected import and usage for useEffect
         setIsMenuOpen(false);
     }, [location.pathname]);
     
+    // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
+
+    // Check if the current path is in the array of paths to hide login
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
 
     return (
@@ -168,14 +172,17 @@ const AppContent = () => {
 
             {/* Main Content Area where pages are rendered based on the URL */}
             <Routes>
+                {/* Core Pages */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
+
+                {/* Footer Links */}
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/disclaimer" element={<DisclaimerPage />} />
-                <Route path="/privacy" element={<PrivacyPolicyPage />} />
-                <Route path="/terms" element={<TermsOfServicePage />} />
+                <Route path="/privacy" element={<PrivacyPolicyPage />} /> {/* Ensure correct element prop */}
+                <Route path="/terms" element={<TermsOfServicePage />} /> {/* Ensure correct element prop */}
 
                 {/* Fallback for 404 Not Found pages */}
                 <Route path="*" element={
@@ -203,11 +210,11 @@ const AppContent = () => {
     );
 };
 
-// --- Main App Component ---
+// --- Main App Component (Wrapper for Router) ---
 const App = () => {
     return (
-        <Router>
-            <AppContent />
+        <Router> {/* Router must be the outermost component for useLocation to work */}
+            <AppContent /> {/* Render our new component here */}
         </Router>
     );
 };
