@@ -3,7 +3,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import logoImage from '../assets/nexus-signal-logo.png'; // <--- STILL ASSUMING THIS PATH & FILENAME ARE CORRECT
+import logoImage from '../assets/nexus-signal-logo.png'; // <--- ASSUMING THIS PATH & FILENAME ARE CORRECT
 
 const NavContainer = styled.nav`
     background-color: #1a273b; /* A sleek, dark blue for the Navbar */
@@ -88,7 +88,7 @@ const Navbar = () => {
         <NavContainer>
             <LogoWrapper to="/">
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
-                <LogoText>Nexus AI</LogoText> {/* Changed to Nexus AI for cleaner text alongside image */}
+                <LogoText>Nexus SIGNAL.AI</LogoText> {/* <--- CORRECTED: Full name "Nexus SIGNAL.AI" */}
             </LogoWrapper>
             <NavLinks>
                 {isAuthenticated ? (
