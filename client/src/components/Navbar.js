@@ -1,8 +1,7 @@
-// client/src/components/Navbar.js - SUPER SIMPLIFIED FOR DIAGNOSIS
+// client/src/components/Navbar.js - EVEN MORE SIMPLIFIED FOR DIAGNOSIS
 import React from 'react';
 import styled from 'styled-components';
-import { Link } from 'react-router-dom';
-// Removed: useNavigate, useLocation, useAuth
+// Removed: Link from 'react-router-dom'
 import logoImage from '../assets/nexus-signal-logo.png';
 
 const NavContainer = styled.nav`
@@ -19,7 +18,7 @@ const NavContainer = styled.nav`
     z-index: 1000;
 `;
 
-const LogoWrapper = styled(Link)`
+const LogoWrapper = styled.div` /* Changed to div from Link */
     display: flex;
     align-items: center;
     text-decoration: none;
@@ -44,40 +43,28 @@ const NavLinks = styled.div`
     align-items: center;
 `;
 
-const NavLink = styled(Link)`
+const NavText = styled.div` /* Changed to div from NavLink */
     color: #b0c4de;
-    text-decoration: none;
     font-size: 1rem;
     margin-left: 1.5rem;
     padding: 0.5rem 0.8rem;
     border-radius: 4px;
-    transition: background-color 0.3s ease, color 0.3s ease;
-
-    &:hover {
-        color: #e0e0e0;
-        background-color: rgba(0, 173, 237, 0.1);
-    }
 `;
 
-// Removed NavButton
-// Removed handleLogout
-
 const Navbar = () => {
-    // Removed: isAuthenticated, logout, navigate, location, isOnLandingPage, shouldHideAuthLinks, handleLogout
-
     return (
         <NavContainer>
-            <LogoWrapper to="/">
+            <LogoWrapper> {/* Removed 'to="/"' */}
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
-                {/* Minimal links for testing compilation */}
-                <NavLink to="/dashboard">Dashboard</NavLink>
-                <NavLink to="/predict">Predict</NavLink>
-                <NavLink to="/pricing">Pricing</NavLink>
-                <NavLink to="/login">Login</NavLink>
-                <NavLink to="/register">Register</NavLink>
+                {/* Minimal text for testing compilation */}
+                <NavText>Dashboard</NavText>
+                <NavText>Predict</NavText>
+                <NavText>Pricing</NavText>
+                <NavText>Login</NavText>
+                <NavText>Register</NavText>
             </NavLinks>
         </NavContainer>
     );
