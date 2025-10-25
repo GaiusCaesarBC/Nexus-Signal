@@ -1,7 +1,8 @@
-// client/src/pages/PricingPage.js - Recreated based on provided image, buttons "Coming Soon"
+// client/src/pages/PricingPage.js - Recreated based on provided image, buttons "Coming Soon", Header Icon replaced with Logo
 import React from 'react';
 import styled, { keyframes } from 'styled-components';
-import { Check, ArrowUp } from 'lucide-react'; // Replaced X with Check, added ArrowUp for header icon
+import { Check } from 'lucide-react'; // Removed ArrowUp as it's no longer used
+import nexusSignalLogo from '../assets/nexus-signal-logo.png'; // <-- IMPORT YOUR LOGO
 
 // --- Keyframes for subtle animations ---
 const fadeIn = keyframes`
@@ -63,23 +64,15 @@ const PricingContainer = styled.div`
     }
 `;
 
-const HeaderIcon = styled.div`
-    background-color: #3b82f6; /* Blue background for the arrow icon */
-    border-radius: 50%;
-    padding: 0.8rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+// REMOVED HeaderIcon component
+const HeaderLogo = styled.img` // <-- NEW Styled component for the logo
+    width: 60px; /* Adjust size as needed */
+    height: 60px;
     margin-bottom: 2rem;
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); /* Blue glow */
     animation: ${fadeIn} 0.8s ease-out;
-
-    svg {
-        color: white;
-        width: 30px;
-        height: 30px;
-    }
+    filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.7)); /* Subtle glow for the logo */
 `;
+
 
 const Title = styled.h1`
     font-size: 3.2rem;
@@ -149,17 +142,20 @@ const Card = styled.div`
         border: 1px solid #3b82f6; /* Blue border */
         background-color: #1e293b;
         animation-delay: 0.4s;
+        /* No glow for basic as per image */
     `}
     ${props => props.planType === 'premium' && `
         border: 1px solid #f97316; /* Orange border */
         background-color: #1e293b;
         position: relative;
         animation-delay: 0.6s;
+        box-shadow: 0 0 25px rgba(249, 115, 22, 0.5), 0 10px 30px rgba(0, 0, 0, 0.5); /* Orange glow */
     `}
     ${props => props.planType === 'elite' && `
         border: 1px solid #8b5cf6; /* Purple border */
         background-color: #1e293b;
         animation-delay: 0.8s;
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.5), 0 10px 30px rgba(0, 0, 0, 0.5); /* Purple glow */
     `}
 `;
 
@@ -224,7 +220,7 @@ const FeatureItem = styled.li`
     gap: 0.6rem;
 
     svg {
-        color: ${props => props.included ? '#22c55e' : '#ef4444'}; /* Green check, Red X */
+        color: #22c55e; /* Green check, consistent for all included features */
         min-width: 16px;
         height: 16px;
     }
@@ -285,9 +281,9 @@ const PricingPage = () => {
             <div className="line-effect"></div>
             <div className="line-effect"></div>
 
-            <HeaderIcon>
-                <ArrowUp />
-            </HeaderIcon>
+            {/* Replaced HeaderIcon with your logo */}
+            <HeaderLogo src={nexusSignalLogo} alt="Nexus Signal AI Logo" /> 
+
             <Title>Unlock Your Trading Edge: <strong>Nexus Signal.AI</strong> Pricing!</Title>
             <Subtitle>
                 Gain an unfair advantage with AI-powered insights, real-time analytics, and advanced predictive models. Choose the plan that elevates your trading strategy.
@@ -306,10 +302,6 @@ const PricingPage = () => {
                         <FeatureItem included><Check size={16} /> 1 Watchlist (upo 10 assets)</FeatureItem>
                         <FeatureItem included><Check size={16} /> Basic Market Overvews</FeatureItem>
                         <FeatureItem included><Check size={16} /> Email Support (Standard)</FeatureItem>
-                        {/* Features not included in basic but shown for spacing/comparison if needed
-                        <FeatureItem included={false}><X size={16} /> Feature X</FeatureItem>
-                        <FeatureItem included={false}><X size={16} /> Feature Y</FeatureItem>
-                        */}
                     </FeatureList>
                     <ActionButton planType="basic" disabled>Coming Soon</ActionButton>
                 </Card>
