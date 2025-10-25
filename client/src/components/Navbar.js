@@ -1,8 +1,8 @@
-// client/src/components/Navbar.js - Restored and refined
+// client/src/components/Navbar.js - Corrected for Landing Page AND Pricing Page
 import React from 'react';
 import styled from 'styled-components';
-import { Link, useNavigate, useLocation } from 'react-router-dom'; // Re-added useNavigate, useLocation
-import { useAuth } from '../context/AuthContext'; // Re-added useAuth
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import logoImage from '../assets/nexus-signal-logo.png';
 
 const NavContainer = styled.nav`
@@ -19,7 +19,7 @@ const NavContainer = styled.nav`
     z-index: 1000;
 `;
 
-const LogoWrapper = styled(Link)` /* Changed back to Link */
+const LogoWrapper = styled(Link)`
     display: flex;
     align-items: center;
     text-decoration: none;
@@ -44,7 +44,7 @@ const NavLinks = styled.div`
     align-items: center;
 `;
 
-const NavLink = styled(Link)` /* Changed back to NavLink */
+const NavLink = styled(Link)`
     color: #b0c4de;
     text-decoration: none;
     font-size: 1rem;
@@ -59,7 +59,7 @@ const NavLink = styled(Link)` /* Changed back to NavLink */
     }
 `;
 
-const NavButton = styled.button` /* Re-added NavButton */
+const NavButton = styled.button`
     background-color: #007bff;
     color: white;
     border: none;
@@ -76,13 +76,12 @@ const NavButton = styled.button` /* Re-added NavButton */
 `;
 
 const Navbar = () => {
-    // Re-added hooks
     const { isAuthenticated, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Check if the current path is the root (Landing Page)
-    const isOnLandingPage = location.pathname === '/';
+    // Check if the current path is the root (Landing Page) OR the Pricing Page
+    const isOnLandingOrPricingPage = location.pathname === '/' || location.pathname === '/pricing'; // <--- CORRECTED LOGIC
 
     const handleLogout = () => {
         logout();
@@ -96,11 +95,12 @@ const Navbar = () => {
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
-                {isOnLandingPage ? (
-                    // On Landing Page: Only show Pricing
-                    <NavLink to="/pricing">Pricing</NavLink>
+                {isOnLandingOrPricingPage ? (
+                    // On Landing or Pricing Page: Only show Pricing (if not authenticated)
+                    // If authenticated, we might want different links, but for now, just Pricing
+                    !isAuthenticated && <NavLink to="/pricing">Pricing</NavLink>
                 ) : (
-                    // Not on Landing Page: Show full links (conditional on auth)
+                    // Not on Landing or Pricing Page: Show full links (conditional on auth)
                     isAuthenticated ? (
                         <>
                             <NavLink to="/dashboard">Dashboard</NavLink>

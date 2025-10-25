@@ -1,339 +1,207 @@
-import React, { useState, useContext } from 'react';
-import styled, { keyframes } from 'styled-components';
-import { CheckCircle, Star } from 'lucide-react';
-import axios from 'axios';
-import { loadStripe } from '@stripe/stripe-js';
-import { AuthContext } from '../context/AuthContext';
+// client/src/pages/PricingPage.js
+import React from 'react';
+import styled from 'styled-components';
+import { Check, X } from 'lucide-react'; // Assuming you have lucide-react installed
 
-// --- Stripe Initialization ---
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
-const API_URL = process.env.NODE_ENV === 'production'
-    ? 'https://nexus-signal-server.onrender.com'
-    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev'; // Ensure port matches backend (e.g., 8081)
-
-
-// --- Animations ---
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
-// --- Styled Components ---
 const PricingContainer = styled.div`
-    padding: 3rem 2rem;
-    animation: ${fadeIn} 0.6s ease-out;
-`;
-
-const Header = styled.div`
-    text-align: center;
-    margin-bottom: 4rem;
-`;
-
-const Title = styled.h1`
-    font-size: 3rem;
-    color: #ecf0f1;
-    margin-bottom: 1rem;
-    text-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
-`;
-
-const Subtitle = styled.p`
-    font-size: 1.2rem;
-    color: #bdc3c7;
-    max-width: 700px;
-    margin: 0 auto;
-`;
-
-const TiersContainer = styled.div`
-    display: flex;
-    justify-content: center;
-    gap: 2.5rem;
-    flex-wrap: wrap;
-    align-items: stretch;
-    padding: 1rem 0 2rem 0; // Add padding for glow
-`;
-
-const TierCard = styled.div`
-    background: rgba(44, 62, 80, 0.85);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    /* Base border for all cards */
-    border: 1px solid rgba(52, 73, 94, 0.5);
-    /* Base shadow for all cards */
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
-    width: 100%;
-    max-width: 340px;
-    padding: 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    position: relative;
-    /* overflow: hidden; --- This was removed in a previous step to allow badges/glow */
+    padding: 3rem 1.5rem;
+    min-height: calc(100vh - var(--navbar-height)); /* Account for navbar height */
+    background: linear-gradient(135deg, #1e3a5f 0%, #0d1a2f 100%); /* Darker, more intense gradient */
+    color: #ecf0f1;
+`;
 
-    /* Apply conditional glow using multi-layer box-shadow */
-    ${props => props.$glowColor && `
-        border-color: ${props.$glowColor}; /* Make border match glow color */
-        box-shadow: 
-            0 0 8px ${props.$glowColor}, /* Inner glow */
-            0 0 15px ${props.$glowColor}, /* Outer glow */
-            0 15px 35px rgba(0, 0, 0, 0.7); /* Original dark shadow */
-    `}
+const Title = styled.h1`
+    font-size: 3.5rem;
+    margin-bottom: 1.5rem;
+    color: #e0e0e0;
+    text-shadow: 0 0 15px rgba(52, 152, 219, 0.4); /* Subtle blue glow */
+    text-align: center;
 
-    &:hover {
-        transform: translateY(-10px);
-        box-shadow: 
-            /* Enhanced glow on hover, if $glowColor is set */
-            ${props => props.$glowColor ? `
-                0 0 15px ${props.$glowColor},
-                0 0 30px ${props.$glowColor},
-            ` : ''}
-            /* Enhanced dark shadow on hover */
-            0 25px 45px rgba(0, 0, 0, 0.8);
+    @media (max-width: 768px) {
+        font-size: 2.8rem;
     }
 `;
 
-const badgeBase = styled.div`
-    position: absolute;
-    top: -15px;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: bold;
-    z-index: 1;
-`;
-
-const PopularBadge = styled(badgeBase)`
-    background: linear-gradient(45deg, #f39c12, #e67e22);
-    color: #1c2833;
-    box-shadow: 0 5px 10px rgba(243, 156, 18, 0.4);
-`;
-
-const EliteBadge = styled(badgeBase)`
-    background: linear-gradient(45deg, #9b59b6, #8e44ad);
-    color: #ecf0f1;
-    box-shadow: 0 5px 10px rgba(155, 89, 182, 0.4);
-`;
-
-const TierTitle = styled.h2`
-    color: #ecf0f1;
-    font-size: 1.6rem;
-    margin-top: 0.5rem; /* Added margin to account for badge */
-    margin-bottom: 0.5rem;
-`;
-
-const TierDescription = styled.p`
-    color: #95a5a6;
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-    min-height: 40px;
+const Subtitle = styled.p`
+    font-size: 1.3rem;
+    color: #bdc3c7;
+    margin-bottom: 3rem;
+    max-width: 800px;
     text-align: center;
+    line-height: 1.6;
 `;
 
+const PricingCards = styled.div`
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2.5rem;
+    max-width: 1200px;
+    width: 100%;
 
-const TierPrice = styled.p`
-    color: #3498db;
+    @media (max-width: 1024px) {
+        grid-template-columns: 1fr;
+        padding: 0 1rem;
+    }
+`;
+
+const Card = styled.div`
+    background-color: #1a2a3a; /* Slightly lighter dark blue for cards */
+    border-radius: 12px;
+    padding: 2.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(52, 152, 219, 0.15);
+    text-align: center;
+    transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+    border: 1px solid rgba(52, 152, 219, 0.3); /* Subtle border */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    &:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(52, 152, 219, 0.3);
+    }
+
+    ${props => props.featured && `
+        background: linear-gradient(45deg, #2c3e50, #1c2838); /* More distinct background for featured */
+        border-color: #3498db;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 40px rgba(52, 152, 219, 0.5);
+        transform: scale(1.02);
+
+        &:hover {
+            transform: translateY(-15px) scale(1.03);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 50px rgba(52, 152, 219, 0.7);
+        }
+    `}
+`;
+
+const PlanName = styled.h2`
     font-size: 2.2rem;
+    color: #3498db;
+    margin-bottom: 1.5rem;
+    text-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+`;
+
+const Price = styled.div`
+    font-size: 3.5rem;
     font-weight: bold;
-    margin: 0.5rem 0;
+    color: #ecf0f1;
+    margin-bottom: 1rem;
     span {
-        font-size: 1rem;
-        color: #bdc3c7;
+        font-size: 1.5rem;
         font-weight: normal;
+        color: #bdc3c7;
     }
 `;
 
 const FeatureList = styled.ul`
     list-style: none;
     padding: 0;
-    margin: 1.5rem 0;
-    width: 100%;
-    text-align: left;
+    margin: 2rem 0;
+    flex-grow: 1; /* Allow list to take up available space */
 `;
 
 const FeatureItem = styled.li`
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    padding: 0.6rem 0;
+    justify-content: center;
+    font-size: 1.1rem;
     color: #bdc3c7;
-    border-bottom: 1px solid #34495e;
-    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    gap: 0.8rem;
 
-    &:last-child {
-        border-bottom: none;
+    svg {
+        color: ${props => props.included ? '#2ecc71' : '#e74c3c'}; /* Green for check, Red for X */
+        min-width: 20px; /* Ensure icon doesn't shrink */
     }
 `;
 
-const Button = styled.button`
-    background: linear-gradient(45deg, #3498db, #2980b9);
+const ActionButton = styled.button`
+    background: linear-gradient(90deg, #3498db, #2980b9);
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     color: white;
-    padding: 0.8rem 1.5rem;
-    cursor: pointer;
-    font-size: 1rem;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
     font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    transition: all 0.3s ease-in-out;
-    margin-top: auto;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
     width: 100%;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    position: relative;
-    z-index: 1;
+    margin-top: 1.5rem; /* Ensure space from features */
 
     &:hover {
         transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
+        box-shadow: 0 8px 25px rgba(52, 152, 219, 0.6);
+        background: linear-gradient(90deg, #2980b9, #3498db); /* Slightly shift gradient */
     }
 
     &:disabled {
-      background: #7f8c8d;
-      cursor: not-allowed;
-      box-shadow: none;
-      transform: none;
+        background: #7f8c8d; /* Grey out when disabled */
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
     }
 `;
 
-const ErrorMessage = styled.p`
-    color: #e74c3c;
-    text-align: center;
-    margin-top: 1rem;
-    font-size: 0.9rem;
-`;
-
-
-const Pricing = () => {
-    const { user } = useContext(AuthContext);
-    const [loading, setLoading] = useState('');
-    const [error, setError] = useState('');
-
-    const handleCheckout = async (priceId, planName) => {
-        setError('');
-        if (!user) {
-            setError('Please log in or register to choose a plan.');
-            return;
-        }
-        setLoading(planName);
-
-        try {
-            const stripe = await stripePromise;
-            if (!stripe) {
-              throw new Error('Stripe.js failed to load.');
-            }
-
-            const cacheBustUrl = `${API_URL}/api/payments/create-checkout-session?_t=${new Date().getTime()}`;
-            const response = await axios.post(cacheBustUrl,
-                { priceId, planName },
-                {
-                    headers: {
-                        'x-auth-token': localStorage.getItem('token')
-                    }
-                }
-            );
-
-            const session = response.data;
-
-            const result = await stripe.redirectToCheckout({
-                sessionId: session.id,
-            });
-
-            if (result.error) {
-                console.error("Stripe redirect error:", result.error.message);
-                setError(result.error.message);
-            }
-        } catch (err) {
-            console.error('Checkout error:', err);
-            const errMsg = err.response?.data?.msg || err.message || 'An error occurred during checkout.';
-            setError(errMsg);
-        } finally {
-            setLoading('');
-        }
-    };
-
-    // Define glow colors
-    const premiumGlowColor = '#f39c12'; // Orange
-    const eliteGlowColor = '#9b59b6'; // Purple
-
+const PricingPage = () => {
     return (
         <PricingContainer>
-            <Header>
-                <Title>Unlock Your Trading Edge</Title>
-                <Subtitle>Nexus Signal.AI Pricing! Choose the plan that empowers your market strategy.</Subtitle>
-            </Header>
-            {error && <ErrorMessage>{error}</ErrorMessage>}
-            <TiersContainer>
-                {/* Basic Tier (No glow) */}
-                <TierCard>
-                    <TierTitle>Basic</TierTitle>
-                    <TierDescription>Explore the Fundamentals</TierDescription>
-                    <TierPrice>7-Day Free Trial</TierPrice>
-                    <span style={{color: '#95a5a6', fontSize: '0.9rem', marginBottom: '1.5rem'}}>(No Credit Card Required)</span>
-                    <FeatureList>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Limited Daily Signals (2/day)</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> 1 Watchlist (up to 10 assets)</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Basic Market Overviews</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Email Support (Standard)</FeatureItem>
-                    </FeatureList>
-                    <Button disabled={!user} onClick={() => alert('Free trial logic not yet implemented!')}>
-                      {user ? 'Start Free Trial' : 'Log in to Start Trial'}
-                    </Button>
-                </TierCard>
+            <Title>Simple, Transparent Pricing</Title>
+            <Subtitle>
+                Choose the plan that best fits your trading journey. From fundamental insights to advanced AI predictions, we have a solution for every level of expertise.
+            </Subtitle>
 
-                {/* Premium Tier (Orange glow) */}
-                <TierCard $glowColor={premiumGlowColor} > {/* Pass glow color as transient prop */}
-                    <PopularBadge>MOST POPULAR</PopularBadge>
-                    <TierTitle>Premium</TierTitle>
-                    <TierDescription>Master Your Trades</TierDescription>
-                    <TierPrice>$49 <span>/ month</span></TierPrice>
+            <PricingCards>
+                {/* Free Tier Card */}
+                <Card>
+                    <PlanName>Free Tier</PlanName>
+                    <Price>$0<span>/month</span></Price>
                     <FeatureList>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Comprehensive Daily Signals</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Live Market Data (Minute)</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Real-Time Price & Insights</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Algorithmic Analysis</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> In-depth Sector Analysis</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Priority Email Support</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Limited Market Watchlist</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Basic News & Sentiment</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Daily Market Summaries</FeatureItem>
+                        <FeatureItem included={false}><X size={20} /> Advanced AI Predictions</FeatureItem>
+                        <FeatureItem included={false}><X size={20} /> Real-Time Strategy Backtesting</FeatureItem>
+                        <FeatureItem included={false}><X size={20} /> Priority Support</FeatureItem>
                     </FeatureList>
-                    <Button
-                        style={{ background: 'linear-gradient(45deg, #f39c12, #e67e22)' }}
-                        onClick={() => handleCheckout(process.env.REACT_APP_STRIPE_PREMIUM_PRICE_ID, 'Premium')}
-                        disabled={loading === 'Premium' || !user}
-                    >
-                        {loading === 'Premium' ? 'Processing...' : (user ? 'Choose Plan' : 'Log in to Choose')}
-                    </Button>
-                </TierCard>
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                </Card>
 
-                {/* Elite Tier (Purple glow) */}
-                <TierCard $glowColor={eliteGlowColor}> {/* Pass glow color as transient prop */}
-                    <EliteBadge>Best Deal</EliteBadge>
-                    <TierTitle>Elite</TierTitle>
-                     <TierDescription>For the Ultimate Market Edge</TierDescription>
-                    <TierPrice>$125 <span>/ month</span></TierPrice>
+                {/* Pro Tier Card */}
+                <Card featured>
+                    <PlanName>Pro Tier</PlanName>
+                    <Price>$29<span>/month</span></Price>
                     <FeatureList>
-                        {/* THIS IS THE SECTION WHERE THE ERROR WAS PASTED */}
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> All Premium Features +</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Ultra-Low Latency Data</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> API Access</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Unlimited Literacy Reports</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Custom Research Insights</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> Personalized Mentorship</FeatureItem>
-                        <FeatureItem><CheckCircle color="#2ecc71" size={18}/> 24/7 Dedicated Account Manager</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Expanded Market Watchlist</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Comprehensive News & Sentiment</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Advanced AI Predictions</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Basic Strategy Backtesting</FeatureItem>
+                        <FeatureItem included={false}><X size={20} /> Real-Time Strategy Optimization</FeatureItem>
+                        <FeatureItem included={false}><X size={20} /> Dedicated Account Manager</FeatureItem>
                     </FeatureList>
-                    <Button
-                        style={{ background: 'linear-gradient(45deg, #9b59b6, #8e44ad)' }}
-                        onClick={() => handleCheckout(process.env.REACT_APP_STRIPE_ELITE_PRICE_ID, 'Elite')}
-                        disabled={loading === 'Elite' || !user}
-                    >
-                      <Star size={18}/> {loading === 'Elite' ? 'Processing...' : (user ? 'Go Elite' : 'Log in to Choose')}
-                    </Button>
-                </TierCard>
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                </Card>
 
-            </TiersContainer>
+                {/* Enterprise Tier Card */}
+                <Card>
+                    <PlanName>Enterprise</PlanName>
+                    <Price>$99<span>/month</span></Price>
+                    <FeatureList>
+                        <FeatureItem included><Check size={20} /> Unlimited Market Access</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Premium News & AI Insights</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Advanced AI Predictions & Custom Models</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Real-Time Strategy Optimization</FeatureItem>
+                        <FeatureItem included><Check size={20} /> Dedicated Account Manager</FeatureItem>
+                        <FeatureItem included><Check size={20} /> API Access & Integrations</FeatureItem>
+                    </FeatureList>
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                </Card>
+            </PricingCards>
         </PricingContainer>
     );
 };
 
-export default Pricing;
-
+export default PricingPage;
