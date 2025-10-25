@@ -1,4 +1,4 @@
-// client/src/App.js - CORRECTED VERSION for useLocation hook
+// client/src/App.js - CORRECTED VERSION for useLocation hook (FINAL)
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
@@ -62,11 +62,10 @@ const GlobalStyle = styled.div`
     font-family: 'Inter', sans-serif;
 `;
 
-// --- Main App Component ---
-const App = () => {
-    // Moved useLocation and related logic INSIDE the App component, but outside the Router's JSX return
-    // This allows useLocation to be called within the Router's context.
-    const location = useLocation(); 
+// --- Navbar and Routing Component (to house useLocation) ---
+// We create a new component so useLocation is always within Router's context
+const AppContent = () => {
+    const location = useLocation(); // <--- This is now correctly within Router's context
     
     // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
@@ -75,57 +74,64 @@ const App = () => {
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
 
     return (
-        <Router> {/* This Router component needs to wrap useLocation's context */}
-            <GlobalStyle>
-                {/* Navbar: Appears on ALL pages */}
-                <NavbarContainer>
-                    <Link to="/" className="logo">Nexus<span>Signal</span></Link>
-                    <div className="nav-links">
-                        <Link to="/about">About</Link>
-                        <Link to="/pricing">Pricing</Link>
-                        <Link to="/performance">Performance</Link>
-                        {/* Conditionally render the Login link */}
-                        {shouldShowLoginLink && <Link to="/login">Login</Link>}
+        <GlobalStyle>
+            {/* Navbar: Appears on ALL pages */}
+            <NavbarContainer>
+                <Link to="/" className="logo">Nexus<span>Signal</span></Link>
+                <div className="nav-links">
+                    <Link to="/about">About</Link>
+                    <Link to="/pricing">Pricing</Link>
+                    <Link to="/performance">Performance</Link>
+                    {/* Conditionally render the Login link */}
+                    {shouldShowLoginLink && <Link to="/login">Login</Link>}
+                </div>
+            </NavbarContainer>
+
+            {/* Main Content Area where pages are rendered based on the URL */}
+            <Routes>
+                {/* Core Pages */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/pricing" element={<PricingPage />} />
+
+                {/* Footer Links */}
+                <Route path="/performance" element={<PerformancePage />} />
+                <Route path="/disclaimer" element={<DisclaimerPage />} />
+                <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                <Route path="/terms" element={<TermsOfServicePage />} />
+
+                {/* Fallback for 404 Not Found pages */}
+                <Route path="*" element={
+                    <div style={{
+                        padding: '50px',
+                        textAlign: 'center',
+                        color: '#e0e0e0',
+                        fontSize: '2rem',
+                        minHeight: 'calc(100vh - var(--navbar-height))',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        backgroundColor: '#0d1a2f'
+                    }}>
+                        <h2>404 - Page Not Found</h2>
+                        <p style={{fontSize: '1.2rem', color: '#94a3b8'}}>The page you are looking for does not exist.</p>
+                        <Link to="/" style={{ color: '#00adef', textDecoration: 'none', marginTop: '1rem', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                            Go to Home
+                        </Link>
                     </div>
-                </NavbarContainer>
+                } />
+            </Routes>
+        </GlobalStyle>
+    );
+};
 
-                {/* Main Content Area where pages are rendered based on the URL */}
-                <Routes>
-                    {/* Core Pages */}
-                    <Route path="/" element={<LandingPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/about" element={<AboutPage />} />
-                    <Route path="/pricing" element={<PricingPage />} />
-
-                    {/* Footer Links */}
-                    <Route path="/performance" element={<PerformancePage />} />
-                    <Route path="/disclaimer" element={<DisclaimerPage />} />
-                    <Route path="/privacy" element={<PrivacyPolicyPage />} />
-                    <Route path="/terms" element={<TermsOfServicePage />} />
-
-                    {/* Fallback for 404 Not Found pages */}
-                    <Route path="*" element={
-                        <div style={{
-                            padding: '50px',
-                            textAlign: 'center',
-                            color: '#e0e0e0',
-                            fontSize: '2rem',
-                            minHeight: 'calc(100vh - var(--navbar-height))',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            backgroundColor: '#0d1a2f'
-                        }}>
-                            <h2>404 - Page Not Found</h2>
-                            <p style={{fontSize: '1.2rem', color: '#94a3b8'}}>The page you are looking for does not exist.</p>
-                            <Link to="/" style={{ color: '#00adef', textDecoration: 'none', marginTop: '1rem', fontSize: '1.2rem', fontWeight: 'bold' }}>
-                                Go to Home
-                            </Link>
-                        </div>
-                    } />
-                </Routes>
-            </GlobalStyle>
+// --- Main App Component ---
+const App = () => {
+    return (
+        <Router> {/* Router must be the outermost component for useLocation to work */}
+            <AppContent /> {/* Render our new component here */}
         </Router>
     );
 };
