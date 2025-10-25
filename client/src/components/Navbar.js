@@ -1,19 +1,19 @@
-// client/src/components/Navbar.js
+// client/src/components/Navbar.js - SUPER SIMPLIFIED FOR DIAGNOSIS
 import React from 'react';
 import styled from 'styled-components';
-import { Link, useNavigate } from 'react-router-dom'; // <--- REMOVED useLocation
-import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
+// Removed: useNavigate, useLocation, useAuth
 import logoImage from '../assets/nexus-signal-logo.png';
 
 const NavContainer = styled.nav`
-    background-color: #1a273b; /* A sleek, dark blue for the Navbar */
+    background-color: #1a273b;
     color: white;
     padding: 0 1.5rem;
-    height: var(--navbar-height); /* Use the CSS variable */
+    height: var(--navbar-height);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); /* Slightly stronger shadow */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -22,21 +22,21 @@ const NavContainer = styled.nav`
 const LogoWrapper = styled(Link)`
     display: flex;
     align-items: center;
-    text-decoration: none; /* No underline for the logo link */
+    text-decoration: none;
 `;
 
 const LogoImg = styled.img`
-    height: 40px; /* Adjust size as needed, e.g., 40px, 50px */
-    margin-right: 10px; /* Space between logo and text */
+    height: 40px;
+    margin-right: 10px;
 `;
 
 const LogoText = styled.span`
     font-size: 1.8rem;
     font-weight: bold;
-    color: #e0e0e0; /* White/light gray for the text part of the logo */
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* A sleek, modern font */
+    color: #e0e0e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     letter-spacing: -0.5px;
-    white-space: nowrap; /* Prevent text from wrapping */
+    white-space: nowrap;
 `;
 
 const NavLinks = styled.div`
@@ -45,47 +45,25 @@ const NavLinks = styled.div`
 `;
 
 const NavLink = styled(Link)`
-    color: #b0c4de; /* Softer, light blue-gray for links */
+    color: #b0c4de;
     text-decoration: none;
-    font-size: 1rem; /* Slightly smaller font for links */
+    font-size: 1rem;
     margin-left: 1.5rem;
-    padding: 0.5rem 0.8rem; /* Add some padding for better click area/visuals */
-    border-radius: 4px; /* Slightly rounded corners */
+    padding: 0.5rem 0.8rem;
+    border-radius: 4px;
     transition: background-color 0.3s ease, color 0.3s ease;
 
     &:hover {
-        color: #e0e0e0; /* White on hover */
-        background-color: rgba(0, 173, 237, 0.1); /* Subtle accent blue background on hover */
+        color: #e0e0e0;
+        background-color: rgba(0, 173, 237, 0.1);
     }
 `;
 
-const NavButton = styled.button`
-    background-color: #007bff; /* A prominent blue for buttons */
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 0.7rem 1.2rem;
-    font-size: 1.05rem;
-    cursor: pointer;
-    margin-left: 1.5rem;
-    transition: background-color 0.3s ease;
-
-    &:hover {
-        background-color: #0056b3; /* Darker blue on hover */
-    }
-`;
+// Removed NavButton
+// Removed handleLogout
 
 const Navbar = () => {
-    const { isAuthenticated, logout } = useAuth();
-    const navigate = useNavigate();
-    // const location = useLocation(); // <--- REMOVED
-
-    // const shouldHideAuthLinks = location.pathname === '/' || location.pathname === '/pricing'; // <--- REMOVED
-
-    const handleLogout = () => {
-        logout();
-        navigate('/login'); // Redirect to login page after logout
-    };
+    // Removed: isAuthenticated, logout, navigate, location, isOnLandingPage, shouldHideAuthLinks, handleLogout
 
     return (
         <NavContainer>
@@ -94,21 +72,12 @@ const Navbar = () => {
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
-                {isAuthenticated ? (
-                    <>
-                        <NavLink to="/dashboard">Dashboard</NavLink>
-                        <NavLink to="/predict">Predict</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink>
-                        <NavButton onClick={handleLogout}>Logout</NavButton>
-                    </>
-                ) : (
-                    <>
-                        {/* Always show Login/Register for non-authenticated users for now */}
-                        <NavLink to="/login">Login</NavLink>
-                        <NavLink to="/register">Register</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink>
-                    </>
-                )}
+                {/* Minimal links for testing compilation */}
+                <NavLink to="/dashboard">Dashboard</NavLink>
+                <NavLink to="/predict">Predict</NavLink>
+                <NavLink to="/pricing">Pricing</NavLink>
+                <NavLink to="/login">Login</NavLink>
+                <NavLink to="/register">Register</NavLink>
             </NavLinks>
         </NavContainer>
     );
