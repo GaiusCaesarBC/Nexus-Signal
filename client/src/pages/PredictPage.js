@@ -14,7 +14,7 @@ import {
 } from 'chart.js';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import Loader from '../components/Loader';
+import Loader from '../components/Loader'; // Ensure this path is correct
 
 // Register Chart.js components
 ChartJS.register(
@@ -33,24 +33,29 @@ const PredictContainer = styled.div`
     align-items: center;
     padding: 3rem 1.5rem;
     min-height: calc(100vh - var(--navbar-height));
-    background-color: transparent; // <-- Changed this from #1a1a2e to transparent
+    background-color: transparent; /* Changed to transparent */
     color: #e0e0e0;
 `;
 
 const PredictBox = styled.div`
-    background-color: #2c3e50; // Dark blue-gray for the inner box
+    background-color: #2c3e50; /* Dark blue-gray for the inner box */
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     padding: 2.5rem;
     max-width: 900px;
     width: 100%;
     margin-bottom: 2rem;
-    text-align: center;
+    /* --- Styles to center content within PredictBox --- */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centers children horizontally */
+    text-align: center; /* Centers inline text within the box */
+    /* --- End centering styles --- */
 `;
 
 const InputGroup = styled.div`
     display: flex;
-    justify-content: center;
+    justify-content: center; /* Centers the input and button horizontally */
     margin-bottom: 1.5rem;
     width: 100%;
     max-width: 400px;
@@ -95,19 +100,22 @@ const Button = styled.button`
 
 const PredictionResult = styled.div`
     margin-top: 1.5rem;
-    text-align: left;
+    text-align: left; /* Keep this left for readability of results */
     background-color: #34495e;
     padding: 1.5rem;
     border-radius: 8px;
+    width: 100%; /* Take full width of its parent */
+    max-width: 400px; /* Limit width for better appearance */
 `;
 
 const ChartContainer = styled.div`
     margin-top: 2rem;
     width: 100%;
-    height: 400px; // Fixed height for consistency
+    height: 400px; /* Fixed height for consistency */
     background-color: #34495e;
     padding: 1rem;
     border-radius: 8px;
+    max-width: 900px; /* Match PredictBox max-width */
 `;
 
 const ErrorMessage = styled.p`
@@ -152,7 +160,7 @@ const PredictPage = () => {
             setError('Please enter a stock symbol.');
             return;
         }
-        if (!isAuthenticated) { // This check should ideally not be reached if useEffect redirects
+        if (!isAuthenticated) {
             setError('Please log in to get predictions.');
             setLoading(false);
             return;
@@ -160,9 +168,9 @@ const PredictPage = () => {
 
         setLoading(true);
         try {
-            console.log(`Fetching prediction for ${symbol} from ${api.defaults.baseURL}/api/predict/${symbol}`); // Debug log
+            console.log(`Fetching prediction for ${symbol} from ${api.defaults.baseURL}/api/predict/${symbol}`);
             const res = await api.get(`/api/predict/${symbol}`);
-            console.log('Prediction API response:', res.data); // Debug log
+            console.log('Prediction API response:', res.data);
 
             setPrediction(res.data);
             setPredictionMessage(res.data.predictionMessage);
@@ -186,7 +194,7 @@ const PredictPage = () => {
             });
 
         } catch (err) {
-            console.error('Error fetching prediction:', err.response?.data?.msg || err.message); // Detailed error log
+            console.error('Error fetching prediction:', err.response?.data?.msg || err.message);
             setError(err.response?.data?.msg || 'Failed to fetch prediction. Please try again.');
         } finally {
             setLoading(false);
@@ -232,7 +240,7 @@ const PredictPage = () => {
             x: {
                 ticks: {
                     color: '#e0e0e0',
-                    maxTicksLimit: 10 // Limit x-axis labels
+                    maxTicksLimit: 10
                 },
                 grid: {
                     color: 'rgba(255, 255, 255, 0.1)',
@@ -242,7 +250,7 @@ const PredictPage = () => {
                 ticks: {
                     color: '#e0e0e0',
                     callback: function(value) {
-                        return `$${value.toFixed(2)}`; // Format as currency
+                        return `$${value.toFixed(2)}`;
                     }
                 },
                 grid: {
@@ -276,7 +284,7 @@ const PredictPage = () => {
                 </InputGroup>
 
                 {error && <ErrorMessage>{error}</ErrorMessage>}
-                {loading && <Loader />} {/* Use your Loader component here */}
+                {loading && <Loader />}
 
 
                 {prediction && (
