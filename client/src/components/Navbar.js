@@ -76,13 +76,12 @@ const NavButton = styled.button`
 `;
 
 const Navbar = () => {
-    // ALL HOOKS MUST BE CALLED AT THE TOP LEVEL OF THE FUNCTIONAL COMPONENT
     const { isAuthenticated, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Check if the current path is the root (Landing Page)
-    const isOnLandingPage = location.pathname === '/';
+    // Check if the current path is the root (Landing Page) OR the Pricing Page
+    const shouldHideAuthLinks = location.pathname === '/' || location.pathname === '/pricing'; // <--- UPDATED LOGIC
 
     const handleLogout = () => {
         logout();
@@ -104,9 +103,10 @@ const Navbar = () => {
                         <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 ) : (
+                    // Only show Login/Register if NOT on the landing page AND NOT on the pricing page
                     <>
-                        {!isOnLandingPage && <NavLink to="/login">Login</NavLink>}
-                        {!isOnLandingPage && <NavLink to="/register">Register</NavLink>}
+                        {!shouldHideAuthLinks && <NavLink to="/login">Login</NavLink>}
+                        {!shouldHideAuthLinks && <NavLink to="/register">Register</NavLink>}
                         <NavLink to="/pricing">Pricing</NavLink>
                     </>
                 )}
