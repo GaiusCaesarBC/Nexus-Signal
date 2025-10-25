@@ -1,9 +1,9 @@
 // client/src/components/Navbar.js
 import React from 'react';
 import styled from 'styled-components';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import logoImage from '../assets/nexus-signal-logo.png'; // <--- ASSUMING THIS PATH & FILENAME ARE CORRECT
+import logoImage from '../assets/nexus-signal-logo.png';
 
 const NavContainer = styled.nav`
     background-color: #1a273b; /* A sleek, dark blue for the Navbar */
@@ -76,8 +76,13 @@ const NavButton = styled.button`
 `;
 
 const Navbar = () => {
+    // ALL HOOKS MUST BE CALLED AT THE TOP LEVEL OF THE FUNCTIONAL COMPONENT
     const { isAuthenticated, logout } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Check if the current path is the root (Landing Page)
+    const isOnLandingPage = location.pathname === '/';
 
     const handleLogout = () => {
         logout();
@@ -88,7 +93,7 @@ const Navbar = () => {
         <NavContainer>
             <LogoWrapper to="/">
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
-                <LogoText>Nexus Signal.AI</LogoText> {/* <--- CORRECTED: "Nexus Signal.AI" EXACTLY AS REQUESTED */}
+                <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
                 {isAuthenticated ? (
@@ -100,8 +105,8 @@ const Navbar = () => {
                     </>
                 ) : (
                     <>
-                        <NavLink to="/login">Login</NavLink>
-                        <NavLink to="/register">Register</NavLink>
+                        {!isOnLandingPage && <NavLink to="/login">Login</NavLink>}
+                        {!isOnLandingPage && <NavLink to="/register">Register</NavLink>}
                         <NavLink to="/pricing">Pricing</NavLink>
                     </>
                 )}
