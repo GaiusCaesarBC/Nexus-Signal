@@ -1,9 +1,9 @@
-// client/src/App.js - Latest Version with Logo, Mobile Menu, and Routes (and larger logo)
+// client/src/App.js - Updated Navbar Image Size (doubled)
 
-import React, { useState, useEffect } from 'react'; // <--- Import useState, useEffect
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
-import { Menu, X } from 'lucide-react'; // <--- Import Menu and X icons for hamburger
+import { Menu, X } from 'lucide-react';
 
 // Import all your pages
 import LandingPage from './pages/LandingPage';
@@ -38,7 +38,7 @@ const NavbarContainer = styled.nav`
         gap: 0.5rem; /* Space between logo image and text */
 
         img {
-            height: 50px; /* <--- THIS IS THE LINE WITH THE INCREASED SIZE */
+            height: 100px; /* <--- CHANGED THIS TO 100px (doubled from 50px) */
             width: auto;
         }
 
@@ -121,7 +121,7 @@ const NavbarContainer = styled.nav`
 
 // Global styling container for consistent layout and CSS variables
 const GlobalStyle = styled.div`
-    --navbar-height: 60px;
+    --navbar-height: 60px; /* This needs to be adjusted if logo height changes the navbar's natural height */
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -129,26 +129,21 @@ const GlobalStyle = styled.div`
     font-family: 'Inter', sans-serif;
 `;
 
-// --- Navbar and Routing Component (to house useLocation) ---
+// --- Navbar and Routing Component ---
 const AppContent = () => {
     const location = useLocation(); 
-    const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-    // Close menu when navigating to a new page
     useEffect(() => {
         setIsMenuOpen(false);
     }, [location.pathname]);
     
-    // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
-
-    // Check if the current path is in the array of paths to hide login
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
 
     return (
         <GlobalStyle>
-            {/* Navbar: Appears on ALL pages */}
-            <NavbarContainer $isOpen={isMenuOpen}> {/* Pass isMenuOpen to styled component */}
+            <NavbarContainer $isOpen={isMenuOpen}>
                 <Link to="/" className="logo-link">
                     <img src="/nexus-signal-logo.png" alt="Nexus Signal AI Logo" />
                     <div className="logo-text-wrapper">
@@ -162,7 +157,7 @@ const AppContent = () => {
                     {isMenuOpen ? <X size={28} /> : <Menu size={28} />}
                 </div>
 
-                <div className="nav-links"> {/* Removed conditional rendering here, now controlled by CSS transform */}
+                <div className="nav-links">
                     <Link to="/about">About</Link>
                     <Link to="/pricing">Pricing</Link>
                     <Link to="/performance">Performance</Link>
@@ -170,21 +165,16 @@ const AppContent = () => {
                 </div>
             </NavbarContainer>
 
-            {/* Main Content Area where pages are rendered based on the URL */}
             <Routes>
-                {/* Core Pages */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
-
-                {/* Footer Links */}
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/disclaimer" element={<DisclaimerPage />} />
-                <Route path="/privacy" element={<PrivacyPolicyPage />} /> {/* Ensure correct element prop */}
-                <Route path="/terms" element={<TermsOfServicePage />} /> {/* Ensure correct element prop */}
+                <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                <Route path="/terms" element={<TermsOfServicePage />} />
 
-                {/* Fallback for 404 Not Found pages */}
                 <Route path="*" element={
                     <div style={{
                         padding: '50px',
@@ -210,11 +200,11 @@ const AppContent = () => {
     );
 };
 
-// --- Main App Component (Wrapper for Router) ---
+// --- Main App Component ---
 const App = () => {
     return (
-        <Router> {/* Router must be the outermost component for useLocation to work */}
-            <AppContent /> {/* Render our new component here */}
+        <Router>
+            <AppContent />
         </Router>
     );
 };
