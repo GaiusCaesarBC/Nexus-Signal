@@ -88,7 +88,7 @@ const Navbar = () => {
         <NavContainer>
             <LogoWrapper to="/">
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
-                <LogoText>Nexus SIGNAL.AI</LogoText> {/* <--- CORRECTED: Full name "Nexus SIGNAL.AI" */}
+                <LogoText>Nexus Signal.AI</LogoText> {/* <--- CORRECTED: "Nexus Signal.AI" EXACTLY AS REQUESTED */}
             </LogoWrapper>
             <NavLinks>
                 {isAuthenticated ? (
