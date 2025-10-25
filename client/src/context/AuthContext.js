@@ -1,8 +1,6 @@
-// client/src/context/AuthContext.js
-import React, { createContext, useState, useEffect, useContext } from 'react';
+// client/src/context/AuthContext.js - FINAL Update for useEffect dependencies and stable 'api' instance
+import React, { createContext, useState, useEffect, useContext, useMemo, useCallback } from 'react'; // Added useCallback
 import axios from 'axios';
-
-// --- API URL Definition (Removed from here, will use process.env.REACT_APP_API_URL consistently) ---
 
 // Create the AuthContext
 export const AuthContext = createContext();
@@ -14,74 +12,75 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // --- Access REACT_APP_API_URL here consistently ---
     const API_BASE_URL = process.env.REACT_APP_API_URL;
-    console.log('[AuthContext] API_BASE_URL:', API_BASE_URL); // Debug: Check what URL is being used
+    console.log('[AuthContext] API_BASE_URL:', API_BASE_URL);
 
-    // Axios instance for authenticated requests
-    const api = axios.create({
-        baseURL: API_BASE_URL, // Use the consistent API_BASE_URL
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    });
+    // Memoize the axios instance to ensure it's stable across renders
+    const api = useMemo(() => {
+        const instance = axios.create({
+            baseURL: API_BASE_URL,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
 
-    // Interceptor to attach token to requests
-    api.interceptors.request.use(
-        (config) => {
-            if (token) {
-                config.headers['x-auth-token'] = token;
-            }
-            return config;
-        },
-        (error) => {
-            return Promise.reject(error);
-        }
-    );
-
-    // Effect to check token validity and load user on mount
-    useEffect(() => {
-        const loadUser = async () => {
-            if (token) {
-                console.log('[AuthContext] Provider rendering. User:', user, 'Token exists:', !!token); // Debug
-                try {
-                    const res = await api.get('/api/users/auth');
-                    setUser(res.data);
-                    console.log('[AuthContext] User loaded:', res.data.username); // Debug
-                } catch (err) {
-                    console.error('[AuthContext] Failed to load user from token:', err.response?.data?.msg || err.message); // Debug
-                    localStorage.removeItem('token');
-                    setToken(null);
-                    setUser(null);
+        // This interceptor needs to use the current 'token' from state,
+        // so it has to be defined within `useMemo`'s closure for 'token'.
+        // This ensures the interceptor always has the latest token.
+        instance.interceptors.request.use(
+            (config) => {
+                if (token) {
+                    config.headers['x-auth-token'] = token;
                 }
-            } else {
-                console.log('[AuthContext] No token found.'); // Debug
+                return config;
+            },
+            (err) => {
+                return Promise.reject(err);
             }
-            setLoading(false);
-        };
-        // The `api` object is created within the component, so it changes on every render if not memoized.
-        // It's generally okay for it to be a dependency as long as you're aware of re-runs.
-        // However, a more robust solution for `api` not changing is to create it outside or memoize it.
-        // For now, let's remove 'user' from dependency array to avoid potential infinite loops
-        // if user state update somehow triggers a re-run of an effect that then updates user.
+        );
+        return instance;
+    }, [API_BASE_URL, token]); // Recreate 'api' only if baseURL or token changes
+
+    // Memoize the loadUser function using useCallback
+    const loadUser = useCallback(async () => {
+        if (token) {
+            console.log('[AuthContext] Provider rendering. User:', user, 'Token exists:', !!token);
+            try {
+                const res = await api.get('/api/users/auth');
+                setUser(res.data);
+                console.log('[AuthContext] User loaded:', res.data.username);
+            } catch (err) {
+                console.error('[AuthContext] Failed to load user from token:', err.response?.data?.msg || err.message);
+                localStorage.removeItem('token');
+                setToken(null);
+                setUser(null);
+            }
+        } else {
+            console.log('[AuthContext] No token found.');
+        }
+        setLoading(false);
+    }, [token, api, user]); // Dependencies for loadUser: token, the stable 'api', and 'user' for logging (or if its change should trigger re-auth)
+
+    // Effect to call loadUser on mount or when token/api changes
+    useEffect(() => {
         loadUser();
-    }, [token, API_BASE_URL]); // <-- Updated dependencies for `useEffect`
+    }, [loadUser]); // Dependency is the memoized loadUser function
 
     // Login function
     const login = async (username, password) => {
         setError(null);
         setLoading(true);
-        console.log(`[AuthContext] Attempting login for: ${username}`); // Debug
+        console.log(`[AuthContext] Attempting login for: ${username}`);
         try {
             const res = await api.post('/api/users/login', { username, password });
             setToken(res.data.token);
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
-            console.log('[AuthContext] Login successful. User:', res.data.user.username); // Debug
+            console.log('[AuthContext] Login successful. User:', res.data.user.username);
             setLoading(false);
             return { success: true, user: res.data.user };
         } catch (err) {
-            console.error('[AuthContext] Login failed:', err.response?.data?.msg || err.message); // Debug
+            console.error('[AuthContext] Login failed:', err.response?.data?.msg || err.message);
             setError(err.response?.data?.msg || 'Login failed. Please check your credentials.');
             setLoading(false);
             return { success: false, error: err.response?.data?.msg || 'Login failed' };
@@ -92,17 +91,17 @@ export const AuthProvider = ({ children }) => {
     const register = async (username, email, password) => {
         setError(null);
         setLoading(true);
-        console.log(`[AuthContext] Attempting registration for: ${username}`); // Debug
+        console.log(`[AuthContext] Attempting registration for: ${username}`);
         try {
             const res = await api.post('/api/users/register', { username, email, password });
-            setToken(res.data.token); // Assuming backend sends token on register
+            setToken(res.data.token);
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
-            console.log('[AuthContext] Registration successful. User:', res.data.user.username); // Debug
+            console.log('[AuthContext] Registration successful. User:', res.data.user.username);
             setLoading(false);
             return { success: true, user: res.data.user };
         } catch (err) {
-            console.error('[AuthContext] Registration or auto-login failed:', err.response?.data?.msg || err.message); // Debug
+            console.error('[AuthContext] Registration or auto-login failed:', err.response?.data?.msg || err.message);
             setError(err.response?.data?.msg || 'Registration failed. Please try again.');
             setLoading(false);
             return { success: false, error: err.response?.data?.msg || 'Registration failed' };
@@ -114,7 +113,7 @@ export const AuthProvider = ({ children }) => {
         setToken(null);
         setUser(null);
         localStorage.removeItem('token');
-        console.log('[AuthContext] User logged out.'); // Debug
+        console.log('[AuthContext] User logged out.');
     };
 
     return (
