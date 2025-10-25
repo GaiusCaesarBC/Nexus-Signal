@@ -1,4 +1,4 @@
-// client/src/pages/PredictPage.js
+// client/src/pages/PredictPage.js - InfoMessage warning resolved
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { Line } from 'react-chartjs-2';
@@ -124,11 +124,7 @@ const ErrorMessage = styled.p`
     font-size: 0.95rem;
 `;
 
-const InfoMessage = styled.p`
-    color: #6a9955;
-    margin-top: 1rem;
-    font-size: 0.95rem;
-`;
+// InfoMessage definition removed as it was unused.
 
 
 const PredictPage = () => {
