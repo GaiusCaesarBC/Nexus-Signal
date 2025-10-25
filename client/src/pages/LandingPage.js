@@ -1,322 +1,334 @@
-// client/src/pages/LandingPage.js
-import React, { useState } from 'react'; // Import useState
+// client/src/pages/LandingPage.js - Waitlist Section moved below Features Section
+import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { Send, Twitter, Linkedin, Github, MessageSquare } from 'lucide-react';
-import logo from '../assets/nexus-signal-logo.png'; // <--- Ensure this is the correct filename
-import axios from 'axios'; // <-- Import axios
+import { CheckCircle, Zap, Shield, Rocket, Mail } from 'lucide-react';
+import axios from 'axios';
 
-// --- API URL Definition ---
-// Define API URL based on environment
-const API_URL = process.env.NODE_ENV === 'production'
-    ? 'https://nexus-signal.onrender.com' // <--- CORRECTED THIS LINE!
-    // Ensure this is your correct forwarded URL for the BACKEND (e.g., port 8081)
-    : 'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev';
-
-// ... (the rest of your LandingPage.js code) ...
-// --- Animations ---
+// Keyframes for animations
 const fadeIn = keyframes`
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 `;
 
-const pulse = keyframes`
-    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7); }
-    70% { transform: scale(1.05); box-shadow: 0 0 10px 15px rgba(52, 152, 219, 0); }
-    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); }
-`;
-
-
-// --- Styled Components (No changes here) ---
-const PageWrapper = styled.div`
-    min-height: 100vh;
+// Styled Components (No changes to actual styles, just their order in JSX)
+const LandingContainer = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    /* Will inherit the complex gradient from index.css */
-    color: #ecf0f1;
-    text-align: center;
-    overflow: hidden;
-`;
-
-const Header = styled.header`
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 3rem;
-    animation: ${fadeIn} 0.8s ease-out;
-`;
-
-const Logo = styled.img`
-    height: 60px;
-    width: 60px;
-`;
-
-const BrandName = styled.h1`
-    font-size: 2.5rem;
-    margin: 0;
-    color: #ecf0f1;
-    text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
+    padding: 4rem 1.5rem;
+    min-height: calc(100vh - var(--navbar-height));
+    background: linear-gradient(145deg, #0d1a2f 0%, #1a273b 100%);
+    color: #e0e0e0;
+    font-family: 'Inter', sans-serif;
+    animation: ${fadeIn} 0.8s ease-out forwards;
 `;
 
 const HeroSection = styled.section`
-    max-width: 700px;
-    animation: ${fadeIn} 1s ease-out 0.2s backwards;
-    background: rgba(26, 30, 38, 0.5); /* Semi-transparent dark layer */
-    padding: 1.5rem 2.5rem;
-    border-radius: 12px;
-    backdrop-filter: blur(3px);
-    margin-bottom: 2rem;
-    /* Glowing blue border */
-    border: 1px solid rgba(52, 152, 219, 0.5);
-    box-shadow: 0 0 20px 5px rgba(52, 152, 219, 0.2);
-`;
+    text-align: center;
+    margin-bottom: 5rem;
+    max-width: 900px;
+    animation: ${fadeIn} 1s ease-out forwards;
 
-const Headline = styled.h2`
-    font-size: 3rem;
-    color: #ecf0f1;
-    margin-bottom: 1rem;
-    line-height: 1.2;
+    h1 {
+        font-size: 4.5rem;
+        color: #00adef; /* Nexus blue */
+        margin-bottom: 1.5rem;
+        letter-spacing: -2px;
+        text-shadow: 0 0 20px rgba(0, 173, 237, 0.7);
+        line-height: 1.1;
+        span {
+            color: #f8fafc;
+        }
+    }
 
-    @media (max-width: 768px) {
-        font-size: 2.5rem;
+    p {
+        font-size: 1.5rem;
+        color: #94a3b8;
+        line-height: 1.6;
+        margin-bottom: 3rem;
     }
 `;
 
-const Description = styled.p`
-    font-size: 1.2rem;
-    color: #bdc3c7;
-    line-height: 1.6;
-    margin-bottom: 2rem;
+const FeaturesSection = styled.section` // This section now comes before Waitlist
+    width: 100%;
+    max-width: 1200px;
+    text-align: center;
+    animation: ${fadeIn} 1s ease-out forwards;
+    margin-bottom: 5rem; // Add margin to separate from next section
+
+    h2 {
+        font-size: 3rem;
+        color: #f8fafc;
+        margin-bottom: 3rem;
+        text-shadow: 0 0 10px rgba(248, 250, 252, 0.3);
+    }
+
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+    }
 `;
 
-const LaunchDate = styled.p`
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #3498db;
-    margin-bottom: 2.5rem;
-    padding: 0.5rem 1rem;
-    display: inline-block;
-    border: 1px solid #3498db;
-    border-radius: 5px;
-    box-shadow: 0 0 15px rgba(52, 152, 219, 0.3);
+const FeatureItem = styled.div`
+    background: linear-gradient(135deg, #1a273b 0%, #2c3e50 100%);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 173, 237, 0.1);
+    text-align: left;
+
+    .icon-wrapper {
+        color: #00adef;
+        margin-bottom: 1rem;
+    }
+
+    h3 {
+        font-size: 1.8rem;
+        color: #f8fafc;
+        margin-bottom: 0.8rem;
+    }
+
+    p {
+        font-size: 1rem;
+        color: #94a3b8;
+        line-height: 1.6;
+    }
 `;
 
-const EmailForm = styled.form`
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap; // Allow wrapping on small screens
+
+const WaitlistSection = styled.section` // This section now comes after Features
+    width: 100%;
+    max-width: 700px;
+    margin-bottom: 5rem;
+    text-align: center;
+    animation: ${fadeIn} 1s ease-out forwards;
+    background: linear-gradient(135deg, #1e293b 0%, #2c3e50 100%);
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(0, 173, 237, 0.2);
+
+    h2 {
+        font-size: 2.8rem;
+        color: #f8fafc;
+        margin-bottom: 1.5rem;
+        text-shadow: 0 0 10px rgba(248, 250, 252, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+    }
+
+    p {
+        font-size: 1.2rem;
+        color: #94a3b8;
+        margin-bottom: 2rem;
+        line-height: 1.6;
+    }
+
+    form {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        width: 100%;
+    }
 `;
 
-const EmailInput = styled.input`
-    padding: 0.8rem 1rem;
-    border: 1px solid #4a627a;
-    border-radius: 5px;
-    background-color: #34495e;
-    color: #ecf0f1;
-    font-size: 1rem;
-    min-width: 250px;
+const Input = styled.input`
+    padding: 0.9rem 1.2rem;
+    border: 1px solid #00adef;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    background-color: #1a273b;
+    color: #f8fafc;
     flex-grow: 1;
+    min-width: 250px;
+    transition: all 0.3s ease;
+
+    &::placeholder {
+        color: #64748b;
+    }
 
     &:focus {
         outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+        border-color: #008cd4;
+        box-shadow: 0 0 0 4px rgba(0, 173, 237, 0.4);
     }
 `;
 
-const SubmitButton = styled.button`
-    background: linear-gradient(45deg, #3498db, #2980b9);
-    border: none;
-    border-radius: 5px;
+const Button = styled.button`
+    padding: 0.9rem 1.8rem;
+    background: linear-gradient(90deg, #00adef 0%, #008cd4 100%);
     color: white;
-    padding: 0.8rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    font-weight: bold;
     cursor: pointer;
-    font-size: 1rem;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    animation: ${pulse} 2s infinite;
+    box-shadow: 0 4px 15px rgba(0, 173, 237, 0.4);
 
     &:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(52, 152, 219, 0.5);
-        animation-play-state: paused;
+        background: linear-gradient(90deg, #008cd4 0%, #00adef 100%);
+        box-shadow: 0 6px 20px rgba(0, 173, 237, 0.6);
+        transform: translateY(-2px);
     }
-    
+
     &:disabled {
-        background: #7f8c8d;
+        background: #4a5a6b;
         cursor: not-allowed;
-        animation: none;
+        opacity: 0.7;
+        transform: none;
+        box-shadow: none;
     }
 `;
 
-const CtaText = styled.p`
-    color: #95a5a6;
+const Message = styled.p`
+    margin-top: 1.5rem;
     font-size: 1rem;
-    margin-bottom: 2.5rem;
-`;
-
-const MessageBase = styled.p`
     font-weight: bold;
-    margin-top: -1rem;
-    margin-bottom: 2.5rem;
-    height: 20px; // Reserve space to prevent layout jump
+    color: ${(props) => (props.$isError ? '#ff6b6b' : '#32CD32')};
 `;
 
-const ConfirmationMessage = styled(MessageBase)`
-    color: #2ecc71; // Green for success
-`;
-
-const ErrorMessage = styled(MessageBase)`
-    color: #e74c3c; // Red for error
-`;
-
-const SocialLinks = styled.div`
-    display: flex;
-    justify-content: center;
-    gap: 1.5rem;
-    margin-bottom: 3rem;
-    animation: ${fadeIn} 1.2s ease-out 0.4s backwards;
-`;
-
-const SocialLink = styled.a`
-    color: #95a5a6;
-    transition: color 0.2s ease-in-out, transform 0.2s ease-in-out, text-shadow 0.2s ease-in-out;
-    text-shadow: 0 0 3px rgba(52, 152, 219, 0.3); /* Subtle default glow */
-
-    &:hover {
-        color: #3498db;
-        transform: scale(1.2);
-        text-shadow: 0 0 10px rgba(52, 152, 219, 0.7); /* Brighter hover glow */
-    }
-`;
-
-const Footer = styled.footer`
-    color: #7f8c8d;
+const FooterContainer = styled.footer`
+    width: 100%;
+    background-color: #1a273b;
+    color: #94a3b8;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    border-top: 1px solid rgba(0, 173, 237, 0.1);
     font-size: 0.9rem;
     margin-top: auto;
-    padding-top: 2rem;
+
+    .footer-links {
+        margin-bottom: 1rem;
+    }
+
+    .footer-links a {
+        color: #00adef;
+        text-decoration: none;
+        margin: 0 0.8rem;
+        transition: color 0.3s ease;
+
+        &:hover {
+            color: #f8fafc;
+        }
+    }
 `;
 
 
 const LandingPage = () => {
-    // States for the form
     const [email, setEmail] = useState('');
-    const [submitted, setSubmitted] = useState(false);
-    const [error, setError] = useState('');
+    const [message, setMessage] = useState(null);
+    const [isError, setIsError] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    // --- UPDATED HANDLE SUBMIT FUNCTION ---
     const handleSubmit = async (e) => {
-        e.preventDefault(); // Prevent default form submission
-        
-        // Reset states
-        setSubmitted(false);
-        setError('');
+        e.preventDefault();
+        setMessage(null);
+        setIsError(false);
 
-        // Simple validation
-        if (!email || !/\S+@\S+\.\S+/.test(email)) {
-            setError('Please enter a valid email address.');
+        if (!email) {
+            setMessage('Please enter your email address.');
+            setIsError(true);
             return;
         }
 
-        setLoading(true); // Disable button
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            setMessage('Please enter a valid email address.');
+            setIsError(true);
+            return;
+        }
 
+        setLoading(true);
         try {
-            // Send email to backend API endpoint
-            const res = await axios.post(`${API_URL}/api/waitlist/join`, { email });
-            
-            console.log(res.data.msg); // Log success message from server
-            setSubmitted(true); // Show success message
-            setEmail(''); // Clear input
-        
+            const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:10000';
+            const res = await axios.post(`${backendUrl}/api/subscribers`, { email });
+            setMessage(res.data.msg);
+            setEmail('');
+            setIsError(false);
         } catch (err) {
-            // Handle errors from the server (like "Email already exists" or 500)
-            const errMsg = err.response?.data?.msg || 'An error occurred. Please try again.';
-            console.error('Waitlist submit error:', errMsg);
-            setError(errMsg);
+            console.error('Subscriber signup error:', err.response?.data?.msg || err.message);
+            setMessage(err.response?.data?.msg || 'Failed to subscribe. Please try again.');
+            setIsError(true);
         } finally {
-            setLoading(false); // Re-enable button
+            setLoading(false);
         }
     };
-    // ------------------------------------
 
     return (
-        <PageWrapper>
-            <Header>
-                <Logo src={logo} alt="Nexus Signal AI Logo" />
-                <BrandName>Nexus Signal.AI</BrandName>
-            </Header>
-
+        <LandingContainer>
             <HeroSection>
-                <Headline>Unlock Your Trading Edge with Advanced AI.</Headline>
-                <Description>
-                    Nexus Signal.AI is building a revolutionary AI-driven platform to empower traders with intelligent market insights, real-time data, and personalized strategies. Get ready to master your future in finance.
-                </Description>
-                <LaunchDate>Launching March 2026</LaunchDate>
+                <h1>Unleash the Power of <span>AI-Driven</span> Insights</h1>
+                <p>
+                    Nexus Signal AI provides advanced market predictions and real-time data, empowering you to make smarter,
+                    more informed investment decisions in stocks and cryptocurrencies.
+                </p>
+            </HeroSection>
 
-                <CtaText>Get Early Access & Updates</CtaText>
-                
-                {/* Update Form and Button States */}
-                <EmailForm onSubmit={handleSubmit}>
-                    <EmailInput
+            {/* Features Section */}
+            <FeaturesSection>
+                <h2>Key Features</h2>
+                <div className="feature-grid">
+                    <FeatureItem>
+                        <div className="icon-wrapper"><Zap size={40} /></div>
+                        <h3>AI-Driven Predictions</h3>
+                        <p>Leverage cutting-edge machine learning to forecast market movements with high accuracy.</p>
+                    </FeatureItem>
+                    <FeatureItem>
+                        <div className="icon-wrapper"><Shield size={40} /></div>
+                        <h3>Real-Time Data</h3>
+                        <p>Access up-to-the-minute stock and cryptocurrency prices to stay ahead.</p>
+                    </FeatureItem>
+                    <FeatureItem>
+                        <div className="icon-wrapper"><Rocket size={40} /></div>
+                        <h3>Personalized Watchlists</h3>
+                        <p>Track your favorite assets and get custom alerts to never miss an opportunity.</p>
+                    </FeatureItem>
+                    <FeatureItem>
+                        <div className="icon-wrapper"><CheckCircle size={40} /></div>
+                        <h3>Intuitive Dashboard</h3>
+                        <p>All your essential market insights and tools presented in a clean, user-friendly interface.</p>
+                    </FeatureItem>
+                </div>
+            </FeaturesSection>
+
+            {/* Waitlist (Get Notified) Section - Moved below Features */}
+            <WaitlistSection>
+                <h2><Mail size={32} color="#00adef" /> Get Notified</h2>
+                <p>
+                    Be the first to know about new features, market insights, and special announcements. Join our list.
+                </p>
+                <form onSubmit={handleSubmit}>
+                    <Input
                         type="email"
                         placeholder="Enter your email address"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        required
-                        disabled={loading} // Disable input while loading
+                        disabled={loading}
                     />
-                    <SubmitButton type="submit" disabled={loading}> {/* Disable button while loading */}
-                        <Send size={18} />
-                        {loading ? 'Submitting...' : 'Notify Me'}
-                    </SubmitButton>
-                </EmailForm>
+                    <Button type="submit" disabled={loading}>
+                        {loading ? 'Submitting...' : 'Join Now'}
+                    </Button>
+                </form>
+                {message && <Message $isError={isError}>{message}</Message>}
+            </WaitlistSection>
 
-                {/* Show Success or Error Message */}
-                {submitted && (
-                    <ConfirmationMessage>
-                        Thank you! You're on the list.
-                    </ConfirmationMessage>
-                )}
-                {error && (
-                    <ErrorMessage>
-                        {error}
-                    </ErrorMessage>
-                )}
-                {/* Add a spacer if neither message is showing */}
-                {!submitted && !error && <MessageBase />}
-            
-            </HeroSection>
-
-            <SocialLinks>
-                {/* Replace # with your actual URLs */}
-                <SocialLink href="https://x.com/NexusSignalAI" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
-                    <Twitter size={28} />
-                </SocialLink>
-                <SocialLink href="https://discord.gg/vU8RTM7Q" target="_blank" rel="noopener noreferrer" aria-label="Discord">
-                    <MessageSquare size={28} />
-                </SocialLink>
-                <SocialLink href="https://github.com/GaiusCaesarBC/Nexus-Signal" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
-                    <Github size={28} />
-                </SocialLink>
-                <SocialLink href="https://www.linkedin.com/in/cody-watkins-b740a1390/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
-                    <Linkedin size={28} />
-                </SocialLink>
-            </SocialLinks>
-
-            <Footer>
-                © {new Date().getFullYear()} Nexus Signal.AI. All rights reserved.
-            </Footer>
-        </PageWrapper>
+            <FooterContainer>
+                <div className="footer-links">
+                    <a href="/about">About</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/performance">Performance</a>
+                    <a href="/disclaimer">Disclaimer</a>
+                    <a href="/privacy">Privacy Policy</a>
+                    <a href="/terms">Terms of Service</a>
+                </div>
+                <p>&copy; {new Date().getFullYear()} Nexus Signal AI. All rights reserved.</p>
+            </FooterContainer>
+        </LandingContainer>
     );
 };
 
