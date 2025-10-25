@@ -1,4 +1,4 @@
-// client/src/App.js - Complete File with Global Footer
+// client/src/App.js - COMPLETE and UPDATED File
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { Menu, X } from 'lucide-react';
 // Import all your pages
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage'; // ADDED: Import RegisterPage
 import AboutPage from './pages/AboutPage';
 import PricingPage from './pages/PricingPage';
 import PerformancePage from './pages/PerformancePage';
@@ -81,6 +82,8 @@ const NavbarContainer = styled.nav`
             transition: transform 0.3s ease-out;
             padding: 1rem 0;
             z-index: 999;
+            height: calc(100vh - var(--navbar-height)); /* Full height on mobile */
+            overflow-y: auto; /* Scrollable if many links */
         }
     }
 
@@ -176,7 +179,15 @@ const AppContent = () => {
     }, [location.pathname]);
 
     // Define an array of paths where the "Login" link should NOT be shown
-    const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
+    const pathsToHideLogin = [
+        '/', 
+        '/pricing', 
+        '/about', 
+        '/performance', 
+        '/login',         // Hide Login link if already on Login page
+        '/signup',        // Hide Login link if on Register page
+        '/forgot-password' // Anticipate a forgot password page
+    ];
 
     // Check if the current path is in the array of paths to hide login
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
@@ -203,6 +214,10 @@ const AppContent = () => {
                     <Link to="/pricing">Pricing</Link>
                     <Link to="/performance">Performance</Link>
                     {shouldShowLoginLink && <Link to="/login">Login</Link>}
+                    {/* CONSIDER ADDING A SIGNUP LINK HERE OR MAKING LOGIN A DROPDOWN/MODAL */}
+                    {!shouldShowLoginLink && location.pathname !== '/signup' && (
+                        <Link to="/signup">Sign Up</Link> // Show Sign Up if not on login/signup already
+                    )}
                 </div>
             </NavbarContainer>
 
@@ -211,14 +226,15 @@ const AppContent = () => {
                 {/* Core Pages */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<RegisterPage />} /> {/* ADDED: Route for RegisterPage */}
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
-
-                {/* Footer Links */}
                 <Route path="/performance" element={<PerformancePage />} />
+                
+                {/* Footer Links (Corrected Paths) */}
                 <Route path="/disclaimer" element={<DisclaimerPage />} />
-                <Route path="/privacy" element={<PrivacyPolicyPage />} />
-                <Route path="/terms" element={<TermsOfServicePage />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} /> {/* CORRECTED: from /privacy */}
+                <Route path="/terms-of-service" element={<TermsOfServicePage />} /> {/* CORRECTED: from /terms */}
 
                 {/* Fallback for 404 Not Found pages */}
                 <Route path="*" element={
@@ -227,7 +243,7 @@ const AppContent = () => {
                         textAlign: 'center',
                         color: '#e0e0e0',
                         fontSize: '2rem',
-                        minHeight: 'calc(100vh - var(--navbar-height))',
+                        minHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height, 100px))', /* Adjusted for footer height */
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'center',
@@ -247,8 +263,8 @@ const AppContent = () => {
             <FooterContainer>
                 <div className="footer-links">
                     <Link to="/disclaimer">Disclaimer</Link>
-                    <Link to="/privacy">Privacy Policy</Link>
-                    <Link to="/terms">Terms of Service</Link>
+                    <Link to="/privacy-policy">Privacy Policy</Link> {/* CORRECTED: from /privacy */}
+                    <Link to="/terms-of-service">Terms of Service</Link> {/* CORRECTED: from /terms */}
                     <Link to="/about">About Us</Link>
                     {/* Add more footer links if needed, e.g., social media */}
                 </div>
