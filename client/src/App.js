@@ -1,4 +1,4 @@
-// client/src/App.js - Complete and Definitive Version
+// client/src/App.js - CORRECTED VERSION for useLocation hook
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
@@ -6,7 +6,7 @@ import styled from 'styled-components';
 // Import all your pages
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
-import AboutPage from './pages/AboutPage'; // <--- THIS IS THE CRITICAL LINE
+import AboutPage from './pages/AboutPage';
 import PricingPage from './pages/PricingPage';
 import PerformancePage from './pages/PerformancePage';
 import DisclaimerPage from './pages/DisclaimerPage';
@@ -64,7 +64,9 @@ const GlobalStyle = styled.div`
 
 // --- Main App Component ---
 const App = () => {
-    const location = useLocation();
+    // Moved useLocation and related logic INSIDE the App component, but outside the Router's JSX return
+    // This allows useLocation to be called within the Router's context.
+    const location = useLocation(); 
     
     // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
@@ -73,7 +75,7 @@ const App = () => {
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
 
     return (
-        <Router>
+        <Router> {/* This Router component needs to wrap useLocation's context */}
             <GlobalStyle>
                 {/* Navbar: Appears on ALL pages */}
                 <NavbarContainer>
