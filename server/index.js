@@ -96,4 +96,4 @@ app.get('/', (req, res) => {
 
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));All right, all right, very easy to lose, son 
+app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
