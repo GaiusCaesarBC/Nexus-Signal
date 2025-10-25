@@ -2,32 +2,42 @@
 import React from 'react';
 import styled from 'styled-components';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext'; // Make sure this path is correct relative to Navbar.js
+import { useAuth } from '../context/AuthContext';
+// Import your logo image - ASSUMING IT'S IN client/src/assets/ AND NAMED nexus-signal-logo.png
+import logoImage from '../assets/nexus-signal-logo.png'; // <--- IMPORTANT: Adjust path/filename if different
 
 const NavContainer = styled.nav`
-    background-color: #2c3e50; /* Dark blue-gray */
+    background-color: #1a273b; /* A sleek, dark blue for the Navbar */
     color: white;
     padding: 0 1.5rem;
     height: var(--navbar-height); /* Use the CSS variable */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); /* Slightly stronger shadow */
     position: sticky;
     top: 0;
     z-index: 1000;
 `;
 
-const LogoLink = styled(Link)`
+const LogoWrapper = styled(Link)`
+    display: flex;
+    align-items: center;
+    text-decoration: none; /* No underline for the logo link */
+`;
+
+const LogoImg = styled.img`
+    height: 40px; /* Adjust size as needed, e.g., 40px, 50px */
+    margin-right: 10px; /* Space between logo and text */
+    /* If your logo image has padding around it, you might need to adjust height/margin to fit */
+`;
+
+const LogoText = styled.span`
     font-size: 1.8rem;
     font-weight: bold;
-    color: #4CAF50; /* Green logo */
-    text-decoration: none;
-
-    &:hover {
-        color: #66bb6a;
-        text-decoration: none;
-    }
+    color: #e0e0e0; /* White/light gray for the text part of the logo */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* A sleek, modern font */
+    letter-spacing: -0.5px; /* Adjust if needed */
 `;
 
 const NavLinks = styled.div`
@@ -36,7 +46,7 @@ const NavLinks = styled.div`
 `;
 
 const NavLink = styled(Link)`
-    color: white;
+    color: #e0e0e0; /* White/light gray for links */
     text-decoration: none;
     font-size: 1.1rem;
     margin-left: 1.5rem;
@@ -44,12 +54,12 @@ const NavLink = styled(Link)`
     transition: color 0.3s ease;
 
     &:hover {
-        color: #61dafb; /* Light blue on hover */
+        color: #00aced; /* Accent blue on hover, similar to logo's blue */
     }
 `;
 
 const NavButton = styled.button`
-    background-color: #3f51b5; /* Blue button */
+    background-color: #007bff; /* A prominent blue for buttons */
     color: white;
     border: none;
     border-radius: 4px;
@@ -60,7 +70,7 @@ const NavButton = styled.button`
     transition: background-color 0.3s ease;
 
     &:hover {
-        background-color: #5d74e3;
+        background-color: #0056b3; /* Darker blue on hover */
     }
 `;
 
@@ -75,20 +85,23 @@ const Navbar = () => {
 
     return (
         <NavContainer>
-            <LogoLink to="/">Nexus Signal</LogoLink>
+            <LogoWrapper to="/">
+                <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
+                <LogoText>Nexus SIGNAL.AI</LogoText>
+            </LogoWrapper>
             <NavLinks>
                 {isAuthenticated ? (
                     <>
                         <NavLink to="/dashboard">Dashboard</NavLink>
                         <NavLink to="/predict">Predict</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink> {/* Pricing link for authenticated users */}
+                        <NavLink to="/pricing">Pricing</NavLink>
                         <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 ) : (
                     <>
                         <NavLink to="/login">Login</NavLink>
                         <NavLink to="/register">Register</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink> {/* Pricing link for non-authenticated users */}
+                        <NavLink to="/pricing">Pricing</NavLink>
                     </>
                 )}
             </NavLinks>
