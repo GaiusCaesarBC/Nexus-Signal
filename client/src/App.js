@@ -1,4 +1,4 @@
-// client/src/App.js - Restored full content
+// client/src/App.js - Footer links now have routes
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import GlobalStyle from './styles/GlobalStyle';
@@ -10,8 +10,14 @@ import DashboardPage from './pages/DashboardPage';
 import PredictPage from './pages/PredictPage';
 import PricingPage from './pages/PricingPage';
 import LandingPage from './pages/LandingPage';
+
+// Import the new pages for the footer links
+import Terms from './pages/Terms'; // Assuming Terms.js in src/pages/
+import Privacy from './pages/Privacy'; // Assuming Privacy.js in src/pages/
+import Disclaimer from './pages/Disclaimer'; // Assuming Disclaimer.js in src/pages/
+
 import { AuthProvider } from './context/AuthContext';
-// import ProtectedRoute from './components/ProtectedRoute'; // Temporarily commented out
+// import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
     return (
@@ -27,7 +33,12 @@ function App() {
                     <Route path="/predict" element={<PredictPage />} />
                     <Route path="/pricing" element={<PricingPage />} />
 
-                    {/* Example of a protected route using the component, if you want to use it
+                    {/* New Routes for Footer Links */}
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="/privacy" element={<Privacy />} />
+                    <Route path="/disclaimer" element={<Disclaimer />} />
+
+                    {/* Example of a protected route using the component
                     // <Route
                     //     path="/settings"
                     //     element={
@@ -38,10 +49,6 @@ function App() {
                     // />
                     */}
                 </Routes>
-                {/* Note: I'm leaving the general Footer in App.js. If your LandingPage also has its own footer,
-                    you might want to remove the App.js footer or make it conditional.
-                    For now, it will appear below the LandingPage's content.
-                */}
                 <Footer />
             </AuthProvider>
         </Router>
