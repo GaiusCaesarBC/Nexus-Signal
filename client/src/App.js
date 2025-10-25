@@ -1,4 +1,4 @@
-// client/src/App.js - Updated Navbar Image Size (doubled)
+// client/src/App.js - Complete File with Global Footer
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
@@ -29,16 +29,16 @@ const NavbarContainer = styled.nav`
     position: sticky;
     top: 0;
     z-index: 1000;
-    height: var(--navbar-height, 60px); /* Define navbar height as a CSS variable */
+    height: var(--navbar-height, 60px);
 
-    .logo-link { /* Wrapper for the logo image and text */
+    .logo-link {
         display: flex;
         align-items: center;
         text-decoration: none;
-        gap: 0.5rem; /* Space between logo image and text */
+        gap: 0.5rem;
 
         img {
-            height: 100px; /* <--- CHANGED THIS TO 100px (doubled from 50px) */
+            height: 100px; /* Logo size for Navbar */
             width: auto;
         }
 
@@ -51,36 +51,36 @@ const NavbarContainer = styled.nav`
         }
 
         .logo-nexus {
-            color: #00adef; /* Blue for 'Nexus' */
+            color: #00adef;
         }
         .logo-signal {
-            color: #f8fafc; /* White for 'Signal' */
+            color: #f8fafc;
             margin-left: 0.2rem;
         }
         .logo-ai {
-            color: #94a3b8; /* Subdued for '.AI' */
-            font-size: 1.2rem; /* Smaller for '.AI' */
+            color: #94a3b8;
+            font-size: 1.2rem;
             font-weight: normal;
             margin-left: 0.1rem;
         }
     }
 
     .nav-links {
-        display: flex; /* Default to horizontal */
+        display: flex;
 
         @media (max-width: 768px) {
-            flex-direction: column; /* Stack vertically on small screens */
+            flex-direction: column;
             position: absolute;
-            top: var(--navbar-height, 60px); /* Position below the navbar */
+            top: var(--navbar-height, 60px);
             left: 0;
             width: 100%;
-            background-color: #1a273b; /* Same as navbar */
+            background-color: #1a273b;
             border-top: 1px solid rgba(0, 173, 237, 0.1);
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-            transform: translateX(${props => (props.$isOpen ? '0' : '-100%')}); /* Slide in/out */
+            transform: translateX(${props => (props.$isOpen ? '0' : '-100%')});
             transition: transform 0.3s ease-out;
-            padding: 1rem 0; /* Vertical padding */
-            z-index: 999; /* Below main navbar but above content */
+            padding: 1rem 0;
+            z-index: 999;
         }
     }
 
@@ -90,17 +90,17 @@ const NavbarContainer = styled.nav`
         margin-left: 1.5rem;
         font-size: 1.05rem;
         transition: color 0.3s ease;
-        padding: 0.5rem 1rem; /* Add padding for clickable area */
+        padding: 0.5rem 1rem;
 
         &:hover {
             color: #f8fafc;
         }
 
         @media (max-width: 768px) {
-            margin: 0; /* Remove horizontal margin */
+            margin: 0;
             text-align: center;
-            width: 100%; /* Full width for clickable area */
-            border-bottom: 1px solid rgba(0, 0, 0, 0.2); /* Separator for menu items */
+            width: 100%;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.2);
             &:last-child {
                 border-bottom: none;
             }
@@ -108,20 +108,20 @@ const NavbarContainer = styled.nav`
     }
 
     .hamburger-icon {
-        display: none; /* Hidden by default */
+        display: none;
         color: #f8fafc;
         cursor: pointer;
-        z-index: 1001; /* Above everything else */
+        z-index: 1001;
 
         @media (max-width: 768px) {
-            display: block; /* Show on small screens */
+            display: block;
         }
     }
 `;
 
 // Global styling container for consistent layout and CSS variables
 const GlobalStyle = styled.div`
-    --navbar-height: 60px; /* This needs to be adjusted if logo height changes the navbar's natural height */
+    --navbar-height: 60px; /* Can be adjusted if needed */
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -129,20 +129,61 @@ const GlobalStyle = styled.div`
     font-family: 'Inter', sans-serif;
 `;
 
-// --- Navbar and Routing Component ---
+// --- New Footer Styled Component (Defined in App.js) ---
+const FooterContainer = styled.footer`
+    background-color: #1a273b; /* Same as navbar */
+    color: #94a3b8;
+    padding: 1.5rem 2rem;
+    text-align: center;
+    border-top: 1px solid rgba(0, 173, 237, 0.1);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+    margin-top: auto; /* Pushes the footer to the bottom */
+
+    .footer-links {
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap; /* Allow links to wrap on small screens */
+        gap: 1.5rem; /* Space between links */
+
+        a {
+            color: #00adef; /* Blue for footer links */
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.3s ease;
+
+            &:hover {
+                color: #f8fafc;
+            }
+        }
+    }
+
+    .footer-copyright {
+        font-size: 0.85rem;
+        color: #5b677a; /* Muted color for copyright */
+    }
+`;
+
+
+// --- Navbar and Routing Component (to house useLocation) ---
 const AppContent = () => {
-    const location = useLocation(); 
+    const location = useLocation();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+    // Close menu when navigating to a new page
     useEffect(() => {
         setIsMenuOpen(false);
     }, [location.pathname]);
-    
+
+    // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
+
+    // Check if the current path is in the array of paths to hide login
     const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
 
     return (
         <GlobalStyle>
+            {/* Navbar: Appears on ALL pages */}
             <NavbarContainer $isOpen={isMenuOpen}>
                 <Link to="/" className="logo-link">
                     <img src="/nexus-signal-logo.png" alt="Nexus Signal AI Logo" />
@@ -165,16 +206,21 @@ const AppContent = () => {
                 </div>
             </NavbarContainer>
 
+            {/* Main Content Area where pages are rendered based on the URL */}
             <Routes>
+                {/* Core Pages */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
+
+                {/* Footer Links */}
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/disclaimer" element={<DisclaimerPage />} />
                 <Route path="/privacy" element={<PrivacyPolicyPage />} />
                 <Route path="/terms" element={<TermsOfServicePage />} />
 
+                {/* Fallback for 404 Not Found pages */}
                 <Route path="*" element={
                     <div style={{
                         padding: '50px',
@@ -196,11 +242,25 @@ const AppContent = () => {
                     </div>
                 } />
             </Routes>
+
+            {/* --- Global Footer (Correctly Placed) --- */}
+            <FooterContainer>
+                <div className="footer-links">
+                    <Link to="/disclaimer">Disclaimer</Link>
+                    <Link to="/privacy">Privacy Policy</Link>
+                    <Link to="/terms">Terms of Service</Link>
+                    <Link to="/about">About Us</Link>
+                    {/* Add more footer links if needed, e.g., social media */}
+                </div>
+                <div className="footer-copyright">
+                    &copy; {new Date().getFullYear()} Nexus Signal.AI. All rights reserved.
+                </div>
+            </FooterContainer>
         </GlobalStyle>
     );
 };
 
-// --- Main App Component ---
+// --- Main App Component (Wrapper for Router) ---
 const App = () => {
     return (
         <Router>

@@ -1,8 +1,9 @@
-// client/src/pages/LandingPage.js - Waitlist Section moved below Features Section
+// client/src/pages/LandingPage.js - Complete File (Without Footer, with simulated Waitlist)
+
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { CheckCircle, Zap, Shield, Rocket, Mail } from 'lucide-react';
-import axios from 'axios';
+// axios import REMOVED - using simulated fetch for now
 
 // Keyframes for animations
 const fadeIn = keyframes`
@@ -10,7 +11,7 @@ const fadeIn = keyframes`
     to { opacity: 1; transform: translateY(0); }
 `;
 
-// Styled Components (No changes to actual styles, just their order in JSX)
+// Styled Components
 const LandingContainer = styled.div`
     display: flex;
     flex-direction: column;
@@ -49,12 +50,12 @@ const HeroSection = styled.section`
     }
 `;
 
-const FeaturesSection = styled.section` // This section now comes before Waitlist
+const FeaturesSection = styled.section`
     width: 100%;
     max-width: 1200px;
     text-align: center;
     animation: ${fadeIn} 1s ease-out forwards;
-    margin-bottom: 5rem; // Add margin to separate from next section
+    margin-bottom: 5rem;
 
     h2 {
         font-size: 3rem;
@@ -96,8 +97,7 @@ const FeatureItem = styled.div`
     }
 `;
 
-
-const WaitlistSection = styled.section` // This section now comes after Features
+const WaitlistSection = styled.section`
     width: 100%;
     max-width: 700px;
     margin-bottom: 5rem;
@@ -192,32 +192,6 @@ const Message = styled.p`
     color: ${(props) => (props.$isError ? '#ff6b6b' : '#32CD32')};
 `;
 
-const FooterContainer = styled.footer`
-    width: 100%;
-    background-color: #1a273b;
-    color: #94a3b8;
-    padding: 2rem 1.5rem;
-    text-align: center;
-    border-top: 1px solid rgba(0, 173, 237, 0.1);
-    font-size: 0.9rem;
-    margin-top: auto;
-
-    .footer-links {
-        margin-bottom: 1rem;
-    }
-
-    .footer-links a {
-        color: #00adef;
-        text-decoration: none;
-        margin: 0 0.8rem;
-        transition: color 0.3s ease;
-
-        &:hover {
-            color: #f8fafc;
-        }
-    }
-`;
-
 
 const LandingPage = () => {
     const [email, setEmail] = useState('');
@@ -245,14 +219,40 @@ const LandingPage = () => {
 
         setLoading(true);
         try {
-            const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:10000';
-            const res = await axios.post(`${backendUrl}/api/subscribers`, { email });
-            setMessage(res.data.msg);
+            // Simulate a successful submission since the backend isn't ready.
+            console.log('Attempting to subscribe email:', email);
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
+
+            setMessage('Thank you for joining the waitlist! We\'ll keep you updated.');
             setEmail('');
             setIsError(false);
+
+            // === REAL BACKEND INTEGRATION (UNCOMMENT AND ADJUST WHEN READY) ===
+            /*
+            const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:10000';
+            const response = await fetch(`${backendUrl}/api/subscribers`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.msg || 'Failed to subscribe.');
+            }
+
+            setMessage(data.msg); // Assuming your backend returns { msg: "Success message" }
+            setEmail('');
+            setIsError(false);
+            */
+            // ================================================================
+
         } catch (err) {
-            console.error('Subscriber signup error:', err.response?.data?.msg || err.message);
-            setMessage(err.response?.data?.msg || 'Failed to subscribe. Please try again.');
+            console.error('Subscriber signup error:', err.message);
+            setMessage(err.message || 'Failed to subscribe. Please try again.');
             setIsError(true);
         } finally {
             setLoading(false);
@@ -296,7 +296,7 @@ const LandingPage = () => {
                 </div>
             </FeaturesSection>
 
-            {/* Waitlist (Get Notified) Section - Moved below Features */}
+            {/* Waitlist (Get Notified) Section */}
             <WaitlistSection>
                 <h2><Mail size={32} color="#00adef" /> Get Notified</h2>
                 <p>
@@ -316,18 +316,6 @@ const LandingPage = () => {
                 </form>
                 {message && <Message $isError={isError}>{message}</Message>}
             </WaitlistSection>
-
-            <FooterContainer>
-                <div className="footer-links">
-                    <a href="/about">About</a>
-                    <a href="/pricing">Pricing</a>
-                    <a href="/performance">Performance</a>
-                    <a href="/disclaimer">Disclaimer</a>
-                    <a href="/privacy">Privacy Policy</a>
-                    <a href="/terms">Terms of Service</a>
-                </div>
-                <p>&copy; {new Date().getFullYear()} Nexus Signal AI. All rights reserved.</p>
-            </FooterContainer>
         </LandingContainer>
     );
 };
