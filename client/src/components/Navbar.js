@@ -1,7 +1,7 @@
 // client/src/components/Navbar.js
 import React from 'react';
 import styled from 'styled-components';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom'; // <--- REMOVED useLocation
 import { useAuth } from '../context/AuthContext';
 import logoImage from '../assets/nexus-signal-logo.png';
 
@@ -78,10 +78,9 @@ const NavButton = styled.button`
 const Navbar = () => {
     const { isAuthenticated, logout } = useAuth();
     const navigate = useNavigate();
-    const location = useLocation();
+    // const location = useLocation(); // <--- REMOVED
 
-    // Check if the current path is the root (Landing Page) OR the Pricing Page
-    const shouldHideAuthLinks = location.pathname === '/' || location.pathname === '/pricing'; // <--- UPDATED LOGIC
+    // const shouldHideAuthLinks = location.pathname === '/' || location.pathname === '/pricing'; // <--- REMOVED
 
     const handleLogout = () => {
         logout();
@@ -103,10 +102,10 @@ const Navbar = () => {
                         <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 ) : (
-                    // Only show Login/Register if NOT on the landing page AND NOT on the pricing page
                     <>
-                        {!shouldHideAuthLinks && <NavLink to="/login">Login</NavLink>}
-                        {!shouldHideAuthLinks && <NavLink to="/register">Register</NavLink>}
+                        {/* Always show Login/Register for non-authenticated users for now */}
+                        <NavLink to="/login">Login</NavLink>
+                        <NavLink to="/register">Register</NavLink>
                         <NavLink to="/pricing">Pricing</NavLink>
                     </>
                 )}
