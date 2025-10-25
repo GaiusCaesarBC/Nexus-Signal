@@ -1,42 +1,24 @@
-// client/src/App.js
+// client/src/App.js - Super Simplified for Compilation Test
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import GlobalStyle from './styles/GlobalStyle';
+import GlobalStyle from './styles/GlobalStyle'; // Keep GlobalStyle if it's fine
 import Navbar from './components/Navbar';
-import Footer from './components/Footer';
-import RegisterPage from './pages/RegisterPage';
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import PredictPage from './pages/PredictPage';
-import PricingPage from './pages/PricingPage';
-import LandingPage from './pages/LandingPage'; // <--- NEW: Import LandingPage
-import { AuthProvider } from './context/AuthContext';
-// import ProtectedRoute from './components/ProtectedRoute'; // Temporarily commented out
+import LandingPage from './pages/LandingPage'; // Your landing page
+// Removed: Footer, RegisterPage, LoginPage, DashboardPage, PredictPage, PricingPage, AuthProvider
 
 function App() {
     return (
         <Router>
             <GlobalStyle />
-            <AuthProvider>
-                <Navbar />
-                <Routes>
-                    <Route path="/" element={<LandingPage />} /> {/* <--- NEW: Landing Page at root */}
-                    <Route path="/register" element={<RegisterPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/dashboard" element={<DashboardPage />} /> {/* Dashboard now explicitly at /dashboard */}
-                    <Route path="/predict" element={<PredictPage />} />
-                    <Route path="/pricing" element={<PricingPage />} />
+            {/* Navbar is here, also simplified below */}
+            <Navbar /> 
+            <Routes>
+                {/* Only the LandingPage route for now */}
+                <Route path="/" element={<LandingPage />} />
+            </Routes>
+            {/* Removed Footer for this test */}
+        </Router>
+    );
+}
 
-                    {/* Example of a protected route using the component, if you want to use it
-                    // <Route
-                    //     path="/settings"
-                    //     element={
-                    //         <ProtectedRoute>
-                    //             <SettingsPage />
-                    //         </ProtectedRoute>
-                    //     }
-                    // />
-                    */}
-                </Routes>
-                {/* Note: I'm leaving the general Footer in App.js. If your LandingPage also has its own footer,
-                    you
+export default App;
