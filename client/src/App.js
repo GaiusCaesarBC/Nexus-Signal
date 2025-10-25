@@ -8,7 +8,8 @@ import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import PredictPage from './pages/PredictPage';
-import PricingPage from './pages/PricingPage'; // <--- NEW: Import PricingPage
+import PricingPage from './pages/PricingPage';
+import LandingPage from './pages/LandingPage'; // <--- NEW: Import LandingPage
 import { AuthProvider } from './context/AuthContext';
 // import ProtectedRoute from './components/ProtectedRoute'; // Temporarily commented out
 
@@ -19,18 +20,12 @@ function App() {
             <AuthProvider>
                 <Navbar />
                 <Routes>
+                    <Route path="/" element={<LandingPage />} /> {/* <--- NEW: Landing Page at root */}
                     <Route path="/register" element={<RegisterPage />} />
                     <Route path="/login" element={<LoginPage />} />
-                    <Route path="/" element={<DashboardPage />} />
-                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/dashboard" element={<DashboardPage />} /> {/* Dashboard now explicitly at /dashboard */}
                     <Route path="/predict" element={<PredictPage />} />
-                    <Route path="/pricing" element={<PricingPage />} /> {/* <--- NEW: Pricing Route */}
-
-                    {/* Performance Page route (currently commented out as you said it's okay to be gone)
-                    // If you want it back:
-                    // import PerformancePage from './pages/PerformancePage';
-                    // <Route path="/performance" element={<PerformancePage />} />
-                    */}
+                    <Route path="/pricing" element={<PricingPage />} />
 
                     {/* Example of a protected route using the component, if you want to use it
                     // <Route
@@ -43,10 +38,5 @@ function App() {
                     // />
                     */}
                 </Routes>
-                <Footer />
-            </AuthProvider>
-        </Router>
-    );
-}
-
-export default App;
+                {/* Note: I'm leaving the general Footer in App.js. If your LandingPage also has its own footer,
+                    you
