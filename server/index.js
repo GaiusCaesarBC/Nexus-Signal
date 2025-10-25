@@ -1,4 +1,4 @@
-// server/index.js - DEFINITIVE UPDATED VERSION FOR SUBSCRIBERS
+// server/index.js - DEFINITIVE UPDATED VERSION FOR SUBSCRIBERS (Backend ONLY)
 require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');
@@ -10,7 +10,7 @@ const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-const subscriberRoutes = require('./routes/subscriberRoutes'); // <--- CORRECT: Imports subscriberRoutes
+const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
 
 console.log(`[DEBUG index.js Start] CWD: ${process.cwd()}, Dirname: ${__dirname}`);
@@ -18,6 +18,7 @@ console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STR
 console.log(`[DEBUG index.js Start] MONGO_URI loaded?: ${process.env.MONGO_URI ? 'Yes' : 'No'}`);
 console.log(`[DEBUG index.js Start] ALPHA_VANTAGE_API_KEY loaded?: ${process.env.ALPHA_VANTAGE_API_KEY ? 'Yes' : 'No'}`);
 console.log(`[DEBUG index.js Start] COINGECKO_API_KEY loaded?: ${process.env.COINGECKO_API_KEY ? 'Yes' : 'No'}`);
+
 
 const app = express();
 
@@ -70,18 +71,29 @@ app.use('/api/copilot', copilotRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/payments', paymentRoutes);
-app.use('/api/subscribers', subscriberRoutes); // <--- CORRECT: Uses subscriberRoutes
+app.use('/api/subscribers', subscriberRoutes);
 
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static('client/build'));
-    app.get('*', (req, res) => {
-        res.sendFile(path.resolve(__dirname, '../client', 'build', 'index.html'));
-    });
-} else {
-    app.get('/', (req, res) => {
-        res.send('Nexus Signal AI Backend is running in development mode!');
-    });
-}
+// --- REMOVED FRONTEND SERVING LOGIC FOR BACKEND-ONLY DEPLOYMENT ---
+// If you ever decide to deploy frontend and backend together on Render, this block would be needed.
+// For now, Vercel handles the frontend.
+// if (process.env.NODE_ENV === 'production') {
+//     app.use(express.static('client/build'));
+//     app.get('*', (req, res) => {
+//         res.sendFile(path.resolve(__dirname, '../client', 'build', 'index.html'));
+//     });
+// } else {
+//     app.get('/', (req, res) => {
+//         res.send('Nexus Signal AI Backend is running in development mode!');
+//     });
+// }
+
+// This is the fallback for development mode (when not in production)
+// If your backend URL (nexus-signal.onrender.com) is hit directly,
+// it will just show this message in production too after the change.
+app.get('/', (req, res) => {
+    res.send('Nexus Signal AI Backend is running. Access frontend via Vercel URL.');
+});
+
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));All right, all right, very easy to lose, son 
