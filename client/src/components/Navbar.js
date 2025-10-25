@@ -3,8 +3,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-// Import your logo image - ASSUMING IT'S IN client/src/assets/ AND NAMED nexus-signal-logo.png
-import logoImage from '../assets/nexus-signal-logo.png'; // <--- IMPORTANT: Adjust path/filename if different
+import logoImage from '../assets/nexus-signal-logo.png'; // <--- STILL ASSUMING THIS PATH & FILENAME ARE CORRECT
 
 const NavContainer = styled.nav`
     background-color: #1a273b; /* A sleek, dark blue for the Navbar */
@@ -29,7 +28,6 @@ const LogoWrapper = styled(Link)`
 const LogoImg = styled.img`
     height: 40px; /* Adjust size as needed, e.g., 40px, 50px */
     margin-right: 10px; /* Space between logo and text */
-    /* If your logo image has padding around it, you might need to adjust height/margin to fit */
 `;
 
 const LogoText = styled.span`
@@ -37,7 +35,8 @@ const LogoText = styled.span`
     font-weight: bold;
     color: #e0e0e0; /* White/light gray for the text part of the logo */
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* A sleek, modern font */
-    letter-spacing: -0.5px; /* Adjust if needed */
+    letter-spacing: -0.5px;
+    white-space: nowrap; /* Prevent text from wrapping */
 `;
 
 const NavLinks = styled.div`
@@ -46,15 +45,17 @@ const NavLinks = styled.div`
 `;
 
 const NavLink = styled(Link)`
-    color: #e0e0e0; /* White/light gray for links */
+    color: #b0c4de; /* Softer, light blue-gray for links */
     text-decoration: none;
-    font-size: 1.1rem;
+    font-size: 1rem; /* Slightly smaller font for links */
     margin-left: 1.5rem;
-    padding: 0.5rem 0;
-    transition: color 0.3s ease;
+    padding: 0.5rem 0.8rem; /* Add some padding for better click area/visuals */
+    border-radius: 4px; /* Slightly rounded corners */
+    transition: background-color 0.3s ease, color 0.3s ease;
 
     &:hover {
-        color: #00aced; /* Accent blue on hover, similar to logo's blue */
+        color: #e0e0e0; /* White on hover */
+        background-color: rgba(0, 173, 237, 0.1); /* Subtle accent blue background on hover */
     }
 `;
 
@@ -87,7 +88,7 @@ const Navbar = () => {
         <NavContainer>
             <LogoWrapper to="/">
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
-                <LogoText>Nexus SIGNAL.AI</LogoText>
+                <LogoText>Nexus AI</LogoText> {/* Changed to Nexus AI for cleaner text alongside image */}
             </LogoWrapper>
             <NavLinks>
                 {isAuthenticated ? (
