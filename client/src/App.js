@@ -1,6 +1,6 @@
-// client/src/App.js - Complete and Definitive Version
+// client/src/App.js - Complete and Definitive Version with Conditional Navbar Links
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'; // <--- Import useLocation
 import styled from 'styled-components';
 
 // Import all your pages
@@ -14,7 +14,7 @@ import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
 
 
-// --- Styled Components for a global Navbar (Adjust or replace with your dedicated Navbar component if you have one) ---
+// --- Styled Components for a global Navbar ---
 const NavbarContainer = styled.nav`
     background-color: #1a273b;
     padding: 1rem 2rem;
@@ -54,19 +54,26 @@ const NavbarContainer = styled.nav`
 
 // Global styling container for consistent layout and CSS variables
 const GlobalStyle = styled.div`
-    --navbar-height: 60px; /* Define a CSS variable for navbar height */
-    min-height: 100vh; /* Ensure full height for content */
+    --navbar-height: 60px;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    /* You might want to set a global background color here */
-    background-color: #0d1a2f; /* Example: Dark background for the whole app */
-    font-family: 'Inter', sans-serif; /* Example: Global font */
+    background-color: #0d1a2f;
+    font-family: 'Inter', sans-serif;
 `;
 
 // --- Main App Component ---
 const App = () => {
+    const location = useLocation(); // <--- Get the current location object
+    
+    // Define an array of paths where the "Login" link should NOT be shown
+    const pathsToHideLogin = ['/', '/pricing', '/about', '/performance'];
+
+    // Check if the current path is in the array of paths to hide login
+    const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
+
     return (
-        <Router>
+        <Router> {/* Router should wrap everything that uses routing, including useLocation */}
             <GlobalStyle>
                 {/* Navbar: Appears on ALL pages */}
                 <NavbarContainer>
@@ -74,8 +81,9 @@ const App = () => {
                     <div className="nav-links">
                         <Link to="/about">About</Link>
                         <Link to="/pricing">Pricing</Link>
-                        <Link to="/performance">Performance</Link> {/* Added for testing/navigation */}
-                        <Link to="/login">Login</Link>
+                        <Link to="/performance">Performance</Link>
+                        {/* Conditionally render the Login link */}
+                        {shouldShowLoginLink && <Link to="/login">Login</Link>} {/* <--- Conditional rendering */}
                     </div>
                 </NavbarContainer>
 
@@ -87,16 +95,13 @@ const App = () => {
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="/pricing" element={<PricingPage />} />
 
-                    {/* Footer Links - Now with dedicated routes */}
+                    {/* Footer Links */}
                     <Route path="/performance" element={<PerformancePage />} />
                     <Route path="/disclaimer" element={<DisclaimerPage />} />
                     <Route path="/privacy" element={<PrivacyPolicyPage />} />
                     <Route path="/terms" element={<TermsOfServicePage />} />
 
-                    {/* Fallback for 404 Not Found pages:
-                        This catches any URL that doesn't match a defined route above.
-                        It renders a simple 404 message and a link back home.
-                    */}
+                    {/* Fallback for 404 Not Found pages */}
                     <Route path="*" element={
                         <div style={{
                             padding: '50px',
@@ -108,7 +113,7 @@ const App = () => {
                             flexDirection: 'column',
                             justifyContent: 'center',
                             alignItems: 'center',
-                            backgroundColor: '#0d1a2f' // Ensure 404 page has dark background
+                            backgroundColor: '#0d1a2f'
                         }}>
                             <h2>404 - Page Not Found</h2>
                             <p style={{fontSize: '1.2rem', color: '#94a3b8'}}>The page you are looking for does not exist.</p>
@@ -118,15 +123,6 @@ const App = () => {
                         </div>
                     } />
                 </Routes>
-
-                {/* Important Note: Your LandingPage currently contains its own footer.
-                    If you wanted a single, app-wide footer that appears on ALL pages (not just the landing page),
-                    you would:
-                    1. Remove the FooterContainer component and its JSX from LandingPage.js.
-                    2. Create a separate Footer.js component.
-                    3. Import and render that Footer component here, AFTER the <Routes> block.
-                    For now, it's fine as is, but be aware of this if you want a consistent footer across the app.
-                */}
             </GlobalStyle>
         </Router>
     );
