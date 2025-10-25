@@ -1,4 +1,4 @@
-// client/src/components/Navbar.js - Corrected for Landing Page AND Pricing Page
+// client/src/components/Navbar.js - Corrected to hide Login/Register on footer pages
 import React from 'react';
 import styled from 'styled-components';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -80,8 +80,15 @@ const Navbar = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Check if the current path is the root (Landing Page) OR the Pricing Page
-    const isOnLandingOrPricingPage = location.pathname === '/' || location.pathname === '/pricing'; // <--- CORRECTED LOGIC
+    // Define pages where Login/Register links should be hidden for non-authenticated users
+    const pagesWithoutAuthLinks = [
+        '/',
+        '/pricing',
+        '/terms',
+        '/privacy',
+        '/disclaimer'
+    ];
+    const shouldHideAuthLinks = pagesWithoutAuthLinks.includes(location.pathname); // <--- CORRECTED LOGIC
 
     const handleLogout = () => {
         logout();
@@ -95,20 +102,24 @@ const Navbar = () => {
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
-                {isOnLandingOrPricingPage ? (
-                    // On Landing or Pricing Page: Only show Pricing (if not authenticated)
-                    // If authenticated, we might want different links, but for now, just Pricing
-                    !isAuthenticated && <NavLink to="/pricing">Pricing</NavLink>
+                {/* Conditional rendering based on authentication and page */}
+                {isAuthenticated ? (
+                    // User is authenticated, always show full dashboard links (or adjust as needed)
+                    <>
+                        <NavLink to="/dashboard">Dashboard</NavLink>
+                        <NavLink to="/predict">Predict</NavLink>
+                        <NavLink to="/pricing">Pricing</NavLink>
+                        <NavButton onClick={handleLogout}>Logout</NavButton>
+                    </>
                 ) : (
-                    // Not on Landing or Pricing Page: Show full links (conditional on auth)
-                    isAuthenticated ? (
-                        <>
-                            <NavLink to="/dashboard">Dashboard</NavLink>
-                            <NavLink to="/predict">Predict</NavLink>
-                            <NavLink to="/pricing">Pricing</NavLink>
-                            <NavButton onClick={handleLogout}>Logout</NavButton>
-                        </>
+                    // User is NOT authenticated
+                    shouldHideAuthLinks ? (
+                        // On a page where auth links should be hidden (e.g., Landing, Pricing, Footer links)
+                        <NavLink to="/pricing">Pricing</NavLink> // Only show Pricing
                     ) : (
+                        // On other pages where auth links might be relevant (e.g., if you add other public pages later)
+                        // For now, these routes are effectively blocked by the current configuration,
+                        // but this is where Login/Register would appear if they were public paths.
                         <>
                             <NavLink to="/login">Login</NavLink>
                             <NavLink to="/register">Register</NavLink>
