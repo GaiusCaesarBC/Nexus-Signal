@@ -1,124 +1,98 @@
-import React, { useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+// client/src/components/Navbar.js
+import React from 'react';
 import styled from 'styled-components';
-import { AuthContext } from '../context/AuthContext';
-// Added BrainCircuit icon for prediction, removed unused icons if any were here
-import { LayoutDashboard, UserPlus, LogIn, LogOut, Info, Tag, Activity, BrainCircuit } from 'lucide-react'; 
-import logo from '../assets/logo.png';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext'; // Make sure this path is correct relative to Navbar.js
 
-const Nav = styled.nav`
-    background-color: #1f2937;
-    padding: 1rem 2rem;
+const NavContainer = styled.nav`
+    background-color: #2c3e50; /* Dark blue-gray */
+    color: white;
+    padding: 0 1.5rem;
+    height: var(--navbar-height); /* Use the CSS variable */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     position: sticky;
     top: 0;
     z-index: 1000;
 `;
 
-const LogoContainer = styled(Link)`
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+const LogoLink = styled(Link)`
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #4CAF50; /* Green logo */
     text-decoration: none;
-`;
 
-const Logo = styled.img`
-    height: 40px;
-    width: 40px;
-`;
-
-const BrandName = styled.h1`
-    color: #ecf0f1;
-    font-size: 1.5rem;
-    margin: 0;
+    &:hover {
+        color: #66bb6a;
+        text-decoration: none;
+    }
 `;
 
 const NavLinks = styled.div`
     display: flex;
     align-items: center;
-    gap: 1.5rem;
 `;
 
 const NavLink = styled(Link)`
-    color: #bdc3c7;
+    color: white;
     text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 5px;
-    transition: all 0.2s ease-in-out;
+    font-size: 1.1rem;
+    margin-left: 1.5rem;
+    padding: 0.5rem 0;
+    transition: color 0.3s ease;
 
     &:hover {
-        background-color: #34495e;
-        color: #ecf0f1;
+        color: #61dafb; /* Light blue on hover */
     }
 `;
 
-const LogoutButton = styled.button`
-    color: #bdc3c7;
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 5px;
-    transition: all 0.2s ease-in-out;
-    background: none;
+const NavButton = styled.button`
+    background-color: #3f51b5; /* Blue button */
+    color: white;
     border: none;
+    border-radius: 4px;
+    padding: 0.7rem 1.2rem;
+    font-size: 1.05rem;
     cursor: pointer;
-    font-size: 1rem;
+    margin-left: 1.5rem;
+    transition: background-color 0.3s ease;
 
     &:hover {
-        background-color: #34495e;
-        color: #ecf0f1;
+        background-color: #5d74e3;
     }
 `;
 
 const Navbar = () => {
-    const { user, logout } = useContext(AuthContext);
+    const { isAuthenticated, logout } = useAuth();
     const navigate = useNavigate();
 
     const handleLogout = () => {
         logout();
-        navigate('/login');
+        navigate('/login'); // Redirect to login page after logout
     };
 
     return (
-        <Nav>
-            <LogoContainer to="/">
-                <Logo src={logo} alt="Nexus Signal AI Logo" />
-                <BrandName>Nexus Signal AI</BrandName>
-            </LogoContainer>
+        <NavContainer>
+            <LogoLink to="/">Nexus Signal</LogoLink>
             <NavLinks>
-                {user ? (
+                {isAuthenticated ? (
                     <>
-                        <NavLink to="/"><LayoutDashboard size={18} /> Dashboard</NavLink>
-                        {/* <--- NEW: Add Prediction Page Link for Authenticated Users ---> */}
-                        <NavLink to="/predict"><BrainCircuit size={18} /> Predict</NavLink> 
-                        <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
-                        <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
-                        <NavLink to="/about"><Info size={18} /> About</NavLink>
-                        <LogoutButton onClick={handleLogout}><LogOut size={18} /> Log Out</LogoutButton>
+                        <NavLink to="/dashboard">Dashboard</NavLink>
+                        <NavLink to="/predict">Predict</NavLink>
+                        <NavLink to="/pricing">Pricing</NavLink> {/* Pricing link for authenticated users */}
+                        <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 ) : (
                     <>
-                        {/* You might want to allow non-logged-in users to see prediction results too,
-                           or show a "Login to Predict" message on the /predict page itself.
-                           For now, the link is only for logged-in users.
-                        */}
-                        <NavLink to="/performance"><Activity size={18} /> Performance</NavLink>
-                        <NavLink to="/pricing"><Tag size={18} /> Pricing</NavLink>
-                        <NavLink to="/about"><Info size={18} /> About</NavLink>
-                        <NavLink to="/register"><UserPlus size={18} /> Register</NavLink>
-                        <NavLink to="/login"><LogIn size={18} /> Log In</NavLink>
+                        <NavLink to="/login">Login</NavLink>
+                        <NavLink to="/register">Register</NavLink>
+                        <NavLink to="/pricing">Pricing</NavLink> {/* Pricing link for non-authenticated users */}
                     </>
                 )}
             </NavLinks>
-        </Nav>
+        </NavContainer>
     );
 };
 
