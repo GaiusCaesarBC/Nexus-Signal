@@ -1,7 +1,6 @@
-```javascript
 // client/src/components/Loader.js
-import React from 'react';
-import styled, { keyframes } from 'styled-components';
+import React from 'react'; // <--- Ensure React is explicitly imported
+import styled, { keyframes } from 'styled-components'; // <--- styled and keyframes are used, so this is correct
 
 // Keyframes for the spinner animation
 const spin = keyframes`
@@ -41,4 +40,3 @@ const Loader = ({ message = "Loading..." }) => {
 };
 
 export default Loader;
-```
