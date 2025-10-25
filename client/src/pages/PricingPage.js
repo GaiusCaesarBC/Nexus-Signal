@@ -1,33 +1,28 @@
-// client/src/pages/PricingPage.js
+// client/src/pages/PricingPage.js - Reverted styling, only "Coming Soon" on buttons
 import React from 'react';
 import styled from 'styled-components';
-import { Check, X } from 'lucide-react'; // Assuming you have lucide-react installed
+import { Check, X } from 'lucide-react'; // Assuming lucide-react is installed
 
 const PricingContainer = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 3rem 1.5rem;
-    min-height: calc(100vh - var(--navbar-height)); /* Account for navbar height */
-    background: linear-gradient(135deg, #1e3a5f 0%, #0d1a2f 100%); /* Darker, more intense gradient */
-    color: #ecf0f1;
+    min-height: calc(100vh - var(--navbar-height));
+    background-color: #f4f7f6; /* Light background for contrast */
+    color: #333; /* Dark text for readability */
 `;
 
 const Title = styled.h1`
-    font-size: 3.5rem;
+    font-size: 2.8rem;
     margin-bottom: 1.5rem;
-    color: #e0e0e0;
-    text-shadow: 0 0 15px rgba(52, 152, 219, 0.4); /* Subtle blue glow */
+    color: #2c3e50;
     text-align: center;
-
-    @media (max-width: 768px) {
-        font-size: 2.8rem;
-    }
 `;
 
 const Subtitle = styled.p`
-    font-size: 1.3rem;
-    color: #bdc3c7;
+    font-size: 1.1rem;
+    color: #6c7a89;
     margin-bottom: 3rem;
     max-width: 800px;
     text-align: center;
@@ -36,113 +31,99 @@ const Subtitle = styled.p`
 
 const PricingCards = styled.div`
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2.5rem;
-    max-width: 1200px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    max-width: 1000px;
     width: 100%;
 
-    @media (max-width: 1024px) {
+    @media (max-width: 768px) {
         grid-template-columns: 1fr;
         padding: 0 1rem;
     }
 `;
 
 const Card = styled.div`
-    background-color: #1a2a3a; /* Slightly lighter dark blue for cards */
-    border-radius: 12px;
-    padding: 2.5rem;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(52, 152, 219, 0.15);
+    background-color: #ffffff;
+    border-radius: 10px;
+    padding: 2rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     text-align: center;
     transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
-    border: 1px solid rgba(52, 152, 219, 0.3); /* Subtle border */
     display: flex;
     flex-direction: column;
     justify-content: space-between;
 
     &:hover {
-        transform: translateY(-10px);
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(52, 152, 219, 0.3);
+        transform: translateY(-5px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
     }
 
     ${props => props.featured && `
-        background: linear-gradient(45deg, #2c3e50, #1c2838); /* More distinct background for featured */
-        border-color: #3498db;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 40px rgba(52, 152, 219, 0.5);
-        transform: scale(1.02);
-
-        &:hover {
-            transform: translateY(-15px) scale(1.03);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 50px rgba(52, 152, 219, 0.7);
-        }
+        border: 2px solid #3498db;
+        box-shadow: 0 6px 20px rgba(52, 152, 219, 0.2);
     `}
 `;
 
 const PlanName = styled.h2`
-    font-size: 2.2rem;
-    color: #3498db;
-    margin-bottom: 1.5rem;
-    text-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+    font-size: 1.8rem;
+    color: #34495e;
+    margin-bottom: 1rem;
 `;
 
 const Price = styled.div`
-    font-size: 3.5rem;
+    font-size: 3rem;
     font-weight: bold;
-    color: #ecf0f1;
+    color: #2c3e50;
     margin-bottom: 1rem;
     span {
-        font-size: 1.5rem;
+        font-size: 1.2rem;
         font-weight: normal;
-        color: #bdc3c7;
+        color: #7f8c8d;
     }
 `;
 
 const FeatureList = styled.ul`
     list-style: none;
     padding: 0;
-    margin: 2rem 0;
-    flex-grow: 1; /* Allow list to take up available space */
+    margin: 1.5rem 0;
+    flex-grow: 1;
 `;
 
 const FeatureItem = styled.li`
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
-    color: #bdc3c7;
-    margin-bottom: 1rem;
-    gap: 0.8rem;
+    font-size: 1rem;
+    color: #555;
+    margin-bottom: 0.8rem;
+    gap: 0.5rem;
 
     svg {
-        color: ${props => props.included ? '#2ecc71' : '#e74c3c'}; /* Green for check, Red for X */
-        min-width: 20px; /* Ensure icon doesn't shrink */
+        color: ${props => props.included ? '#2ecc71' : '#e74c3c'};
+        min-width: 18px;
     }
 `;
 
 const ActionButton = styled.button`
-    background: linear-gradient(90deg, #3498db, #2980b9);
+    background-color: #3498db;
     border: none;
-    border-radius: 8px;
+    border-radius: 5px;
     color: white;
-    padding: 1rem 2rem;
-    font-size: 1.2rem;
+    padding: 0.8rem 1.5rem;
+    font-size: 1rem;
     font-weight: bold;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.3s ease;
     width: 100%;
-    margin-top: 1.5rem; /* Ensure space from features */
+    margin-top: 1rem;
 
     &:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(52, 152, 219, 0.6);
-        background: linear-gradient(90deg, #2980b9, #3498db); /* Slightly shift gradient */
+        background-color: #2980b9;
     }
 
     &:disabled {
-        background: #7f8c8d; /* Grey out when disabled */
+        background-color: #cccccc; /* Grey out when disabled */
         cursor: not-allowed;
-        box-shadow: none;
-        transform: none;
     }
 `;
 
@@ -167,7 +148,7 @@ const PricingPage = () => {
                         <FeatureItem included={false}><X size={20} /> Real-Time Strategy Backtesting</FeatureItem>
                         <FeatureItem included={false}><X size={20} /> Priority Support</FeatureItem>
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
                 </Card>
 
                 {/* Pro Tier Card */}
@@ -182,7 +163,7 @@ const PricingPage = () => {
                         <FeatureItem included={false}><X size={20} /> Real-Time Strategy Optimization</FeatureItem>
                         <FeatureItem included={false}><X size={20} /> Dedicated Account Manager</FeatureItem>
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
                 </Card>
 
                 {/* Enterprise Tier Card */}
@@ -197,7 +178,7 @@ const PricingPage = () => {
                         <FeatureItem included><Check size={20} /> Dedicated Account Manager</FeatureItem>
                         <FeatureItem included><Check size={20} /> API Access & Integrations</FeatureItem>
                     </FeatureList>
-                    <ActionButton disabled>Coming Soon</ActionButton> {/* <--- MODIFIED HERE */}
+                    <ActionButton disabled>Coming Soon</ActionButton> {/* <-- ONLY CHANGE */}
                 </Card>
             </PricingCards>
         </PricingContainer>
