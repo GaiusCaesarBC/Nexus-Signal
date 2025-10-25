@@ -1,4 +1,4 @@
-// client/src/App.js - Latest Version with Logo, Mobile Menu, and Routes
+// client/src/App.js - Latest Version with Logo, Mobile Menu, and Routes (and larger logo)
 
 import React, { useState, useEffect } from 'react'; // <--- Import useState, useEffect
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
@@ -38,7 +38,7 @@ const NavbarContainer = styled.nav`
         gap: 0.5rem; /* Space between logo image and text */
 
         img {
-            height: 35px; /* Adjust size of logo image in Navbar */
+            height: 50px; /* <--- THIS IS THE LINE WITH THE INCREASED SIZE */
             width: auto;
         }
 
@@ -135,7 +135,7 @@ const AppContent = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu
 
     // Close menu when navigating to a new page
-    useEffect(() => { // <--- Corrected import and usage for useEffect
+    useEffect(() => {
         setIsMenuOpen(false);
     }, [location.pathname]);
     
