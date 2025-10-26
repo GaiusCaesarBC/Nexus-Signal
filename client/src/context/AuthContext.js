@@ -15,31 +15,37 @@ export const AuthProvider = ({ children }) => {
     const API_BASE_URL = process.env.REACT_APP_API_URL;
     console.log('[AuthContext] API_BASE_URL:', API_BASE_URL);
 
-    // Memoize the axios instance to ensure it's stable across renders
-    const api = useMemo(() => {
-        const instance = axios.create({
-            baseURL: API_BASE_URL,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
+    // ... (imports and state definitions) ...
 
-        // This interceptor needs to use the current 'token' from state,
-        // so it has to be defined within `useMemo`'s closure for 'token'.
-        // This ensures the interceptor always has the latest token.
-        instance.interceptors.request.use(
-            (config) => {
-                if (token) {
-                    config.headers['x-auth-token'] = token;
-                }
-                return config;
-            },
-            (err) => {
-                return Promise.reject(err);
+// Memoize the axios instance to ensure it's stable across renders
+const api = useMemo(() => {
+    const instance = axios.create({
+        baseURL: API_BASE_URL,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+
+    // Add request interceptor to attach the token from localStorage
+    instance.interceptors.request.use(
+        (config) => {
+            const currentToken = localStorage.getItem('token'); // <--- GET TOKEN FROM LOCALSTORAGE HERE
+            if (currentToken) {
+                config.headers['x-auth-token'] = currentToken;
             }
-        );
-        return instance;
-    }, [API_BASE_URL, token]); // Recreate 'api' only if baseURL or token changes
+            return config;
+        },
+        (err) => {
+            return Promise.reject(err);
+        }
+    );
+    // Remove 'token' from the dependency array, as the interceptor now
+    // gets it dynamically from localStorage.
+    return instance;
+}, [API_BASE_URL]); // <--- Dependency array now only includes API_BASE_URL
+                    // 'token' is no longer needed here as interceptor fetches it dynamically.
+
+// ... (rest of AuthProvider) ...
 
     // Memoize the loadUser function using useCallback
     const loadUser = useCallback(async () => {

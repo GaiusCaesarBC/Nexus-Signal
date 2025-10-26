@@ -5,17 +5,20 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import styled from 'styled-components';
 import { Menu, X } from 'lucide-react';
 
+// Import AuthProvider from your context
+import { AuthProvider } from './context/AuthContext'; // <--- ADDED: Import AuthProvider
+
 // Import all your pages
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage'; // ADDED: Import RegisterPage
+import RegisterPage from './pages/RegisterPage';
 import AboutPage from './pages/AboutPage';
 import PricingPage from './pages/PricingPage';
 import PerformancePage from './pages/PerformancePage';
 import DisclaimerPage from './pages/DisclaimerPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
-
+import DashboardPage from './pages/DashboardPage'; // <--- ADDED: Import DashboardPage
 
 // --- Styled Components for a global Navbar ---
 const NavbarContainer = styled.nav`
@@ -167,7 +170,6 @@ const FooterContainer = styled.footer`
     }
 `;
 
-
 // --- Navbar and Routing Component (to house useLocation) ---
 const AppContent = () => {
     const location = useLocation();
@@ -180,12 +182,13 @@ const AppContent = () => {
 
     // Define an array of paths where the "Login" link should NOT be shown
     const pathsToHideLogin = [
-        '/', 
-        '/pricing', 
-        '/about', 
-        '/performance', 
-        '/login',         // Hide Login link if already on Login page
-        '/signup',        // Hide Login link if on Register page
+        '/',
+        '/pricing',
+        '/about',
+        '/performance',
+        '/login',        // Hide Login link if already on Login page
+        '/signup',       // Hide Login link if on Register page
+        '/dashboard',    // Hide Login link if logged in and on dashboard
         '/forgot-password' // Anticipate a forgot password page
     ];
 
@@ -226,15 +229,18 @@ const AppContent = () => {
                 {/* Core Pages */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/signup" element={<RegisterPage />} /> {/* ADDED: Route for RegisterPage */}
+                <Route path="/signup" element={<RegisterPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
-                
+
+                {/* ADDED: Route for DashboardPage */}
+                <Route path="/dashboard" element={<DashboardPage />} />
+
                 {/* Footer Links (Corrected Paths) */}
                 <Route path="/disclaimer" element={<DisclaimerPage />} />
-                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} /> {/* CORRECTED: from /privacy */}
-                <Route path="/terms-of-service" element={<TermsOfServicePage />} /> {/* CORRECTED: from /terms */}
+                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+                <Route path="/terms-of-service" element={<TermsOfServicePage />} />
 
                 {/* Fallback for 404 Not Found pages */}
                 <Route path="*" element={
@@ -263,8 +269,8 @@ const AppContent = () => {
             <FooterContainer>
                 <div className="footer-links">
                     <Link to="/disclaimer">Disclaimer</Link>
-                    <Link to="/privacy-policy">Privacy Policy</Link> {/* CORRECTED: from /privacy */}
-                    <Link to="/terms-of-service">Terms of Service</Link> {/* CORRECTED: from /terms */}
+                    <Link to="/privacy-policy">Privacy Policy</Link>
+                    <Link to="/terms-of-service">Terms of Service</Link>
                     <Link to="/about">About Us</Link>
                     {/* Add more footer links if needed, e.g., social media */}
                 </div>
@@ -276,11 +282,13 @@ const AppContent = () => {
     );
 };
 
-// --- Main App Component (Wrapper for Router) ---
+// --- Main App Component (Wrapper for Router and AuthProvider) ---
 const App = () => {
     return (
         <Router>
-            <AppContent />
+            <AuthProvider> {/* <--- NOW CORRECTLY WRAPPING AppContent */}
+                <AppContent />
+            </AuthProvider>
         </Router>
     );
 };

@@ -155,7 +155,7 @@ const PrivacyPolicyPage = () => {
                     Your privacy is critically important to us. This Privacy Policy describes how Nexus Signal.AI collects, uses, and discloses your personal information
                     when you use our website and services.
                 </p>
-                <p><strong>Last updated: July 28, 2024</strong></p>
+                <p><strong>Last updated: October 01, 2025</strong></p>
             </Header>
 
             <ContentSection>

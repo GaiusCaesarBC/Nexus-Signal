@@ -1,9 +1,10 @@
-// client/src/pages/LoginPage.js - Complete File
+// client/src/pages/LoginPage.js - Complete and UPDATED File (with Codespace backend URL and API call)
 
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { LogIn, User, Lock, ArrowRight } from 'lucide-react'; // Icons for visual emphasis
-import { Link } from 'react-router-dom'; // For navigation to other pages
+import { Link, useNavigate } from 'react-router-dom'; // Import Link and useNavigate
+import { useAuth } from '../context/AuthContext'; // <--- ADDED: Import useAuth hook
 
 // Keyframe for fade-in animation
 const fadeIn = keyframes`
@@ -168,19 +169,39 @@ const LinksContainer = styled.div`
 const LoginPage = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false); // To manage loading state for the button
+    const [localLoading, setLocalLoading] = useState(false); // Changed to localLoading to avoid conflict
+    const [localError, setLocalError] = useState(''); // Changed to localError for component-specific errors
+    const navigate = useNavigate();
 
-    const handleSubmit = (e) => {
+    const { login, error: authError, loading: authLoading } = useAuth(); // <--- ADDED: Get login, error, loading from AuthContext
+
+    // Use a combined loading state if necessary, or just authLoading
+    const isLoading = localLoading || authLoading;
+    const currentError = localError || authError; // Prioritize AuthContext error if present
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        // Here you would typically send the login request to your backend
-        console.log('Login attempt:', { email, password });
-        // Simulate an API call
-        setTimeout(() => {
-            alert('Login functionality is not yet implemented on the frontend.');
-            setLoading(false);
-            // In a real app, you'd handle success/failure and redirect
-        }, 2000);
+        setLocalLoading(true); // Set local loading
+        setLocalError('');    // Clear previous local errors
+
+        // Call the login function from AuthContext
+        // NOTE: Your backend login endpoint for AuthContext is '/api/users/login'
+        // And it expects 'username', 'password'.
+        // If your login form specifically uses 'email', you might need to adjust
+        // either the AuthContext login function or ensure the backend accepts 'email'
+        // as the identifier for the 'username' field. For now, I'll pass email as username.
+        const result = await login(email, password); // <--- IMPORTANT: USING AUTH CONTEXT'S LOGIN
+
+        if (result.success) {
+            console.log('Login successful via AuthContext');
+            alert('Login successful! Welcome back.');
+            navigate('/dashboard');
+        } else {
+            console.error('Login failed via AuthContext:', result.error);
+            setLocalError(result.error || 'Login failed. Please check your credentials.'); // Set local error if authError isn't immediate
+        }
+
+        setLocalLoading(false); // Reset local loading
     };
 
     return (
@@ -191,12 +212,12 @@ const LoginPage = () => {
                 </Title>
                 <form onSubmit={handleSubmit}>
                     <FormGroup>
-                        <label htmlFor="email">Email or Username</label>
+                        <label htmlFor="email">Email</label>
                         <User className="icon" size={20} />
                         <input
-                            type="text"
+                            type="email"
                             id="email"
-                            placeholder="your@email.com or username"
+                            placeholder="your@email.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
@@ -214,13 +235,14 @@ const LoginPage = () => {
                             required
                         />
                     </FormGroup>
-                    <StyledButton type="submit" disabled={loading}>
-                        {loading ? 'Logging In...' : 'Login'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
+                    {currentError && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{currentError}</p>}
+                    <StyledButton type="submit" disabled={isLoading}>
+                        {isLoading ? 'Logging In...' : 'Login'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
                     </StyledButton>
                 </form>
                 <LinksContainer>
-                    <Link to="/forgot-password">Forgot Password?</Link> {/* This route will need to be added later */}
-                    <Link to="/signup">Don't have an account? Sign Up</Link> {/* This route will need to be added later */}
+                    <Link to="/forgot-password">Forgot Password?</Link>
+                    <Link to="/signup">Don't have an account? Sign Up</Link>
                 </LinksContainer>
             </LoginFormCard>
         </LoginPageContainer>

@@ -208,7 +208,7 @@ const TermsOfServicePage = () => {
 
                 <h2><FileText size={28} /> 7. Governing Law</h2>
                 <p>
-                    These Terms shall be governed and construed in accordance with the laws of [Your State/Country], without regard to its conflict of law provisions.
+                    These Terms shall be governed and construed in accordance with the laws of [USA], without regard to its conflict of law provisions.
                 </p>
 
                 <h2><MessageSquare size={28} /> 8. Changes to Terms</h2>

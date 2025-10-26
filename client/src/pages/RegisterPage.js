@@ -1,9 +1,9 @@
-// client/src/pages/RegisterPage.js - Complete File
+// client/src/pages/RegisterPage.js - Complete and Updated File (with Codespace backend URL)
 
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { UserPlus, User, Lock, CheckCircle, ArrowRight } from 'lucide-react'; // Icons for visual emphasis
-import { Link } from 'react-router-dom'; // For navigation to other pages
+import { Link, useNavigate } from 'react-router-dom'; // Import Link and useNavigate
 
 // Keyframe for fade-in animation
 const fadeIn = keyframes`
@@ -221,28 +221,56 @@ const RegisterPage = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(''); // State to hold error messages
+    const navigate = useNavigate(); // Initialize useNavigate hook
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
+        setError(''); // Clear previous errors
+
         if (password !== confirmPassword) {
-            alert('Passwords do not match!');
+            setError('Passwords do not match!');
             setLoading(false);
             return;
         }
         if (!agreeToTerms) {
-            alert('You must agree to the Terms of Service and Privacy Policy.');
+            setError('You must agree to the Terms of Service and Privacy Policy.');
             setLoading(false);
             return;
         }
-        // Here you would typically send the registration request to your backend
-        console.log('Registration attempt:', { email, password, agreeToTerms });
-        // Simulate an API call
-        setTimeout(() => {
-            alert('Registration functionality is not yet implemented on the frontend.');
+
+        try {
+            // UPDATED: Using your Codespace-forwarded URL for the backend
+            const backendBaseUrl = 'https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev';
+            const res = await fetch(`${backendBaseUrl}/api/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password }),
+            });
+
+            const data = await res.json();
+
+            if (res.ok) { // If response status is 2xx (e.g., 200, 201)
+                console.log('Registration successful:', data);
+                // In a real app, you might save the token to localStorage if the backend returns one directly
+                // localStorage.setItem('token', data.token); 
+                alert('Registration successful! You can now log in.');
+                navigate('/login'); // Redirect to login page
+            } else {
+                // Handle API errors (e.g., user already exists, validation errors from express-validator)
+                console.error('Registration failed:', data);
+                // Extract error message from backend response
+                setError(data.msg || (data.errors && data.errors[0] && data.errors[0].msg) || 'Registration failed');
+            }
+        } catch (err) {
+            console.error('Network or server error:', err);
+            setError('Could not connect to the server. Please ensure the backend is running and accessible.');
+        } finally {
             setLoading(false);
-            // In a real app, you'd handle success/failure and potentially redirect to login or dashboard
-        }, 2000);
+        }
     };
 
     return (
@@ -300,6 +328,7 @@ const RegisterPage = () => {
                             I agree to the <Link to="/terms-of-service">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>
                         </label>
                     </CheckboxGroup>
+                    {error && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</p>} {/* Error message display */}
                     <StyledButton type="submit" disabled={loading || !agreeToTerms}>
                         {loading ? 'Registering...' : 'Register'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
                     </StyledButton>
