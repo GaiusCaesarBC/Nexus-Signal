@@ -10,7 +10,8 @@ import Footer from './components/Footer';
 import Copilot from './components/Copilot';
 
 // Import Page Components
-import HomePage from './pages/HomePage'; // Ensure HomePage.js exists
+//import HomePage from './pages/HomePage'; // Ensure HomePage.js exists
+import LandingPage from './pages/LandingPage'; // Ensure LandingPage.js exists
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -57,7 +58,7 @@ function App() {
       <main style={{ flexGrow: 1 }}> {/* A main tag for semantic structure and flexbox growth */}
         <Routes>
           {/* Public Routes */}
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/pricing" element={<PricingPage />} />
