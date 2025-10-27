@@ -1,18 +1,22 @@
-// client/src/index.js
+// client/src/index.js - **CRITICAL UPDATE: Adding BrowserRouter and AuthProvider**
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css'; // Assuming you have an index.css
+import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals'; // Now correctly points to the file we just created
+import reportWebVitals from './reportWebVitals';
+import { BrowserRouter as Router } from 'react-router-dom'; // <--- ADD THIS IMPORT
+import { AuthProvider } from './context/AuthContext'; // <--- ADD THIS IMPORT
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <Router> {/* <--- WRAPPER 1: BrowserRouter for routing */}
+      <AuthProvider> {/* <--- WRAPPER 2: AuthProvider for authentication context */}
+        <App />
+      </AuthProvider>
+    </Router>
   </React.StrictMode>
 );
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals();

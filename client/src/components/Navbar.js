@@ -97,7 +97,7 @@ const Navbar = () => {
 
     return (
         <NavContainer>
-            <LogoWrapper to="/">
+           <LogoWrapper to="/dashboard"> {/*{/* <--- THIS IS THE LINE TO CHANGE */}
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>

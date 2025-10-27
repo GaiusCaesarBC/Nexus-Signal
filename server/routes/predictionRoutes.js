@@ -5,10 +5,13 @@ const axios = require('axios');
 const { generatePrediction } = require('../predictionEngine');
 const auth = require('../middleware/authMiddleware'); // <--- NEW: Import auth middleware
 
+console.log('[predictionRoutes.js] Module loaded. Defining prediction route...');
+
 // @route   GET api/predict/:symbol
 // @desc    Get AI prediction for a stock symbol
 // @access  Private (requires authentication due to 'auth' middleware)
 router.get('/:symbol', auth, async (req, res) => { // <--- NEW: 'auth' middleware added here
+   console.log(`[predictionRoutes.js] Hit route for /api/predict/${req.params.symbol} by user ${req.user ? req.user.id : 'unknown'}`);
     const symbol = req.params.symbol.toUpperCase();
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
 

@@ -1,4 +1,4 @@
-// client/src/pages/PredictPage.js - InfoMessage warning resolved
+// client/src/pages/PredictPage.js
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { Line } from 'react-chartjs-2';
@@ -14,7 +14,7 @@ import {
 } from 'chart.js';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import Loader from '../components/Loader'; // Ensure this path is correct
+import Loader from '../components/Loader';
 
 // Register Chart.js components
 ChartJS.register(
@@ -27,35 +27,34 @@ ChartJS.register(
     Legend
 );
 
+// --- Styled Components (unchanged) ---
 const PredictContainer = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 3rem 1.5rem;
     min-height: calc(100vh - var(--navbar-height));
-    background-color: transparent; /* Changed to transparent */
+    background-color: transparent;
     color: #e0e0e0;
 `;
 
 const PredictBox = styled.div`
-    background-color: #2c3e50; /* Dark blue-gray for the inner box */
+    background-color: #2c3e50;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     padding: 2.5rem;
     max-width: 900px;
     width: 100%;
     margin-bottom: 2rem;
-    /* --- Styles to center content within PredictBox --- */
     display: flex;
     flex-direction: column;
-    align-items: center; /* Centers children horizontally */
-    text-align: center; /* Centers inline text within the box */
-    /* --- End centering styles --- */
+    align-items: center;
+    text-align: center;
 `;
 
 const InputGroup = styled.div`
     display: flex;
-    justify-content: center; /* Centers the input and button horizontally */
+    justify-content: center;
     margin-bottom: 1.5rem;
     width: 100%;
     max-width: 400px;
@@ -100,22 +99,47 @@ const Button = styled.button`
 
 const PredictionResult = styled.div`
     margin-top: 1.5rem;
-    text-align: left; /* Keep this left for readability of results */
+    text-align: center;
     background-color: #34495e;
     padding: 1.5rem;
     border-radius: 8px;
-    width: 100%; /* Take full width of its parent */
-    max-width: 400px; /* Limit width for better appearance */
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+`;
+
+const PredictionValue = styled.p`
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: ${props => props.direction === 'Up' ? '#28a745' : props.direction === 'Down' ? '#dc3545' : '#ffc107'};
+    margin: 0.5rem 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+`;
+
+const DirectionArrow = styled.span`
+    font-size: 1.8rem;
+    margin-left: 0.8rem;
+    margin-right: -0.5rem;
+    vertical-align: middle;
+`;
+
+const ResultDetail = styled.p`
+    font-size: 1.1rem;
+    color: #b0c4de;
+    margin-top: 0.5rem;
 `;
 
 const ChartContainer = styled.div`
     margin-top: 2rem;
     width: 100%;
-    height: 400px; /* Fixed height for consistency */
+    height: 400px;
     background-color: #34495e;
     padding: 1rem;
     border-radius: 8px;
-    max-width: 900px; /* Match PredictBox max-width */
+    max-width: 900px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 `;
 
 const ErrorMessage = styled.p`
@@ -124,8 +148,11 @@ const ErrorMessage = styled.p`
     font-size: 0.95rem;
 `;
 
-// InfoMessage definition removed as it was unused.
-
+const InitialMessage = styled.p`
+    color: #b0c4de;
+    font-size: 1.1rem;
+    margin-top: 1rem;
+`;
 
 const PredictPage = () => {
     const { api, isAuthenticated, loading: authLoading } = useAuth();
@@ -135,63 +162,104 @@ const PredictPage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [chartData, setChartData] = useState(null);
-    const [predictionMessage, setPredictionMessage] = useState('');
 
     useEffect(() => {
-        // Redirect if not authenticated and authLoading is false
         if (!authLoading && !isAuthenticated) {
             navigate('/login');
         }
     }, [isAuthenticated, authLoading, navigate]);
-
 
     const onSubmit = async (e) => {
         e.preventDefault();
         setError(null);
         setPrediction(null);
         setChartData(null);
-        setPredictionMessage('');
-
+        
         if (!symbol) {
-            setError('Please enter a stock symbol.');
+            setError('Please enter a stock symbol (e.g., AAPL).');
             return;
         }
+
+        // --- NEW CHECK HERE ---
+        if (!api) {
+            setError('API client not initialized. Please ensure you are logged in and try again.');
+            setLoading(false); // Ensure loading is false
+            console.error("API client (axios instance) is undefined.");
+            return;
+        }
+        // --- END NEW CHECK ---
+
         if (!isAuthenticated) {
-            setError('Please log in to get predictions.');
+            setError('You must be logged in to get predictions.');
             setLoading(false);
             return;
         }
 
         setLoading(true);
         try {
+            // Only attempt to log baseURL if api is defined
             console.log(`Fetching prediction for ${symbol} from ${api.defaults.baseURL}/api/predict/${symbol}`);
             const res = await api.get(`/api/predict/${symbol}`);
             console.log('Prediction API response:', res.data);
 
-            setPrediction(res.data);
-            setPredictionMessage(res.data.predictionMessage);
+            const {
+                predictedPrice,
+                predictedDirection,
+                confidence,
+                predictionMessage,
+                historicalData
+            } = res.data;
 
-            const labels = res.data.historicalData.map(d => d.time);
-            const closePrices = res.data.historicalData.map(d => d.close);
+            setPrediction({
+                symbol: symbol,
+                predictedPrice: predictedPrice,
+                predictedDirection: predictedDirection,
+                confidence: confidence,
+                predictionMessage: predictionMessage
+            });
+
+            // Prepare chart data
+            const labels = historicalData.map(d => d.time);
+            const closePrices = historicalData.map(d => d.close);
+
+            // Add the predicted point to the chart data
+            const lastHistoricalTime = historicalData.length > 0 ? new Date(historicalData[historicalData.length - 1].time) : new Date();
+            const predictedTime = new Date(lastHistoricalTime);
+            predictedTime.setDate(predictedTime.getDate() + 1);
+
+            labels.push(predictedTime.toISOString().split('T')[0]);
+            closePrices.push(predictedPrice);
 
             setChartData({
                 labels: labels,
                 datasets: [
                     {
-                        label: `${symbol} Close Price`,
-                        data: closePrices,
+                        label: `${symbol} Close Price (Historical)`,
+                        data: closePrices.slice(0, closePrices.length - 1),
                         fill: false,
-                        backgroundColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
                         borderColor: 'rgba(75, 192, 192, 0.8)',
                         tension: 0.1,
-                        pointRadius: 0 // Hide individual points
+                        pointRadius: 0,
                     },
+                    {
+                        label: `Predicted Price`,
+                        data: Array(closePrices.length - 1).fill(null).concat([predictedPrice]),
+                        fill: false,
+                        backgroundColor: '#00adef',
+                        borderColor: '#00adef',
+                        pointRadius: 6,
+                        pointBackgroundColor: '#00adef',
+                        pointBorderColor: '#fff',
+                        tension: 0.1,
+                        borderDash: [5, 5],
+                    }
                 ],
             });
 
         } catch (err) {
             console.error('Error fetching prediction:', err.response?.data?.msg || err.message);
-            setError(err.response?.data?.msg || 'Failed to fetch prediction. Please try again.');
+            setError(err.response?.data?.msg || 'Failed to fetch prediction. Please check the symbol and try again.');
         } finally {
             setLoading(false);
         }
@@ -205,7 +273,7 @@ const PredictPage = () => {
         return (
             <PredictContainer>
                 <PredictBox>
-                    <ErrorMessage>You need to be logged in to view this page.</ErrorMessage>
+                    <ErrorMessage>You need to be logged in to access the prediction features.</ErrorMessage>
                     <Button onClick={() => navigate('/login')}>Login Now</Button>
                 </PredictBox>
             </PredictContainer>
@@ -224,12 +292,24 @@ const PredictPage = () => {
             },
             title: {
                 display: true,
-                text: `${symbol} Historical Close Prices`,
+                text: `${symbol} Price Trend & Prediction`,
                 color: '#e0e0e0',
             },
             tooltip: {
                 mode: 'index',
                 intersect: false,
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                        }
+                        return label;
+                    }
+                }
             }
         },
         scales: {
@@ -256,16 +336,16 @@ const PredictPage = () => {
         },
     };
 
-
     return (
         <PredictContainer>
             <PredictBox>
-                <h2>Stock Prediction AI</h2>
-                <p>Get AI-driven predictions for your favorite stocks.</p>
+                <h2>Stock Price Prediction</h2>
+                <p>Enter a stock symbol to get AI-driven insights and a prediction for the next trading day.</p>
                 <InputGroup>
                     <Input
                         type="text"
                         placeholder="Enter stock symbol (e.g., AAPL)"
+                        aria-label="Stock Symbol"
                         value={symbol}
                         onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                         onKeyPress={(e) => {
@@ -275,20 +355,30 @@ const PredictPage = () => {
                         }}
                     />
                     <Button onClick={onSubmit} disabled={loading}>
-                        {loading ? 'Getting Prediction...' : 'Get Prediction'}
+                        {loading ? 'Predicting...' : 'Get Prediction'}
                     </Button>
                 </InputGroup>
 
                 {error && <ErrorMessage>{error}</ErrorMessage>}
                 {loading && <Loader />}
 
+                {!prediction && !loading && !error && (
+                    <InitialMessage>Type a stock symbol above and click "Get Prediction" to start.</InitialMessage>
+                )}
 
                 {prediction && (
                     <PredictionResult>
                         <h3>Prediction for {prediction.symbol}:</h3>
-                        <p><strong>Predicted Direction:</strong> {prediction.predictedDirection}</p>
-                        <p><strong>Confidence:</strong> {prediction.confidence.toFixed(2)}%</p>
-                        <p><strong>Message:</strong> {predictionMessage}</p>
+                        <PredictionValue direction={prediction.predictedDirection}>
+                            {prediction.predictedPrice ? `$${prediction.predictedPrice.toFixed(2)}` : prediction.predictedDirection}
+                            {prediction.predictedDirection === 'Up' && <DirectionArrow>▲</DirectionArrow>}
+                            {prediction.predictedDirection === 'Down' && <DirectionArrow>▼</DirectionArrow>}
+                            {prediction.predictedDirection === 'Neutral' && <DirectionArrow>━</DirectionArrow>}
+                        </PredictionValue>
+                        <ResultDetail>
+                            <strong>Direction:</strong> {prediction.predictedDirection} ({prediction.confidence.toFixed(2)}%)
+                        </ResultDetail>
+                        {prediction.predictionMessage && <ResultDetail>{prediction.predictionMessage}</ResultDetail>}
                     </PredictionResult>
                 )}
             </PredictBox>

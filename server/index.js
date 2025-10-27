@@ -1,17 +1,22 @@
 // server/index.js - DEFINITIVE UPDATED VERSION FOR SUBSCRIBERS (Backend ONLY)
+// This file is the main entry point for your backend server.
+
 require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');
 const path = require('path');
+const cors = require('cors');
 
+// Import route files
 const userRoutes = require('./routes/userRoutes');
 const watchlistRoutes = require('./routes/watchlistRoutes');
 const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
-const marketDataRoutes = require('./routes/marketDataRoutes');
+const marketDataRoutes = require('./routes/marketDataRoutes'); // Keep this as it's separate
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
+const dashboardRoutes = require('./routes/dashboard'); // <--- ADD THIS LINE: IMPORT DASHBOARD ROUTES
 
 console.log(`[DEBUG index.js Start] CWD: ${process.cwd()}, Dirname: ${__dirname}`);
 console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STRIPE_SECRET_KEY ? 'Yes' : 'No'}`);
@@ -22,78 +27,47 @@ console.log(`[DEBUG index.js Start] COINGECKO_API_KEY loaded?: ${process.env.COI
 
 const app = express();
 
+// --- START: CORRECT CORS CONFIGURATION (using npm 'cors' package) ---
 const allowedOrigins = [
-    'https://nexus-signal.vercel.app',
     'http://localhost:3000',
     'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev',
+    'https://nexus-signal.vercel.app',
     'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev',
     'https://nexus-signal.onrender.com'
 ];
 
-app.options('*', (req, res, next) => {
-    const origin = req.headers.origin;
-    console.log(`[OPTIONS DEBUG] Received OPTIONS request for ${req.originalUrl} from Origin: ${origin}`);
-    if (origin && allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        console.log(`[OPTIONS DEBUG] Setting ACAO for: ${origin}`);
-    } else {
-        res.setHeader('Access-Control-Allow-Origin', 'https://nexus-signal.vercel.app');
-        console.warn(`[OPTIONS DEBUG] Origin ${origin} not in allowed list. Defaulting ACAO to Vercel.`);
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-auth-token');
-    res.setHeader('Access-Control-Allow-Credentials', true);
-    console.log(`[OPTIONS DEBUG] Responding to OPTIONS preflight for ${req.originalUrl} with 204.`);
-    return res.sendStatus(204);
-});
+app.use(cors({
+    origin: allowedOrigins,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-auth-token'],
+    credentials: true,
+    optionsSuccessStatus: 204
+}));
+// --- END: CORRECT CORS CONFIGURATION ---
 
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    } else {
-        res.setHeader('Access-Control-Allow-Origin', 'https://nexus-signal.vercel.app');
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-auth-token');
-    res.setHeader('Access-Control-Allow-Credentials', true);
-    next();
-});
 
+// Connect to MongoDB
 connectDB();
+
+// Body parser middleware - must be after CORS for preflight
 app.use(express.json({ extended: false }));
 
 console.log('[DEBUG index.js] Requiring route files...');
 app.use('/api/predict', predictionRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/auth', userRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 app.use('/api/copilot', copilotRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
-
-// --- REMOVED FRONTEND SERVING LOGIC FOR BACKEND-ONLY DEPLOYMENT ---
-// If you ever decide to deploy frontend and backend together on Render, this block would be needed.
-// For now, Vercel handles the frontend.
-// if (process.env.NODE_ENV === 'production') {
-//     app.use(express.static('client/build'));
-//     app.get('*', (req, res) => {
-//         res.sendFile(path.resolve(__dirname, '../client', 'build', 'index.html'));
-//     });
-// } else {
-//     app.get('/', (req, res) => {
-//         res.send('Nexus Signal AI Backend is running in development mode!');
-//     });
-// }
+app.use('/api/dashboard', dashboardRoutes); // <--- ADD THIS LINE: USE DASHBOARD ROUTES
 
 // This is the fallback for development mode (when not in production)
-// If your backend URL (nexus-signal.onrender.com) is hit directly,
-// it will just show this message in production too after the change.
 app.get('/', (req, res) => {
     res.send('Nexus Signal AI Backend is running. Access frontend via Vercel URL.');
 });
 
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));

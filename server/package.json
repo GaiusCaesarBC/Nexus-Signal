@@ -4,7 +4,7 @@
   "description": "Backend server for Nexus Signal AI",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "PORT=5000 node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -3,7 +3,7 @@ import styled, { keyframes } from 'styled-components';
 import { Bot, X, Send, CornerDownLeft } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = 'https://quantum-trade-server.onrender.com'; // We will update this later
+const API_URL = 'https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev'; // We will update this later
 
 const slideIn = keyframes`
   from {

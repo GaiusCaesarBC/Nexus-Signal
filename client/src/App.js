@@ -1,296 +1,111 @@
-// client/src/App.js - COMPLETE and UPDATED File
+// client/src/App.js - **FULL CORRECTED VERSION (assuming TermsOfServicePage and PrivacyPolicyPage)**
 
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import styled from 'styled-components';
-import { Menu, X } from 'lucide-react';
+import React from 'react';
+import { Routes, Route } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 
-// Import AuthProvider from your context
-import { AuthProvider } from './context/AuthContext'; // <--- ADDED: Import AuthProvider
+// Import Layout/Structure Components
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import Copilot from './components/Copilot';
 
-// Import all your pages
-import LandingPage from './pages/LandingPage';
+// Import Page Components
+import HomePage from './pages/HomePage'; // Ensure HomePage.js exists
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import AboutPage from './pages/AboutPage';
-import PricingPage from './pages/PricingPage';
-import PerformancePage from './pages/PerformancePage';
-import DisclaimerPage from './pages/DisclaimerPage';
-import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
-import TermsOfServicePage from './pages/TermsOfServicePage';
-import DashboardPage from './pages/DashboardPage'; // <--- ADDED: Import DashboardPage
+import DashboardPage from './pages/DashboardPage';
+import PredictPage from './pages/PredictPage'; // Ensure PredictPage.js exists
+import PricingPage from './pages/PricingPage'; // Ensure PricingPage.js exists
+import SettingsPage from './components/SettingsPage';
 
-// --- Styled Components for a global Navbar ---
-const NavbarContainer = styled.nav`
-    background-color: #1a273b;
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: #f8fafc;
-    border-bottom: 1px solid rgba(0, 173, 237, 0.1);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    height: var(--navbar-height, 60px);
+// *** IMPORTANT: These imports assume your files are named 'TermsOfServicePage.js' and 'PrivacyPolicyPage.js' ***
+// *** If your actual filenames are different, you MUST change these imports and the corresponding <Route> elements below ***
+import TermsOfServicePage from './pages/TermsOfServicePage';     // <--- VERIFY THIS FILENAME
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';       // <--- VERIFY THIS FILENAME
+// ***********************************************************************************************************************
 
-    .logo-link {
-        display: flex;
-        align-items: center;
-        text-decoration: none;
-        gap: 0.5rem;
+import DisclaimerPage from './pages/DisclaimerPage'; // Ensure DisclaimerPage.js exists
+import NotFoundPage from './pages/NotFoundPage';     // Ensure NotFoundPage.js exists
 
-        img {
-            height: 100px; /* Logo size for Navbar */
-            width: auto;
-        }
+// Import ProtectedRoute component
+import ProtectedRoute from './components/ProtectedRoute'; // Ensure ProtectedRoute.js exists
 
-        .logo-text-wrapper {
-            display: flex;
-            align-items: baseline;
-            font-size: 1.8rem;
-            font-weight: bold;
-            letter-spacing: -1px;
-        }
+function App() {
+  const { loading } = useAuth(); // Get the global loading state from AuthContext
 
-        .logo-nexus {
-            color: #00adef;
-        }
-        .logo-signal {
-            color: #f8fafc;
-            margin-left: 0.2rem;
-        }
-        .logo-ai {
-            color: #94a3b8;
-            font-size: 1.2rem;
-            font-weight: normal;
-            margin-left: 0.1rem;
-        }
-    }
-
-    .nav-links {
-        display: flex;
-
-        @media (max-width: 768px) {
-            flex-direction: column;
-            position: absolute;
-            top: var(--navbar-height, 60px);
-            left: 0;
-            width: 100%;
-            background-color: #1a273b;
-            border-top: 1px solid rgba(0, 173, 237, 0.1);
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-            transform: translateX(${props => (props.$isOpen ? '0' : '-100%')});
-            transition: transform 0.3s ease-out;
-            padding: 1rem 0;
-            z-index: 999;
-            height: calc(100vh - var(--navbar-height)); /* Full height on mobile */
-            overflow-y: auto; /* Scrollable if many links */
-        }
-    }
-
-    .nav-links a {
-        color: #94a3b8;
-        text-decoration: none;
-        margin-left: 1.5rem;
-        font-size: 1.05rem;
-        transition: color 0.3s ease;
-        padding: 0.5rem 1rem;
-
-        &:hover {
-            color: #f8fafc;
-        }
-
-        @media (max-width: 768px) {
-            margin: 0;
-            text-align: center;
-            width: 100%;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.2);
-            &:last-child {
-                border-bottom: none;
-            }
-        }
-    }
-
-    .hamburger-icon {
-        display: none;
-        color: #f8fafc;
-        cursor: pointer;
-        z-index: 1001;
-
-        @media (max-width: 768px) {
-            display: block;
-        }
-    }
-`;
-
-// Global styling container for consistent layout and CSS variables
-const GlobalStyle = styled.div`
-    --navbar-height: 60px; /* Can be adjusted if needed */
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background-color: #0d1a2f;
-    font-family: 'Inter', sans-serif;
-`;
-
-// --- New Footer Styled Component (Defined in App.js) ---
-const FooterContainer = styled.footer`
-    background-color: #1a273b; /* Same as navbar */
-    color: #94a3b8;
-    padding: 1.5rem 2rem;
-    text-align: center;
-    border-top: 1px solid rgba(0, 173, 237, 0.1);
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
-    margin-top: auto; /* Pushes the footer to the bottom */
-
-    .footer-links {
-        margin-bottom: 1rem;
-        display: flex;
-        justify-content: center;
-        flex-wrap: wrap; /* Allow links to wrap on small screens */
-        gap: 1.5rem; /* Space between links */
-
-        a {
-            color: #00adef; /* Blue for footer links */
-            text-decoration: none;
-            font-size: 0.95rem;
-            transition: color 0.3s ease;
-
-            &:hover {
-                color: #f8fafc;
-            }
-        }
-    }
-
-    .footer-copyright {
-        font-size: 0.85rem;
-        color: #5b677a; /* Muted color for copyright */
-    }
-`;
-
-// --- Navbar and Routing Component (to house useLocation) ---
-const AppContent = () => {
-    const location = useLocation();
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-    // Close menu when navigating to a new page
-    useEffect(() => {
-        setIsMenuOpen(false);
-    }, [location.pathname]);
-
-    // Define an array of paths where the "Login" link should NOT be shown
-    const pathsToHideLogin = [
-        '/',
-        '/pricing',
-        '/about',
-        '/performance',
-        '/login',        // Hide Login link if already on Login page
-        '/signup',       // Hide Login link if on Register page
-        '/dashboard',    // Hide Login link if logged in and on dashboard
-        '/forgot-password' // Anticipate a forgot password page
-    ];
-
-    // Check if the current path is in the array of paths to hide login
-    const shouldShowLoginLink = !pathsToHideLogin.includes(location.pathname);
-
+  // Show a loading indicator while the AuthContext is checking for a token/loading user
+  if (loading) {
     return (
-        <GlobalStyle>
-            {/* Navbar: Appears on ALL pages */}
-            <NavbarContainer $isOpen={isMenuOpen}>
-                <Link to="/" className="logo-link">
-                    <img src="/nexus-signal-logo.png" alt="Nexus Signal AI Logo" />
-                    <div className="logo-text-wrapper">
-                        <span className="logo-nexus">Nexus</span>
-                        <span className="logo-signal">Signal</span>
-                        <span className="logo-ai">.AI</span>
-                    </div>
-                </Link>
-
-                <div className="hamburger-icon" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-                    {isMenuOpen ? <X size={28} /> : <Menu size={28} />}
-                </div>
-
-                <div className="nav-links">
-                    <Link to="/about">About</Link>
-                    <Link to="/pricing">Pricing</Link>
-                    <Link to="/performance">Performance</Link>
-                    {shouldShowLoginLink && <Link to="/login">Login</Link>}
-                    {/* CONSIDER ADDING A SIGNUP LINK HERE OR MAKING LOGIN A DROPDOWN/MODAL */}
-                    {!shouldShowLoginLink && location.pathname !== '/signup' && (
-                        <Link to="/signup">Sign Up</Link> // Show Sign Up if not on login/signup already
-                    )}
-                </div>
-            </NavbarContainer>
-
-            {/* Main Content Area where pages are rendered based on the URL */}
-            <Routes>
-                {/* Core Pages */}
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/signup" element={<RegisterPage />} />
-                <Route path="/about" element={<AboutPage />} />
-                <Route path="/pricing" element={<PricingPage />} />
-                <Route path="/performance" element={<PerformancePage />} />
-
-                {/* ADDED: Route for DashboardPage */}
-                <Route path="/dashboard" element={<DashboardPage />} />
-
-                {/* Footer Links (Corrected Paths) */}
-                <Route path="/disclaimer" element={<DisclaimerPage />} />
-                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-                <Route path="/terms-of-service" element={<TermsOfServicePage />} />
-
-                {/* Fallback for 404 Not Found pages */}
-                <Route path="*" element={
-                    <div style={{
-                        padding: '50px',
-                        textAlign: 'center',
-                        color: '#e0e0e0',
-                        fontSize: '2rem',
-                        minHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height, 100px))', /* Adjusted for footer height */
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        backgroundColor: '#0d1a2f'
-                    }}>
-                        <h2>404 - Page Not Found</h2>
-                        <p style={{fontSize: '1.2rem', color: '#94a3b8'}}>The page you are looking for does not exist.</p>
-                        <Link to="/" style={{ color: '#00adef', textDecoration: 'none', marginTop: '1rem', fontSize: '1.2rem', fontWeight: 'bold' }}>
-                            Go to Home
-                        </Link>
-                    </div>
-                } />
-            </Routes>
-
-            {/* --- Global Footer (Correctly Placed) --- */}
-            <FooterContainer>
-                <div className="footer-links">
-                    <Link to="/disclaimer">Disclaimer</Link>
-                    <Link to="/privacy-policy">Privacy Policy</Link>
-                    <Link to="/terms-of-service">Terms of Service</Link>
-                    <Link to="/about">About Us</Link>
-                    {/* Add more footer links if needed, e.g., social media */}
-                </div>
-                <div className="footer-copyright">
-                    &copy; {new Date().getFullYear()} Nexus Signal.AI. All rights reserved.
-                </div>
-            </FooterContainer>
-        </GlobalStyle>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        backgroundColor: '#0d1a2f',
+        color: '#e0e0e0',
+        fontSize: '1.5rem'
+      }}>
+        Loading application...
+      </div>
     );
-};
+  }
 
-// --- Main App Component (Wrapper for Router and AuthProvider) ---
-const App = () => {
-    return (
-        <Router>
-            <AuthProvider> {/* <--- NOW CORRECTLY WRAPPING AppContent */}
-                <AppContent />
-            </AuthProvider>
-        </Router>
-    );
-};
+  return (
+    <>
+      <Navbar /> {/* Navbar will use AuthContext to conditionally render links */}
+
+      <main style={{ flexGrow: 1 }}> {/* A main tag for semantic structure and flexbox growth */}
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+
+          {/* *** IMPORTANT: These routes use the imported component names from above *** */}
+          <Route path="/terms" element={<TermsOfServicePage />} />     {/* <--- Uses the imported component */}
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />     {/* <--- Uses the imported component */}
+          {/* ************************************************************************* */}
+
+          <Route path="/disclaimer" element={<DisclaimerPage />} />
+
+          {/* Protected Routes */}
+          {/* These routes will only be accessible if isAuthenticated is true */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/predict"
+            element={
+              <ProtectedRoute>
+                <PredictPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Add more protected routes here */}
+<Route
+            path="/settings" // The URL path for your settings page
+            element={
+              <ProtectedRoute>
+                <SettingsPage /> {/* The component to render */}
+              </ProtectedRoute>
+            }
+          />
+          {/* Add more protected routes here */}
+          {/* Catch-all for 404 Not Found pages */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </main>
+
+      <Footer /> {/* Your Footer */}
+      <Copilot />
+    </>
+  );
+}
 
 export default App;

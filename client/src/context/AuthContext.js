@@ -1,135 +1,109 @@
-// client/src/context/AuthContext.js - FINAL Update for useEffect dependencies and stable 'api' instance
-import React, { createContext, useState, useEffect, useContext, useMemo, useCallback } from 'react'; // Added useCallback
+// client/src/context/AuthContext.js
+
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
-// Create the AuthContext
-export const AuthContext = createContext();
+// Determine API_URL based on environment
+// Ensure REACT_APP_API_URL is set correctly in client/.env
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-// Create the AuthProvider component
+const AuthContext = createContext();
+
 export const AuthProvider = ({ children }) => {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token') || null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true); // Initial loading state
+    const [token, setToken] = useState(localStorage.getItem('token')); // Get token from localStorage
 
-    const API_BASE_URL = process.env.REACT_APP_API_URL;
-    console.log('[AuthContext] API_BASE_URL:', API_BASE_URL);
+    // Set a global Axios default for withCredentials for all instances
+    // This is generally a good practice for apps that always need to send cookies/tokens.
+    axios.defaults.withCredentials = true;
 
-    // ... (imports and state definitions) ...
-
-// Memoize the axios instance to ensure it's stable across renders
-const api = useMemo(() => {
-    const instance = axios.create({
-        baseURL: API_BASE_URL,
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    });
-
-    // Add request interceptor to attach the token from localStorage
-    instance.interceptors.request.use(
-        (config) => {
-            const currentToken = localStorage.getItem('token'); // <--- GET TOKEN FROM LOCALSTORAGE HERE
-            if (currentToken) {
-                config.headers['x-auth-token'] = currentToken;
-            }
-            return config;
-        },
-        (err) => {
-            return Promise.reject(err);
-        }
-    );
-    // Remove 'token' from the dependency array, as the interceptor now
-    // gets it dynamically from localStorage.
-    return instance;
-}, [API_BASE_URL]); // <--- Dependency array now only includes API_BASE_URL
-                    // 'token' is no longer needed here as interceptor fetches it dynamically.
-
-// ... (rest of AuthProvider) ...
-
-    // Memoize the loadUser function using useCallback
-    const loadUser = useCallback(async () => {
-        if (token) {
-            console.log('[AuthContext] Provider rendering. User:', user, 'Token exists:', !!token);
-            try {
-                const res = await api.get('/api/users/auth');
-                setUser(res.data);
-                console.log('[AuthContext] User loaded:', res.data.username);
-            } catch (err) {
-                console.error('[AuthContext] Failed to load user from token:', err.response?.data?.msg || err.message);
-                localStorage.removeItem('token');
-                setToken(null);
-                setUser(null);
-            }
-        } else {
-            console.log('[AuthContext] No token found.');
-        }
-        setLoading(false);
-    }, [token, api, user]); // Dependencies for loadUser: token, the stable 'api', and 'user' for logging (or if its change should trigger re-auth)
-
-    // Effect to call loadUser on mount or when token/api changes
     useEffect(() => {
-        loadUser();
-    }, [loadUser]); // Dependency is the memoized loadUser function
-
-    // Login function
-    const login = async (username, password) => {
-        setError(null);
-        setLoading(true);
-        console.log(`[AuthContext] Attempting login for: ${username}`);
-        try {
-            const res = await api.post('/api/users/login', { username, password });
-            setToken(res.data.token);
-            localStorage.setItem('token', res.data.token);
-            setUser(res.data.user);
-            console.log('[AuthContext] Login successful. User:', res.data.user.username);
+        const loadUser = async () => {
+            if (token) {
+                axios.defaults.headers.common['x-auth-token'] = token;
+                try {
+                    // Assuming you have a /api/auth/me route to get user details
+                    const res = await axios.get(`${API_URL}/api/auth/me`); // withCredentials already set globally
+                    setUser(res.data);
+                    setIsAuthenticated(true);
+                } catch (err) {
+                    console.error('[AuthContext] Token validation failed:', err.response?.data?.msg || err.message);
+                    // If token is invalid, clear it
+                    localStorage.removeItem('token');
+                    setToken(null);
+                    setIsAuthenticated(false);
+                    setUser(null);
+                    delete axios.defaults.headers.common['x-auth-token'];
+                }
+            }
             setLoading(false);
-            return { success: true, user: res.data.user };
+        };
+
+        loadUser();
+    }, [token]);
+
+
+    const login = async (email, password) => {
+        console.log(`[AuthContext] Attempting login for: ${email}`);
+        try {
+            const res = await axios.post(`${API_URL}/api/auth/login`, { email, password }); // withCredentials already set globally
+
+            localStorage.setItem('token', res.data.token);
+            setToken(res.data.token);
+            axios.defaults.headers.common['x-auth-token'] = res.data.token;
+            
+            // Fetch user data after setting token
+            const userRes = await axios.get(`${API_URL}/api/auth/me`); // withCredentials already set globally
+            setUser(userRes.data);
+            setIsAuthenticated(true);
+            console.log('[AuthContext] Login successful.');
+            return { success: true };
         } catch (err) {
             console.error('[AuthContext] Login failed:', err.response?.data?.msg || err.message);
-            setError(err.response?.data?.msg || 'Login failed. Please check your credentials.');
-            setLoading(false);
-            return { success: false, error: err.response?.data?.msg || 'Login failed' };
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, error: err.response?.data?.msg || 'Network Error' };
         }
     };
 
-    // Register function
     const register = async (username, email, password) => {
-        setError(null);
-        setLoading(true);
-        console.log(`[AuthContext] Attempting registration for: ${username}`);
         try {
-            const res = await api.post('/api/users/register', { username, email, password });
-            setToken(res.data.token);
+            const res = await axios.post(`${API_URL}/api/auth/register`, { username, email, password }); // withCredentials already set globally
+            
+            // Assuming register endpoint also returns a token and logs in
             localStorage.setItem('token', res.data.token);
-            setUser(res.data.user);
-            console.log('[AuthContext] Registration successful. User:', res.data.user.username);
-            setLoading(false);
-            return { success: true, user: res.data.user };
+            setToken(res.data.token);
+            axios.defaults.headers.common['x-auth-token'] = res.data.token;
+            
+            const userRes = await axios.get(`${API_URL}/api/auth/me`); // withCredentials already set globally
+            setUser(userRes.data);
+            setIsAuthenticated(true);
+            return { success: true };
         } catch (err) {
-            console.error('[AuthContext] Registration or auto-login failed:', err.response?.data?.msg || err.message);
-            setError(err.response?.data?.msg || 'Registration failed. Please try again.');
-            setLoading(false);
-            return { success: false, error: err.response?.data?.msg || 'Registration failed' };
+            console.error('[AuthContext] Registration failed:', err.response?.data?.msg || err.message);
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, error: err.response?.data?.msg || 'Network Error' };
         }
     };
 
-    // Logout function
     const logout = () => {
-        setToken(null);
-        setUser(null);
         localStorage.removeItem('token');
-        console.log('[AuthContext] User logged out.');
+        setToken(null);
+        setIsAuthenticated(false);
+        setUser(null);
+        delete axios.defaults.headers.common['x-auth-token'];
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, api, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ isAuthenticated, user, loading, token, login, register, logout, api: axios }}>
             {children}
         </AuthContext.Provider>
     );
 };
 
-// Custom hook to use AuthContext
 export const useAuth = () => {
     return useContext(AuthContext);
 };
