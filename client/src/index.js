@@ -1,22 +1,19 @@
-// client/src/index.js - **CRITICAL UPDATE: Adding BrowserRouter and AuthProvider**
+// client/src/index.js - CORRECTED JSX CLOSING TAG
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
+import './index.css'; // Your global CSS
 import App from './App';
-import reportWebVitals from './reportWebVitals';
-import { BrowserRouter as Router } from 'react-router-dom'; // <--- ADD THIS IMPORT
-import { AuthProvider } from './context/AuthContext'; // <--- ADD THIS IMPORT
+import { BrowserRouter } from 'react-router-dom'; // Import BrowserRouter
+import { AuthProvider } from './context/AuthContext'; // Assuming AuthProvider is here
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <Router> {/* <--- WRAPPER 1: BrowserRouter for routing */}
+    <BrowserRouter> {/* <--- THIS IS THE OPENING TAG */}
       <AuthProvider> {/* <--- WRAPPER 2: AuthProvider for authentication context */}
         <App />
       </AuthProvider>
-    </Router>
+    </BrowserRouter> {/* <--- THIS IS THE CORRECT CLOSING TAG */}
   </React.StrictMode>
 );
-
-reportWebVitals();

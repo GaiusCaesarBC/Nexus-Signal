@@ -1,9 +1,43 @@
 // client/src/components/dashboard/StatCardsGrid.js
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
-import { TrendingUp, Clock, Activity, Zap } from 'lucide-react';
+import styled, { keyframes } from 'styled-components'; // Ensure keyframes is imported here
 
-const fadeIn = keyframes` /* Re-declare if needed, or import from a shared style if you make one */
+// COMBINED ALL LUCIDE REACT ICONS INTO ONE IMPORT STATEMENT
+import {
+    DollarSign,
+    TrendingUp,
+    BarChart2, // Default icon for unknown
+    BriefcaseBusiness, // For 'assets'
+    Activity, // For 'active_signals'
+    Zap, // For 'market_volatility'
+    Clock, // For 'last_update'
+    Wallet, // For 'portfolio_value'
+    Signal, // For 'active_signals'
+    Smile, // For 'AI_sentiment' or similar
+    Landmark,
+    LineChart,
+    Gauge // Another option for volatility
+} from 'lucide-react';
+
+// A mapping object to get the right icon component based on a string name
+const iconMap = {
+    'portfolio_value': Wallet,
+    'active_signals': Signal,
+    'ai_sentiment': Smile,
+    'market_volatility': Gauge,
+    'last_update': Clock,
+    'total_assets': BriefcaseBusiness,
+    'portfolio_growth': TrendingUp,
+    'dollar': DollarSign,
+    'trending-up': TrendingUp, // Alias for portfolio_growth
+    'activity': Activity,
+    'zap': Zap,
+    'clock': Clock,
+    'line-chart': LineChart
+    // Add more mappings as needed, matching the 'icon' string from your backend data
+};
+
+const fadeIn = keyframes`
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 `;
@@ -53,31 +87,36 @@ const StatCard = styled.div`
     }
 `;
 
-const StatCardsGrid = ({ activeSignals, portfolioGrowth, marketVolatility, lastUpdate, error }) => {
+// StatCardsGrid component
+const StatCardsGrid = ({ summary, error }) => {
+    // Ensure summary is an array, even if it's null/undefined
+    const metricsToDisplay = Array.isArray(summary) ? summary : [];
+
     return (
         <>
             {error && <p style={{ color: '#ff6b6b', textAlign: 'center' }}>{error}</p>}
             <StatGrid>
-                <StatCard>
-                    <h3><Activity size={24} color="#00adef" /> Active Signals</h3>
-                    <p>{activeSignals}</p>
-                    <span>Today's AI-driven trade recommendations</span>
-                </StatCard>
-                <StatCard>
-                    <h3><TrendingUp size={24} color="#4CAF50" /> Portfolio Growth</h3>
-                    <p>{portfolioGrowth}</p>
-                    <span>Last 30 days (mock data)</span>
-                </StatCard>
-                <StatCard>
-                    <h3><Zap size={24} color="#f97316" /> Market Volatility</h3>
-                    <p>{marketVolatility}</p>
-                    <span>Current AI sentiment (mock data)</span>
-                </StatCard>
-                <StatCard>
-                    <h3><Clock size={24} color="#94a3b8" /> Last Update</h3>
-                    <p>{lastUpdate}</p>
-                    <span>Real-time data stream</span>
-                </StatCard>
+                {metricsToDisplay.map(metric => {
+                    const IconComponent = iconMap[metric.icon] || BarChart2; // Default to BarChart2 if icon not found
+                    const changeColor = metric.changeType === 'increase' ? '#4CAF50' : metric.changeType === 'decrease' ? '#ff6b6b' : '#94a3b8';
+
+                    return (
+                        <StatCard key={metric.id}>
+                            <h3>
+                                <IconComponent size={24} color={changeColor} /> {metric.label}
+                            </h3>
+                            <p style={{ color: changeColor }}>{metric.value}</p>
+                            {metric.change && (
+                                <span>
+                                    {metric.changeType === 'increase' ? '+' : ''}{metric.change}{metric.timeframe ? ` ${metric.timeframe}` : ''}
+                                </span>
+                            )}
+                            {!metric.change && metric.timeframe && (
+                                <span>{metric.timeframe}</span>
+                            )}
+                        </StatCard>
+                    );
+                })}
             </StatGrid>
         </>
     );

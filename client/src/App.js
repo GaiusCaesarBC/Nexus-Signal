@@ -10,103 +10,70 @@ import Footer from './components/Footer';
 import Copilot from './components/Copilot';
 
 // Import Page Components
-//import HomePage from './pages/HomePage'; // Ensure HomePage.js exists
-import LandingPage from './pages/LandingPage'; // Ensure LandingPage.js exists
+import LandingPage from './pages/LandingPage'; // This typically acts as the home page for unauthenticated users
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
-import PredictPage from './pages/PredictPage'; // Ensure PredictPage.js exists
-import PricingPage from './pages/PricingPage'; // Ensure PricingPage.js exists
+import PredictPage from './pages/PredictPage';
+import PricingPage from './pages/PricingPage';
 import SettingsPage from './components/SettingsPage';
+import WatchlistPage from './pages/WatchlistPage';
+import PortfolioPage from './pages/PortfolioPage';
+import TermsOfServicePage from './pages/TermsOfServicePage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import DisclaimerPage from './pages/DisclaimerPage';
+import NotFoundPage from './pages/NotFoundPage';
 
-// *** IMPORTANT: These imports assume your files are named 'TermsOfServicePage.js' and 'PrivacyPolicyPage.js' ***
-// *** If your actual filenames are different, you MUST change these imports and the corresponding <Route> elements below ***
-import TermsOfServicePage from './pages/TermsOfServicePage';     // <--- VERIFY THIS FILENAME
-import PrivacyPolicyPage from './pages/PrivacyPolicyPage';       // <--- VERIFY THIS FILENAME
-// ***********************************************************************************************************************
-
-import DisclaimerPage from './pages/DisclaimerPage'; // Ensure DisclaimerPage.js exists
-import NotFoundPage from './pages/NotFoundPage';     // Ensure NotFoundPage.js exists
-
-// Import ProtectedRoute component
-import ProtectedRoute from './components/ProtectedRoute'; // Ensure ProtectedRoute.js exists
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
-  const { loading } = useAuth(); // Get the global loading state from AuthContext
+    const { loading } = useAuth();
 
-  // Show a loading indicator while the AuthContext is checking for a token/loading user
-  if (loading) {
+    if (loading) {
+        return (
+            <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100vh',
+                backgroundColor: '#0d1a2f',
+                color: '#e0e0e0',
+                fontSize: '1.5rem'
+            }}>
+                Loading application...
+            </div>
+        );
+    }
+
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        backgroundColor: '#0d1a2f',
-        color: '#e0e0e0',
-        fontSize: '1.5rem'
-      }}>
-        Loading application...
-      </div>
+        <>
+            <Navbar />
+            <main style={{ flexGrow: 1, minHeight: 'calc(100vh - 120px)' }}>
+                <Routes>
+                    {/* Public Routes */}
+                    <Route path="/" element={<LandingPage />} /> {/* <--- ADD THIS LINE */}
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/pricing" element={<PricingPage />} />
+                    <Route path="/terms" element={<TermsOfServicePage />} />
+                    <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                    <Route path="/disclaimer" element={<DisclaimerPage />} />
+
+                    {/* Protected Routes */}
+                    <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+                    <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
+                    <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
+                    <Route path="/predict" element={<ProtectedRoute><PredictPage /></ProtectedRoute>} /> {/* Predict should likely be protected */}
+                    <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} /> {/* Settings should likely be protected */}
+
+                    {/* Catch-all for 404 Not Found pages */}
+                    <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+            </main>
+            <Footer />
+            <Copilot />
+        </>
     );
-  }
-
-  return (
-    <>
-      <Navbar /> {/* Navbar will use AuthContext to conditionally render links */}
-
-      <main style={{ flexGrow: 1 }}> {/* A main tag for semantic structure and flexbox growth */}
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/pricing" element={<PricingPage />} />
-
-          {/* *** IMPORTANT: These routes use the imported component names from above *** */}
-          <Route path="/terms" element={<TermsOfServicePage />} />     {/* <--- Uses the imported component */}
-          <Route path="/privacy" element={<PrivacyPolicyPage />} />     {/* <--- Uses the imported component */}
-          {/* ************************************************************************* */}
-
-          <Route path="/disclaimer" element={<DisclaimerPage />} />
-
-          {/* Protected Routes */}
-          {/* These routes will only be accessible if isAuthenticated is true */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/predict"
-            element={
-              <ProtectedRoute>
-                <PredictPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Add more protected routes here */}
-<Route
-            path="/settings" // The URL path for your settings page
-            element={
-              <ProtectedRoute>
-                <SettingsPage /> {/* The component to render */}
-              </ProtectedRoute>
-            }
-          />
-          {/* Add more protected routes here */}
-          {/* Catch-all for 404 Not Found pages */}
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </main>
-
-      <Footer /> {/* Your Footer */}
-      <Copilot />
-    </>
-  );
 }
 
 export default App;

@@ -22,6 +22,13 @@ const GraphContainer = styled.div`
         align-items: center;
         gap: 0.8rem;
     }
+
+    p {
+        color: #94a3b8;
+        text-align: center;
+        margin-top: 1rem;
+        font-size: 1.1rem;
+    }
 `;
 
 // ChartWrapper is where the magic happens for ResponsiveContainer
@@ -32,39 +39,49 @@ const ChartWrapper = styled.div`
     min-height: 0; /* Important for flex items to shrink correctly if needed, but still respects flex-grow */
 `;
 
-const AIDataGraph = ({ data }) => {
+const AIDataGraph = ({ data, loading, error }) => {
     return (
         <GraphContainer>
             <h3><BarChart2 size={24} color="#e0e0e0" /> AI Trend Prediction (Mock Data)</h3>
-            <ChartWrapper>
-                {/* ResponsiveContainer takes width and height as 100% of its parent */}
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                        data={data}
-                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                    >
-                        <defs>
-                            <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#00adef" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="#00adef" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <XAxis dataKey="name" stroke="#64748b" />
-                        <YAxis stroke="#64748b" />
-                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                        <Tooltip
-                            contentStyle={{
-                                backgroundColor: '#1e293b',
-                                border: '1px solid #00adef',
-                                borderRadius: '8px',
-                                color: '#e0e0e0'
-                            }}
-                            itemStyle={{ color: '#00adef' }}
-                        />
-                        <Area type="monotone" dataKey="value" stroke="#00adef" fillOpacity={1} fill="url(#colorUv)" />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </ChartWrapper>
+
+            {loading && <p>Loading AI data...</p>}
+            {error && <p style={{ color: '#ff6b6b' }}>Error: {error}</p>}
+            {!loading && !error && (!data || data.length === 0) && (
+                <p>No AI trend data available.</p>
+            )}
+
+            {!loading && !error && data && data.length > 0 && (
+                <ChartWrapper>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                            data={data}
+                            margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        >
+                            <defs>
+                                <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#00adef" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#00adef" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <XAxis dataKey="date" stroke="#64748b" /> {/* Changed dataKey to "date" */}
+                            <YAxis stroke="#64748b" />
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                            <Tooltip
+                                contentStyle={{
+                                    backgroundColor: '#1e293b',
+                                    border: '1px solid #00adef',
+                                    borderRadius: '8px',
+                                    color: '#e0e0e0'
+                                }}
+                                itemStyle={{ color: '#00adef' }}
+                                formatter={(value) => `$${value.toFixed(2)}`} // Format tooltip value
+                                labelFormatter={(label) => `Date: ${label}`} // Format tooltip label
+                            />
+                            <Area type="monotone" dataKey="value" stroke="#00adef" fillOpacity={1} fill="url(#colorUv)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </ChartWrapper>
+            )}
         </GraphContainer>
     );
 };

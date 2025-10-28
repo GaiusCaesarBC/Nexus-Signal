@@ -153,12 +153,12 @@ const DashboardPage = () => {
     const navigate = useNavigate();
 
     // State for dashboard summary data (fetched here and passed down)
-    const [dashboardSummary, setDashboardSummary] = useState({
-        activeSignals: 'N/A',
-        portfolioGrowth: 'N/A',
-        marketVolatility: 'N/A',
-        lastUpdate: 'N/A'
-    });
+ const [dashboardSummary, setDashboardSummary] = useState({
+    activeSignals: 'N/A',
+    portfolioGrowth: 'N/A',
+    marketVolatility: 'N/A',
+    lastUpdate: 'N/A'
+});
     const [dashboardLoading, setDashboardLoading] = useState(true);
     const [dashboardError, setDashboardError] = useState(null);
 
@@ -166,8 +166,12 @@ const DashboardPage = () => {
     const [marketData, setMarketData] = useState(null);
     const [loadingMarketData, setLoadingMarketData] = useState(true);
     const [errorMarketData, setErrorMarketData] = useState(null);
-
-
+    const [aiGraphData, setAiGraphData] = useState([]);
+    const [aiGraphLoading, setAiGraphLoading] = useState(true);
+    const [aiGraphError, setAiGraphError] = useState(null);
+    const [news, setNews] = useState([]);
+    const [newsLoading, setNewsLoading] = useState(true);
+    const [newsError, setNewsError] = useState(null);
     // Mock data for the graph for now (will be dynamic later)
     const mockChartData = [
         { name: 'Mon', value: 4000 },
@@ -186,37 +190,37 @@ const DashboardPage = () => {
         }
     }, [isAuthenticated, authLoading, navigate]);
 
-    // Effect for fetching dashboard summary data
-    useEffect(() => {
-        const fetchDashboardSummary = async () => {
-            if (!api) {
-                setDashboardError("API client not initialized for dashboard summary.");
-                setDashboardLoading(false);
-                return;
-            }
-
-            setDashboardLoading(true);
-            setDashboardError(null);
-            try {
-                const res = await api.get('/api/dashboard/summary');
-                setDashboardSummary({
-                    activeSignals: res.data.activeSignals,
-                    portfolioGrowth: res.data.portfolioGrowth,
-                    marketVolatility: res.data.marketVolatility,
-                    lastUpdate: new Date(res.data.lastUpdate).toLocaleTimeString()
-                });
-            } catch (err) {
-                console.error('Error fetching dashboard summary:', err.response?.data?.msg || err.message);
-                setDashboardError('Failed to fetch dashboard summary.');
-            } finally {
-                setDashboardLoading(false);
-            }
-        };
-
-        if (isAuthenticated && !authLoading && api) {
-            fetchDashboardSummary();
+// Effect for fetching dashboard summary data
+useEffect(() => {
+    const fetchDashboardSummary = async () => {
+        if (!api) {
+            setDashboardError("API client not initialized for dashboard summary.");
+            setDashboardLoading(false);
+            return;
         }
-    }, [api, isAuthenticated, authLoading]);
+
+        setDashboardLoading(true);
+        setDashboardError(null);
+        try {
+            const res = await api.get('/api/dashboard/summary');
+            if (res.data && Array.isArray(res.data.mainMetrics)) {
+                setDashboardSummary(res.data.mainMetrics); // Set the array of metrics
+            } else {
+                setDashboardError('Invalid summary data format.');
+                setDashboardSummary([]); // Ensure it's an array even on malformed data
+            }
+        } catch (err) { // <<< THIS CATCH BLOCK WAS MISSING
+            console.error('Error fetching dashboard summary:', err.response?.data?.msg || err.message);
+            setDashboardError('Failed to fetch dashboard summary.');
+        } finally { // <<< THIS FINALLY BLOCK WAS ALSO MISSING
+            setDashboardLoading(false);
+        }
+    };
+
+    if (isAuthenticated && !authLoading && api) {
+        fetchDashboardSummary();
+    }
+}, [api, isAuthenticated, authLoading]);
 
     // NEW: Effect for fetching market overview data
     useEffect(() => {
@@ -244,7 +248,68 @@ const DashboardPage = () => {
             fetchMarketOverview();
         }
     }, [api, isAuthenticated, authLoading]); // Dependencies: api, isAuthenticated, authLoading
+// Effect for fetching AI Graph Data
+useEffect(() => {
+    const fetchAiGraphData = async () => {
+        if (!api) {
+            setAiGraphError("API client not initialized for AI graph data.");
+            setAiGraphLoading(false);
+            return;
+        }
 
+        setAiGraphLoading(true);
+        setAiGraphError(null);
+        try {
+            const res = await api.get('/api/dashboard/ai-graph-data');
+            if (res.data && Array.isArray(res.data)) {
+                setAiGraphData(res.data);
+            } else {
+                setAiGraphError('Invalid AI graph data format.');
+                setAiGraphData([]);
+            }
+        } catch (err) {
+            console.error('Error fetching AI graph data:', err.response?.data?.msg || err.message);
+            setAiGraphError('Failed to fetch AI graph data.');
+        } finally {
+            setAiGraphLoading(false);
+        }
+    };
+
+    if (isAuthenticated && !authLoading && api) {
+        fetchAiGraphData();
+    }
+}, [api, isAuthenticated, authLoading]); // Dependencies
+// Effect for fetching News Data
+useEffect(() => {
+    const fetchNews = async () => {
+        if (!api) {
+            setNewsError("API client not initialized for news data.");
+            setNewsLoading(false);
+            return;
+        }
+
+        setNewsLoading(true);
+        setNewsError(null);
+        try {
+            const res = await api.get('/api/dashboard/news');
+            if (res.data && Array.isArray(res.data)) {
+                setNews(res.data);
+            } else {
+                setNewsError('Invalid news data format.');
+                setNews([]);
+            }
+        } catch (err) {
+            console.error('Error fetching news:', err.response?.data?.msg || err.message);
+            setNewsError('Failed to fetch news.');
+        } finally {
+            setNewsLoading(false);
+        }
+    };
+
+    if (isAuthenticated && !authLoading && api) {
+        fetchNews();
+    }
+}, [api, isAuthenticated, authLoading]); // Dependencies
 
     if (authLoading || dashboardLoading) {
         return <Loader />;
@@ -280,7 +345,12 @@ const DashboardPage = () => {
                     <MainContentArea>
                         {/* 3. AI Data Graph */}
                         {/* We pass mockChartData for now, but this component is ready for real data */}
-                        <AIDataGraph data={mockChartData} />
+                       {/* This is a placeholder, ensure your actual AIDataGraph component receives these props */}
+<AIDataGraph
+    data={aiGraphData}
+    loading={aiGraphLoading}
+    error={aiGraphError}
+/>
 
                         {/* NEW: Market Overview Data Card */}
                         <Card>
@@ -328,8 +398,11 @@ const DashboardPage = () => {
 
                     <SideContentArea>
                         {/* 5. News Feed Card */}
-                        <NewsFeedCard api={api} /> {/* NewsFeedCard will fetch its own news */}
-
+                        <NewsFeedCard
+    news={news}
+    loading={newsLoading}
+    error={newsError}
+/>
                         {/* Quick Links Card (moved here from previous iteration, can be a generic Card) */}
                         <Card>
                             <h3>Quick Links</h3>

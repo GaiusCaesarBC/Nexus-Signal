@@ -1,73 +1,123 @@
-// server/index.js - DEFINITIVE UPDATED VERSION FOR SUBSCRIBERS (Backend ONLY)
-// This file is the main entry point for your backend server.
+// server/app.js - CONSOLIDATED APP LOGIC
 
-require('dotenv').config();
+const path = require('path'); // Core Node.js module for working with file paths
 const express = require('express');
-const connectDB = require('./config/db');
-const path = require('path');
-const cors = require('cors');
-
-// Import route files
-const userRoutes = require('./routes/userRoutes');
-const watchlistRoutes = require('./routes/watchlistRoutes');
-const copilotRoutes = require('./routes/copilotRoutes');
-const newsRoutes = require('./routes/newsRoutes');
-const marketDataRoutes = require('./routes/marketDataRoutes'); // Keep this as it's separate
-const paymentRoutes = require('./routes/paymentRoutes');
-const subscriberRoutes = require('./routes/subscriberRoutes');
-const predictionRoutes = require('./routes/predictionRoutes');
-const dashboardRoutes = require('./routes/dashboard'); // <--- ADD THIS LINE: IMPORT DASHBOARD ROUTES
-
-console.log(`[DEBUG index.js Start] CWD: ${process.cwd()}, Dirname: ${__dirname}`);
-console.log(`[DEBUG index.js Start] STRIPE_SECRET_KEY loaded?: ${process.env.STRIPE_SECRET_KEY ? 'Yes' : 'No'}`);
-console.log(`[DEBUG index.js Start] MONGO_URI loaded?: ${process.env.MONGO_URI ? 'Yes' : 'No'}`);
-console.log(`[DEBUG index.js Start] ALPHA_VANTAGE_API_KEY loaded?: ${process.env.ALPHA_VANTAGE_API_KEY ? 'Yes' : 'No'}`);
-console.log(`[DEBUG index.js Start] COINGECKO_API_KEY loaded?: ${process.env.COINGECKO_API_KEY ? 'Yes' : 'No'}`);
-
-
+const cors = require('cors'); // Handles Cross-Origin Resource Sharing
+const helmet = require('helmet'); // Helps secure your app by setting various HTTP headers
+const mongoSanitize = require('express-mongo-sanitize'); // Sanitizes user-supplied data to prevent MongoDB Operator Injection
+const xss = require('xss-clean'); // Sanitizes user input to prevent Cross-site Scripting (XSS) attacks
+const hpp = require('hpp'); // Protects against HTTP Parameter Pollution attacks
+const rateLimit = require('express-rate-limit'); // Limits repeated requests to public APIs and/or endpoints
 const app = express();
 
-// --- START: CORRECT CORS CONFIGURATION (using npm 'cors' package) ---
-const allowedOrigins = [
-    'http://localhost:3000',
-    'https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev',
-    'https://nexus-signal.vercel.app',
-    'https://refactored-robot-r456x9xvgqw7cpgjv-8081.app.github.dev',
-    'https://nexus-signal.onrender.com'
-];
-
-app.use(cors({
-    origin: allowedOrigins,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-auth-token'],
-    credentials: true,
-    optionsSuccessStatus: 204
-}));
-// --- END: CORRECT CORS CONFIGURATION ---
+// Load environment variables (if not already done in index.js)
+// If you have a separate index.js that does dotenv.config(), you can remove this.
+// require('dotenv').config({ path: './config/config.env' });
 
 
-// Connect to MongoDB
-connectDB();
-
-// Body parser middleware - must be after CORS for preflight
-app.use(express.json({ extended: false }));
-
-console.log('[DEBUG index.js] Requiring route files...');
-app.use('/api/predict', predictionRoutes);
-app.use('/api/auth', userRoutes);
-app.use('/api/watchlist', watchlistRoutes);
-app.use('/api/copilot', copilotRoutes);
-app.use('/api/news', newsRoutes);
-app.use('/api/market-data', marketDataRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/subscribers', subscriberRoutes);
-app.use('/api/dashboard', dashboardRoutes); // <--- ADD THIS LINE: USE DASHBOARD ROUTES
-
-// This is the fallback for development mode (when not in production)
-app.get('/', (req, res) => {
-    res.send('Nexus Signal AI Backend is running. Access frontend via Vercel URL.');
+// Rate limiting to prevent abuse
+// This limits each IP to 100 requests per 15 minutes.
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes in milliseconds
+    max: 100, // Max 100 requests
+    message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Nexus Signal AI server running on port ${PORT}`));
+// === CORE MIDDLEWARE ===
+// Order matters! Middleware is executed in the order it's defined.
+
+// 1. CORS: Enable All CORS Requests
+// Allows your frontend to make requests to your backend, even if on different domains/ports (especially during development).
+app.use(cors());
+
+// 2. Helmet: Set security-related HTTP headers
+// Helps protect against various web vulnerabilities.
+app.use(helmet());
+
+// 3. Body Parser: Parse JSON bodies
+// Allows Express to read JSON data sent in the body of requests.
+// 'limit: 10kb' prevents large payloads, improving security.
+app.use(express.json({ limit: '10kb' }));
+
+// 4. Data Sanitization: Prevent NoSQL query injection
+// Cleans user-supplied data from MongoDB operator injection.
+app.use(mongoSanitize());
+
+// 5. Data Sanitization: Prevent XSS attacks
+// Cleans user-supplied HTML from malicious script tags.
+app.use(xss());
+
+// 6. Prevent Parameter Pollution:
+// Protects against malicious users who might try to pollute request parameters.
+app.use(hpp());
+
+// 7. Apply Rate Limiting:
+// Applies the defined rate limiter to all incoming requests.
+app.use(limiter);
+
+
+// === ROUTE IMPORTS ===
+// Import all your route files. Ensure these paths are correct relative to app.js.
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/userRoutes');
+const marketDataRoutes = require('./routes/marketDataRoutes');
+const dashboardRoutes = require('./routes/dashboard');
+const watchlistRoutes = require('./routes/watchlistRoutes');
+const portfolioRoutes = require('./routes/portfolioRoutes');
+const copilotRoutes = require('./routes/copilotRoutes');
+const newsRoutes = require('./routes/newsRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const subscriberRoutes = require('./routes/subscriberRoutes');
+const predictionRoutes = require('./routes/predictionRoutes');
+
+
+// === ROUTE DEFINITIONS ===
+// Define the base paths for your API routes.
+// Requests starting with these paths will be handled by the imported router.
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/market-data', marketDataRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/copilot', copilotRoutes);
+app.use('/api/news', newsRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/subscribers', subscriberRoutes);
+app.use('/api/predict', predictionRoutes);
+
+
+// === STATIC FILE SERVING FOR PRODUCTION ===
+// This block is crucial for deployment. It tells your Node.js server to:
+// 1. Serve the built React frontend files.
+// 2. For any non-API routes, send the React app's index.html.
+
+if (process.env.NODE_ENV === 'production') {
+    // Set static folder: Instructs Express to serve static files from the 'client/build' directory.
+    // 'path.join(__dirname, '../client/build')' creates an absolute path to the build folder.
+    // __dirname is the directory where the current script (app.js) resides ('server/').
+    // '../' moves up one level to the project root.
+    // 'client/build' then points to the React build output.
+    app.use(express.static(path.join(__dirname, '../client/build')));
+
+    // Catch-all route: For any GET requests that are not handled by the API routes above,
+    // send the React app's 'index.html' file. This allows React Router to handle client-side routing.
+    app.get('*', (req, res) => {
+        res.sendFile(path.resolve(__dirname, '../client', 'build', 'index.html'));
+    });
+}
+
+
+// === GLOBAL ERROR HANDLING MIDDLEWARE ===
+// This middleware catches any errors that occur in your routes or other middleware.
+// It should be placed last.
+app.use((err, req, res, next) => {
+    console.error(err.stack); // Log the error stack for debugging
+    res.status(err.statusCode || 500).send(err.message || 'Something broke!'); // Send a generic error response
+});
+
+
+// === EXPORT THE APP ===
+// The configured Express app instance is exported to be used by your main server entry file (e.g., index.js).
+module.exports = app;

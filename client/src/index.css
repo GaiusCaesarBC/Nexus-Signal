@@ -1,4 +1,9 @@
+/* client/src/index.css */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --navbar-height: 80px; /* Define your actual Navbar height here */
+}
 
 body {
     margin: 0;

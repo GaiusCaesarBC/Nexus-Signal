@@ -1,4 +1,4 @@
-// server/app.js
+  // server/app.js - CONSOLIDATED APP LOGIC
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,42 +7,57 @@ const xss = require('xss-clean');
 const hpp = require('hpp');
 const rateLimit = require('express-rate-limit');
 const app = express();
+const path = require('path'); // Add this line at the top with other imports
+// ... rest of your imports
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const marketDataRoutes = require('./routes/marketData');
-const dashboardRoutes = require('./routes/dashboard'); // <--- ADD THIS LINE
-
-// Rate limiting to prevent abuse
+// Rate limiting to prevent abuse (Moved here from previous app.js, can also be in index.js)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // max 100 requests per 15 minutes per IP
     message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 
-// Middleware
-app.use(cors());
-app.use(helmet()); // Set security headers
-app.use(express.json({ limit: '10kb' })); // Body parser, reading data into req.body
-app.use(mongoSanitize()); // Data sanitization against NoSQL query injection
-app.use(xss()); // Data sanitization against XSS attacks
-app.use(hpp()); // Prevent parameter pollution
-app.use(limiter); // Apply rate limiting to all requests
+// Middleware - Order matters!
+app.use(cors()); // Ensure CORS is first
+app.use(helmet());
+app.use(express.json({ limit: '10kb' }));
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
+app.use(limiter); // Apply rate limiting
 
-// Define Routes
-app.use('/api/auth', authRoutes);
+// Import ALL Route Files
+const authRoutes = require('./routes/auth'); // This is your actual auth logic, should be unique
+const userRoutes = require('./routes/userRoutes'); // If this contains user registration/profile management separate from auth
+const marketDataRoutes = require('./routes/marketDataRoutes'); // Or marketDataRoutes if that's the name in its file
+const dashboardRoutes = require('./routes/dashboard');
+const watchlistRoutes = require('./routes/watchlistRoutes');
+const portfolioRoutes = require('./routes/portfolioRoutes'); // <--- CRITICAL: ADD THIS IMPORT
+const copilotRoutes = require('./routes/copilotRoutes');
+const newsRoutes = require('./routes/newsRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const subscriberRoutes = require('./routes/subscriberRoutes');
+const predictionRoutes = require('./routes/predictionRoutes');
+
+
+// Define ALL Routes
+app.use('/api/auth', authRoutes); // Use the correct authRoutes from auth.js
+app.use('/api/users', userRoutes); // Example, if userRoutes handles user-specific actions
 app.use('/api/market-data', marketDataRoutes);
-app.use('/api/dashboard', dashboardRoutes); // <--- ADD THIS LINE
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/portfolio', portfolioRoutes); // <--- CRITICAL: ADD THIS APP.USE
+app.use('/api/copilot', copilotRoutes);
+app.use('/api/news', newsRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/subscribers', subscriberRoutes);
+app.use('/api/predict', predictionRoutes);
 
-// Basic route for testing
-app.get('/', (req, res) => {
-    res.send('API is running...');
-});
 
-// Error handling middleware (optional, but good practice for centralized error handling)
+// Global Error handling middleware - Placed after all routes
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(err.statusCode || 500).send(err.message || 'Something broke!');
 });
 
-module.exports = app;
+module.exports = app; // Export the configured app instance

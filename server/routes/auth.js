@@ -164,5 +164,60 @@ router.post(
     }
 );
 
+// @route   PUT api/auth/update-profile
+// @desc    Update logged in user's profile and settings
+// @access  Private
+router.put('/update-profile', auth, async (req, res) => {
+    console.log(`[Auth Route /update-profile] Request received for user ID: ${req.user.id}`);
+    const { username, email, currentPassword, newPassword, notifications, appPreferences } = req.body;
 
+    try {
+        let user = await User.findById(req.user.id);
+
+        if (!user) {
+            console.log(`[Auth Route /update-profile] User not found for ID: ${req.user.id}`);
+            return res.status(404).json({ msg: 'User not found' });
+        }
+
+        // Update basic profile fields if provided
+        if (username !== undefined) user.username = username; // Assuming 'username' field in User model
+        if (email !== undefined) {
+            // Optional: Add email validation and uniqueness check here if allowed to change
+            user.email = email;
+        }
+
+        // Update nested settings fields
+        if (notifications !== undefined) user.notifications = notifications; // Assuming 'notifications' field in User model
+        if (appPreferences !== undefined) user.appPreferences = appPreferences; // Assuming 'appPreferences' field in User model
+
+
+        // Handle password change if newPassword is provided
+        if (newPassword) {
+            if (!currentPassword) {
+                return res.status(400).json({ msg: 'Current password is required to change password.' });
+            }
+
+            const isMatch = await bcrypt.compare(currentPassword, user.password);
+            if (!isMatch) {
+                return res.status(400).json({ msg: 'Current password is incorrect.' });
+            }
+
+            // Hash new password
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(newPassword, salt);
+            console.log(`[Auth Route /update-profile] Password updated for user: ${user.email}`);
+        }
+
+        await user.save(); // Save updated user to database
+
+        // Return the updated user data (without password)
+        const updatedUser = await User.findById(req.user.id).select('-password');
+        console.log(`[Auth Route /update-profile] Successfully updated user: ${updatedUser.email}`);
+        res.json({ msg: 'Settings updated successfully', user: updatedUser });
+
+    } catch (err) {
+        console.error('[Auth Route /update-profile] Server error:', err.message);
+        res.status(500).send('Server Error');
+    }
+});
 module.exports = router;

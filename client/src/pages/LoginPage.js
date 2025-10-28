@@ -1,10 +1,10 @@
-// client/src/pages/LoginPage.js - Complete and UPDATED File (with Codespace backend URL and API call)
+// client/src/pages/LoginPage.js - Styled to match your desired aesthetic
 
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { LogIn, User, Lock, ArrowRight } from 'lucide-react'; // Icons for visual emphasis
-import { Link, useNavigate } from 'react-router-dom'; // Import Link and useNavigate
-import { useAuth } from '../context/AuthContext'; // <--- ADDED: Import useAuth hook
+import { LogIn, User, Lock, ArrowRight } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // Keyframe for fade-in animation
 const fadeIn = keyframes`
@@ -14,9 +14,9 @@ const fadeIn = keyframes`
 
 // Keyframe for button glow effect
 const buttonGlow = keyframes`
-  0% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
-  50% { box-shadow: 0 0 15px rgba(0, 173, 237, 0.8); }
-  100% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
+    0% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
+    50% { box-shadow: 0 0 15px rgba(0, 173, 237, 0.8); }
+    100% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
 `;
 
 const LoginPageContainer = styled.div`
@@ -24,7 +24,7 @@ const LoginPageContainer = styled.div`
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: calc(100vh - var(--navbar-height));
+    min-height: calc(100vh - var(--navbar-height)); /* Uses global --navbar-height */
     background: linear-gradient(180deg, #0d1a2f 0%, #1a273b 100%);
     color: #f8fafc;
     font-family: 'Inter', sans-serif;
@@ -106,7 +106,7 @@ const FormGroup = styled.div`
     .icon {
         position: absolute;
         left: 1rem;
-        top: 50%;
+        top: 50%; /* Adjusted from 3.2rem which might be too specific */
         transform: translateY(-50%);
         color: #64748b;
         font-size: 1.2rem; /* Adjusted for Lucide icons */
@@ -150,17 +150,17 @@ const StyledButton = styled.button`
 const LinksContainer = styled.div`
     margin-top: 1.5rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
+    flex-direction: column; /* Stack links vertically */
+    gap: 0.8rem; /* Space between links */
     font-size: 0.95rem;
 
     a {
-        color: #00adef;
+        color: #00adef; /* Primary blue for links */
         text-decoration: none;
         transition: color 0.3s ease;
 
         &:hover {
-            color: #f8fafc;
+            color: #f8fafc; /* Lighter on hover */
             text-decoration: underline;
         }
     }
@@ -169,39 +169,39 @@ const LinksContainer = styled.div`
 const LoginPage = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [localLoading, setLocalLoading] = useState(false); // Changed to localLoading to avoid conflict
-    const [localError, setLocalError] = useState(''); // Changed to localError for component-specific errors
+    const [localLoading, setLocalLoading] = useState(false);
+    const [localError, setLocalError] = useState('');
     const navigate = useNavigate();
 
-    const { login, error: authError, loading: authLoading } = useAuth(); // <--- ADDED: Get login, error, loading from AuthContext
+    const { login, loading: authLoading } = useAuth();
 
-    // Use a combined loading state if necessary, or just authLoading
     const isLoading = localLoading || authLoading;
-    const currentError = localError || authError; // Prioritize AuthContext error if present
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLocalLoading(true); // Set local loading
-        setLocalError('');    // Clear previous local errors
+        setLocalLoading(true);
+        setLocalError('');
 
-        // Call the login function from AuthContext
-        // NOTE: Your backend login endpoint for AuthContext is '/api/users/login'
-        // And it expects 'username', 'password'.
-        // If your login form specifically uses 'email', you might need to adjust
-        // either the AuthContext login function or ensure the backend accepts 'email'
-        // as the identifier for the 'username' field. For now, I'll pass email as username.
-        const result = await login(email, password); // <--- IMPORTANT: USING AUTH CONTEXT'S LOGIN
+        const formData = {
+            email,
+            password,
+        };
+
+        const result = await login(formData);
 
         if (result.success) {
             console.log('Login successful via AuthContext');
-            alert('Login successful! Welcome back.');
+            alert('Login successful! Welcome back.'); // Consider a more elegant notification
             navigate('/dashboard');
         } else {
-            console.error('Login failed via AuthContext:', result.error);
-            setLocalError(result.error || 'Login failed. Please check your credentials.'); // Set local error if authError isn't immediate
+            console.error('Login failed via AuthContext:', result.errors || 'Unknown error');
+            const errorMsg = result.errors && result.errors.length > 0
+                ? result.errors[0].msg
+                : 'Login failed. Please check your credentials.';
+            setLocalError(errorMsg);
         }
 
-        setLocalLoading(false); // Reset local loading
+        setLocalLoading(false);
     };
 
     return (
@@ -235,7 +235,7 @@ const LoginPage = () => {
                             required
                         />
                     </FormGroup>
-                    {currentError && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{currentError}</p>}
+                    {localError && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{localError}</p>}
                     <StyledButton type="submit" disabled={isLoading}>
                         {isLoading ? 'Logging In...' : 'Login'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
                     </StyledButton>

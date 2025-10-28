@@ -4,6 +4,8 @@ import styled from 'styled-components';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import logoImage from '../assets/nexus-signal-logo.png';
+// Using generic NavLink for styling consistency, removed lucide-react icons here if not used
+// import { Home, Settings, Bookmark, PieChart, LogOut, LogIn, UserPlus } from 'lucide-react';
 
 const NavContainer = styled.nav`
     background-color: #1a273b;
@@ -44,6 +46,8 @@ const NavLinks = styled.div`
     align-items: center;
 `;
 
+// IMPORTANT: Using styled(Link) for NavLink to match your existing styling pattern
+// If you want active state styling, you'd need to adjust this to `styled(NavLinkRouter)` and add styling for `.active`
 const NavLink = styled(Link)`
     color: #b0c4de;
     text-decoration: none;
@@ -57,6 +61,12 @@ const NavLink = styled(Link)`
         color: #e0e0e0;
         background-color: rgba(0, 173, 237, 0.1);
     }
+    /* If you want an 'active' state for the link, you'd add:
+    &.active {
+        color: #00adec; // A distinctive color for active link
+        background-color: rgba(0, 173, 237, 0.2);
+    }
+    */
 `;
 
 const NavButton = styled.button`
@@ -88,7 +98,7 @@ const Navbar = () => {
         '/privacy',
         '/disclaimer'
     ];
-    const shouldHideAuthLinks = pagesWithoutAuthLinks.includes(location.pathname); // <--- CORRECTED LOGIC
+    const shouldHideAuthLinks = pagesWithoutAuthLinks.includes(location.pathname);
 
     const handleLogout = () => {
         logout();
@@ -97,16 +107,19 @@ const Navbar = () => {
 
     return (
         <NavContainer>
-           <LogoWrapper to="/dashboard"> {/*{/* <--- THIS IS THE LINE TO CHANGE */}
+            {/* Logo link: if authenticated, go to /dashboard, else go to / */}
+            <LogoWrapper to={isAuthenticated ? "/dashboard" : "/"}> {/* <-- MODIFIED LINE */}
                 <LogoImg src={logoImage} alt="Nexus Signal AI Logo" />
                 <LogoText>Nexus Signal.AI</LogoText>
             </LogoWrapper>
             <NavLinks>
                 {/* Conditional rendering based on authentication and page */}
                 {isAuthenticated ? (
-                    // User is authenticated, always show full dashboard links (or adjust as needed)
+                    // User is authenticated, show full navigation links
                     <>
                         <NavLink to="/dashboard">Dashboard</NavLink>
+                        <NavLink to="/portfolio">Portfolio</NavLink> {/* <-- ADDED PORTFOLIO LINK */}
+                        <NavLink to="/watchlist">Watchlist</NavLink> {/* <-- ADDED WATCHLIST LINK */}
                         <NavLink to="/predict">Predict</NavLink>
                         <NavLink to="/pricing">Pricing</NavLink>
                         <NavButton onClick={handleLogout}>Logout</NavButton>
@@ -117,9 +130,7 @@ const Navbar = () => {
                         // On a page where auth links should be hidden (e.g., Landing, Pricing, Footer links)
                         <NavLink to="/pricing">Pricing</NavLink> // Only show Pricing
                     ) : (
-                        // On other pages where auth links might be relevant (e.g., if you add other public pages later)
-                        // For now, these routes are effectively blocked by the current configuration,
-                        // but this is where Login/Register would appear if they were public paths.
+                        // On other public pages, show Login/Register/Pricing
                         <>
                             <NavLink to="/login">Login</NavLink>
                             <NavLink to="/register">Register</NavLink>
