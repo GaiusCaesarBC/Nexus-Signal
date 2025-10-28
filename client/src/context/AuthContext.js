@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_BASE_URL = process.env.NODE_ENV === 'production'
     // This URL will be your Render backend service URL (e.g., https://your-service-name.onrender.com)
     // MAKE SURE TO REPLACE THIS PLACEHOLDER WITH YOUR ACTUAL RENDER BACKEND URL!
-    ? https://nexus-signal.onrender.com // <--- REPLACE THIS LINE WITH YOUR RENDER BACKEND URL!
+    ? 'https://nexus-signal.onrender.com' // <--- REPLACE THIS LINE WITH YOUR RENDER BACKEND URL!
     : 'http://localhost:5000'; // Development API URL
 
 export const api = axios.create({
