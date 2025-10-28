@@ -1,38 +1,72 @@
-  // server/app.js - CONSOLIDATED APP LOGIC
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
-const hpp = require('hpp');
-const rateLimit = require('express-rate-limit');
-const app = express();
-const path = require('path'); // Add this line at the top with other imports
-// ... rest of your imports
+// server/app.js - CONSOLIDATED APP LOGIC
 
-// Rate limiting to prevent abuse (Moved here from previous app.js, can also be in index.js)
+// REMOVE THIS LINE:
+// const path = require('path'); // Core Node.js module for working with file paths
+
+const express = require('express');
+const cors = require('cors'); // Handles Cross-Origin Resource Sharing
+const helmet = require('helmet'); // Helps secure your app by setting various HTTP headers
+const mongoSanitize = require('express-mongo-sanitize'); // Sanitizes user-supplied data to prevent MongoDB Operator Injection
+const xss = require('xss-clean'); // Sanitizes user input to prevent Cross-site Scripting (XSS) attacks
+const hpp = require('hpp'); // Protects against HTTP Parameter Pollution attacks
+const rateLimit = require('express-rate-limit'); // Limits repeated requests to public APIs and/or endpoints
+const app = express();
+
+// Load environment variables (if not already done in index.js)
+// If you have a separate index.js that does dotenv.config(), you can remove this.
+// require('dotenv').config({ path: './config/config.env' });
+
+
+// Rate limiting to prevent abuse
+// This limits each IP to 100 requests per 15 minutes.
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // max 100 requests per 15 minutes per IP
+    windowMs: 15 * 60 * 1000, // 15 minutes in milliseconds
+    max: 100, // Max 100 requests
     message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 
-// Middleware - Order matters!
-app.use(cors()); // Ensure CORS is first
-app.use(helmet());
-app.use(express.json({ limit: '10kb' }));
-app.use(mongoSanitize());
-app.use(xss());
-app.use(hpp());
-app.use(limiter); // Apply rate limiting
 
-// Import ALL Route Files
-const authRoutes = require('./routes/auth'); // This is your actual auth logic, should be unique
-const userRoutes = require('./routes/userRoutes'); // If this contains user registration/profile management separate from auth
-const marketDataRoutes = require('./routes/marketDataRoutes'); // Or marketDataRoutes if that's the name in its file
+// === CORE MIDDLEWARE ===
+// Order matters! Middleware is executed in the order it's defined.
+
+// 1. CORS: Enable All CORS Requests
+// Allows your frontend to make requests to your backend, even if on different domains/ports (especially during development).
+app.use(cors());
+
+// 2. Helmet: Set security-related HTTP headers
+// Helps protect against various web vulnerabilities.
+app.use(helmet());
+
+// 3. Body Parser: Parse JSON bodies
+// Allows Express to read JSON data sent in the body of requests.
+// 'limit: 10kb' prevents large payloads, improving security.
+app.use(express.json({ limit: '10kb' }));
+
+// 4. Data Sanitization: Prevent NoSQL query injection
+// Cleans user-supplied data from MongoDB operator injection.
+app.use(mongoSanitize());
+
+// 5. Data Sanitization: Prevent XSS attacks
+// Cleans user-supplied HTML from malicious script tags.
+app.use(xss());
+
+// 6. Prevent Parameter Pollution:
+// Protects against malicious users who might try to pollute request parameters.
+app.use(hpp());
+
+// 7. Apply Rate Limiting:
+// Applies the defined rate limiter to all incoming requests.
+app.use(limiter);
+
+
+// === ROUTE IMPORTS ===
+// Import all your route files. Ensure these paths are correct relative to app.js.
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/userRoutes');
+const marketDataRoutes = require('./routes/marketDataRoutes');
 const dashboardRoutes = require('./routes/dashboard');
 const watchlistRoutes = require('./routes/watchlistRoutes');
-const portfolioRoutes = require('./routes/portfolioRoutes'); // <--- CRITICAL: ADD THIS IMPORT
+const portfolioRoutes = require('./routes/portfolioRoutes');
 const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -40,13 +74,15 @@ const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
 
 
-// Define ALL Routes
-app.use('/api/auth', authRoutes); // Use the correct authRoutes from auth.js
-app.use('/api/users', userRoutes); // Example, if userRoutes handles user-specific actions
+// === ROUTE DEFINITIONS ===
+// Define the base paths for your API routes.
+// Requests starting with these paths will be handled by the imported router.
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/watchlist', watchlistRoutes);
-app.use('/api/portfolio', portfolioRoutes); // <--- CRITICAL: ADD THIS APP.USE
+app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/copilot', copilotRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -54,10 +90,15 @@ app.use('/api/subscribers', subscriberRoutes);
 app.use('/api/predict', predictionRoutes);
 
 
-// Global Error handling middleware - Placed after all routes
+// === GLOBAL ERROR HANDLING MIDDLEWARE ===
+// This middleware catches any errors that occur in your routes or other middleware.
+// It should be placed last.
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(err.statusCode || 500).send(err.message || 'Something broke!');
+    console.error(err.stack); // Log the error stack for debugging
+    res.status(err.statusCode || 500).send(err.message || 'Something broke!'); // Send a generic error response
 });
 
-module.exports = app; // Export the configured app instance
+
+// === EXPORT THE APP ===
+// The configured Express app instance is exported to be used by your main server entry file (e.g., index.js).
+module.exports = app;
