@@ -1,524 +1,659 @@
 // client/src/pages/PortfolioPage.js
-import React, { useState, useEffect } from 'react';
-import styled from 'styled-components';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import styled, { keyframes } from 'styled-components';
 import { useAuth } from '../context/AuthContext';
-import { Edit, Trash2 } from 'lucide-react'; // Icons for edit and delete
+import { DollarSign, TrendingUp, TrendingDown, Wallet, Briefcase, RefreshCcw, PlusCircle } from 'lucide-react'; // Added PlusCircle
 
-// --- Styled Components ---
-const PageContainer = styled.div`
-    padding: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
-    color: #e2e8f0;
-    background-color: #1a202c;
-    min-height: calc(100vh - 120px); /* Adjust for Navbar and Footer height */
+// --- Styled Components (Re-use or adapt your existing ones) ---
+
+const fadeIn = keyframes`
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 `;
 
-const Header = styled.h1`
-    font-size: 2.5rem;
-    color: #667eea;
-    margin-bottom: 2rem;
-    text-align: center;
+const PortfolioPageContainer = styled.div`
+    flex-grow: 1;
+    padding: 2.5rem;
+    background: linear-gradient(180deg, #0d1a2f 0%, #1a273b 100%);
+    color: #e0e6ed;
+    font-family: 'Inter', sans-serif;
+    animation: ${fadeIn} 0.8s ease-out forwards;
+    min-height: calc(100vh - var(--navbar-height));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    @media (max-width: 768px) {
+        padding: 1.5rem;
+    }
 `;
 
-const SectionTitle = styled.h2`
-    font-size: 1.8rem;
-    color: #63b3ed;
-    margin-top: 2.5rem;
-    margin-bottom: 1.5rem;
-    border-bottom: 1px solid #4a5568;
-    padding-bottom: 0.5rem;
-`;
-
-// --- Portfolio Summary ---
-const SummaryGrid = styled.div`
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
+const PortfolioHeader = styled.h1`
+    font-size: 3rem;
+    color: #00adef;
     margin-bottom: 2.5rem;
+    text-shadow: 0 0 15px rgba(0, 173, 237, 0.6);
+
+    @media (max-width: 768px) {
+        font-size: 2.5rem;
+        margin-bottom: 2rem;
+    }
+`;
+
+const SummarySection = styled.div`
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 1200px;
+    margin-bottom: 3rem;
+
+    @media (max-width: 768px) {
+        grid-template-columns: 1fr;
+    }
 `;
 
 const SummaryCard = styled.div`
-    background-color: #2d3748;
+    background: linear-gradient(135deg, #1e293b 0%, #2c3e50 100%);
+    border-radius: 12px;
     padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 173, 237, 0.2);
     text-align: center;
-    border: 1px solid #4a5568;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+    }
 `;
 
-const SummaryLabel = styled.p`
-    font-size: 1rem;
-    color: #a0aec0;
-    margin-bottom: 0.5rem;
+const CardTitle = styled.h4`
+    font-size: 1.2rem;
+    color: #94a3b8;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 `;
 
-const SummaryValue = styled.p`
-    font-size: 2rem;
+const CardValue = styled.p`
+    font-size: 2.5rem;
     font-weight: bold;
-    color: ${props => props.type === 'positive' ? '#48bb78' : props.type === 'negative' ? '#f56565' : '#e2e8f0'};
+    color: #f8fafc;
+    margin: 0;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+
+    &.positive { color: #10b981; } /* Tailwind green-500 */
+    &.negative { color: #ef4444; } /* Tailwind red-500 */
 `;
 
-// --- Add Holding Form ---
-const FormContainer = styled.div`
-    background-color: #2d3748;
+const HoldingsSection = styled.div`
+    width: 100%;
+    max-width: 1200px;
+    background: linear-gradient(135deg, #1e293b 0%, #2c3e50 100%);
+    border-radius: 12px;
     padding: 2rem;
-    border-radius: 8px;
-    border: 1px solid #4a5568;
-    margin-bottom: 2.5rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 173, 237, 0.2);
+    margin-bottom: 3rem; /* Added margin-bottom */
+
+    @media (max-width: 768px) {
+        padding: 1.5rem;
+    }
+`;
+
+const HoldingsTable = styled.table`
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-top: 1.5rem;
+
+    th, td {
+        padding: 0.8rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid #334155;
+        white-space: nowrap; /* Prevent text wrapping */
+
+        &:first-child { border-left: none; }
+        &:last-child { border-right: none; }
+    }
+
+    th {
+        color: #00adef;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding-bottom: 1rem;
+        position: sticky;
+        top: 0;
+        background: #1e293b; /* Ensure header stays visible on scroll */
+        z-index: 10;
+    }
+
+    td {
+        color: #f8fafc;
+        font-size: 1.1rem;
+
+        &.positive { color: #10b981; }
+        &.negative { color: #ef4444; }
+    }
+
+    tr:last-child td {
+        border-bottom: none;
+    }
+`;
+
+const TableWrapper = styled.div`
+    max-height: 500px; /* Enable vertical scrolling for holdings */
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #00adef #1a273b;
+
+    &::-webkit-scrollbar {
+        width: 8px;
+    }
+    &::-webkit-scrollbar-track {
+        background: #1a273b;
+        border-radius: 10px;
+    }
+    &::-webkit-scrollbar-thumb {
+        background-color: #00adef;
+        border-radius: 10px;
+        border: 2px solid #1a273b;
+    }
+`;
+
+const Message = styled.p`
+    text-align: center;
+    font-size: 1.2rem;
+    color: #94a3b8;
+    padding: 2rem;
+`;
+
+const ErrorMessage = styled(Message)`
+    color: #ef4444;
+    font-weight: bold;
+`;
+
+const LoaderWrapper = styled.div`
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    color: #00adef;
+    font-size: 1.5rem;
+`;
+
+const RotatingLoader = styled(Briefcase)`
+    animation: spin 1s linear infinite;
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+`;
+
+const RotatingRefresh = styled(RefreshCcw)`
+    animation: spin 1s linear infinite;
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+`;
+
+// --- New Styled Components for Add Holding Form ---
+const AddHoldingSection = styled.div`
+    width: 100%;
+    max-width: 1200px;
+    background: linear-gradient(135deg, #1e293b 0%, #2c3e50 100%);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 173, 237, 0.2);
+    margin-bottom: 3rem; /* Space before holdings table */
+
+    @media (max-width: 768px) {
+        padding: 1.5rem;
+    }
+
+    h3 {
+        color: #00adef;
+        margin-bottom: 1.5rem;
+        text-align: center;
+        text-shadow: 0 0 8px rgba(0, 173, 237, 0.4);
+    }
 `;
 
 const AddHoldingForm = styled.form`
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1.5rem;
+    align-items: end; /* Align items to the bottom */
+
+    @media (max-width: 600px) {
+        grid-template-columns: 1fr; /* Stack vertically on small screens */
+    }
 `;
 
 const FormGroup = styled.div`
     display: flex;
     flex-direction: column;
-`;
 
-const Label = styled.label`
-    font-size: 0.9rem;
-    color: #a0aec0;
-    margin-bottom: 0.5rem;
-`;
+    label {
+        font-size: 0.95rem;
+        color: #94a3b8;
+        margin-bottom: 0.5rem;
+    }
 
-const Input = styled.input`
-    padding: 0.75rem;
-    border-radius: 6px;
-    border: 1px solid #4a5568;
-    background-color: #1a202c;
-    color: #e2e8f0;
-    font-size: 1rem;
+    input {
+        padding: 0.8rem 1rem;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        background-color: #0d1a2f;
+        color: #e0e6ed;
+        font-size: 1rem;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
-    &::placeholder {
-        color: #a0aec0;
+        &:focus {
+            border-color: #00adef;
+            box-shadow: 0 0 0 3px rgba(0, 173, 237, 0.3);
+        }
+
+        &::placeholder {
+            color: #64748b;
+        }
+
+        &:disabled {
+            background-color: #2c3e50;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
     }
 `;
 
-const Button = styled.button`
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
+const SubmitButton = styled.button`
+    padding: 0.8rem 1.5rem;
+    background-color: #00adef;
+    color: #0d1a2f;
     border: none;
-    background-color: #4299e1;
-    color: white;
+    border-radius: 8px;
     font-size: 1rem;
+    font-weight: bold;
     cursor: pointer;
-    transition: background-color 0.2s;
-    grid-column: span var(--button-span, 1); /* For spanning columns dynamically */
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 
-    &:hover {
-        background-color: #3182ce;
+    &:hover:not(:disabled) {
+        background-color: #008cc0;
+        transform: translateY(-2px);
     }
 
     &:disabled {
-        opacity: 0.6;
+        background-color: #64748b;
         cursor: not-allowed;
     }
 `;
 
-const Message = styled.div`
-    background-color: ${props => props.type === 'success' ? '#2d3748' : '#c53030'};
-    color: ${props => props.type === 'success' ? '#48bb78' : '#e0e0e0'};
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 20px;
+const FormError = styled.p`
+    color: #ef4444;
+    font-size: 0.9rem;
     text-align: center;
+    margin-top: 1rem;
+    grid-column: 1 / -1; /* Span across all columns */
 `;
 
-// --- Holdings Table ---
-const TableContainer = styled.div`
-    overflow-x: auto;
-    margin-bottom: 2.5rem;
-`;
 
-const Table = styled.table`
-    width: 100%;
-    border-collapse: collapse;
-    background-color: #2d3748;
-    border-radius: 8px;
-    overflow: hidden; // Ensures border-radius applies to table content
-`;
+// Helper function to format time (can be outside the component)
+const formatLastUpdateTime = (timestamp) => {
+    if (!timestamp) return 'Never updated';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
 
-const Th = styled.th`
-    background-color: #4a5568;
-    padding: 1rem;
-    text-align: left;
-    font-weight: bold;
-    color: #e2e8f0;
-    white-space: nowrap; // Prevent text wrapping
-`;
 
-const Td = styled.td`
-    padding: 1rem;
-    border-bottom: 1px solid #4a5568;
-    color: #e2e8f0;
-    white-space: nowrap; // Prevent text wrapping
-
-    &:last-child {
-        text-align: right;
-    }
-`;
-
-const TdValue = styled(Td)`
-    color: ${props => props.type === 'positive' ? '#48bb78' : props.type === 'negative' ? '#f56565' : '#e2e8f0'};
-    font-weight: ${props => (props.type === 'positive' || props.type === 'negative') ? 'bold' : 'normal'};
-`;
-
-const ActionButton = styled.button`
-    background: none;
-    border: none;
-    color: #a0aec0;
-    cursor: pointer;
-    margin-left: 0.5rem;
-    transition: color 0.2s;
-
-    &:hover {
-        color: ${props => props.variant === 'delete' ? '#e53e3e' : '#63b3ed'};
-    }
-`;
-
-// --- Main Component ---
+// --- PortfolioPage Component ---
 const PortfolioPage = () => {
-    const { portfolio, addHolding, updateHolding, deleteHolding, fetchPortfolio } = useAuth();
+    const { api, isAuthenticated, loading: authLoading } = useAuth();
+    const [portfolio, setPortfolio] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-    const [newHolding, setNewHolding] = useState({
-        symbol: '',
-        quantity: '',
-        purchasePrice: '',
-        purchaseDate: ''
-    });
-    const [editingHoldingId, setEditingHoldingId] = useState(null);
-    const [editFormData, setEditFormData] = useState({
-        quantity: '',
-        purchasePrice: '',
-        purchaseDate: ''
-    });
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
+    const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
+    const [priceUpdateError, setPriceUpdateError] = useState(null);
+    const [lastPriceUpdateTimestamp, setLastPriceUpdateTimestamp] = useState(null);
+    const POLLING_INTERVAL = 15000; // 15 seconds for price polling
 
-    useEffect(() => {
-        // Clear message after a few seconds
-        if (message) {
-            const timer = setTimeout(() => setMessage(''), 5000);
-            return () => clearTimeout(timer);
+    // State for the "Add Holding" form
+    const [newHoldingSymbol, setNewHoldingSymbol] = useState('');
+    const [newHoldingQuantity, setNewHoldingQuantity] = useState('');
+    const [newHoldingPurchasePrice, setNewHoldingPurchasePrice] = useState('');
+    const [addHoldingLoading, setAddHoldingLoading] = useState(false);
+    const [addHoldingError, setAddHoldingError] = useState(null);
+
+
+    // Function to fetch the entire portfolio (including aggregates)
+    const fetchPortfolio = useCallback(async () => {
+        if (!isAuthenticated || !api) {
+            setLoading(false);
+            if (!authLoading && !isAuthenticated) {
+                setError("Please log in to view your portfolio.");
+            }
+            return;
         }
-    }, [message]);
 
-    const handleNewHoldingChange = (e) => {
-        setNewHolding({ ...newHolding, [e.target.name]: e.target.value });
-    };
+        // Only show full loading spinner on initial fetch, not for price updates
+        if (!portfolio) setLoading(true); // Only show spinner if portfolio is null initially
+        setError(null);
+        try {
+            const res = await api.get('/api/portfolio');
+            setPortfolio(res.data);
+            if (res.data.lastUpdatedAt) { // If backend provides a lastUpdatedAt field
+                setLastPriceUpdateTimestamp(res.data.lastUpdatedAt);
+            } else {
+                setLastPriceUpdateTimestamp(new Date().toISOString()); // Or use client-side time for now
+            }
+        } catch (err) {
+            console.error('Error fetching portfolio:', err.response?.data?.msg || err.message);
+            setError('Failed to load portfolio data. Please try again.');
+            setPortfolio(null);
+        } finally {
+            setLoading(false);
+        }
+    }, [isAuthenticated, api, authLoading, portfolio]); // Added portfolio to dependencies for correct loading state
 
+
+    // Function to fetch only current prices for holdings
+    const fetchCurrentPrices = useCallback(async (currentHoldings) => {
+        if (!isAuthenticated || !api || !currentHoldings || currentHoldings.length === 0) {
+            setIsUpdatingPrices(false);
+            return;
+        }
+
+        setIsUpdatingPrices(true);
+        setPriceUpdateError(null);
+
+        try {
+            const symbols = currentHoldings.map(h => h.symbol).join(',');
+            const response = await api.get(`/api/market-data/quotes?symbols=${symbols}`);
+            const { prices: newPrices, lastUpdatedAt } = response.data;
+
+            // Optimistically update holdings with new prices for immediate UI feedback
+            setPortfolio(prevPortfolio => {
+                if (!prevPortfolio) return null;
+
+                let updatedHoldings = prevPortfolio.holdings.map(holding => {
+                    const latestPrice = newPrices[holding.symbol.toUpperCase()];
+                    if (latestPrice !== undefined && latestPrice !== holding.currentPrice) {
+                        return { ...holding, currentPrice: latestPrice };
+                    }
+                    return holding;
+                });
+
+                // Trigger a full re-fetch of the portfolio after individual prices are updated
+                // to get totalValue, totalChange, etc., recalculated from the backend.
+                // This makes the UI update in two stages: immediate price change, then full aggregate refresh.
+                fetchPortfolio();
+
+                // Return the prevPortfolio with only updated holdings for immediate UI reflection
+                return { ...prevPortfolio, holdings: updatedHoldings };
+            });
+
+            setLastPriceUpdateTimestamp(lastUpdatedAt);
+
+        } catch (err) {
+            console.error('Error updating prices:', err.response?.data?.msg || err.message);
+            setPriceUpdateError('Failed to fetch latest prices.');
+        } finally {
+            setIsUpdatingPrices(false);
+        }
+    }, [isAuthenticated, api, fetchPortfolio]);
+
+
+    // Effect for initial portfolio data fetch
+    useEffect(() => {
+        if (!authLoading) {
+            fetchPortfolio();
+        }
+    }, [authLoading, fetchPortfolio]);
+
+    // Effect for price polling
+    useEffect(() => {
+        let pricePollingInterval;
+        if (isAuthenticated && api && portfolio && portfolio.holdings && portfolio.holdings.length > 0) {
+            fetchCurrentPrices(portfolio.holdings); // Fetch prices immediately upon starting polling
+
+            pricePollingInterval = setInterval(() => {
+                fetchCurrentPrices(portfolio.holdings);
+            }, POLLING_INTERVAL);
+        }
+
+        return () => {
+            if (pricePollingInterval) {
+                clearInterval(pricePollingInterval);
+            }
+        };
+    }, [isAuthenticated, api, portfolio, fetchCurrentPrices, POLLING_INTERVAL]);
+
+    // --- Add Holding Functionality ---
     const handleAddHoldingSubmit = async (e) => {
         e.preventDefault();
-        setMessage('');
+        setAddHoldingLoading(true);
+        setAddHoldingError(null);
 
-        // Basic validation
-        if (!newHolding.symbol || !newHolding.quantity || !newHolding.purchasePrice) {
-            setMessage('Please fill in all required fields: Symbol, Quantity, Purchase Price.');
-            setMessageType('error');
+        // Basic frontend validation
+        if (!newHoldingSymbol || !newHoldingQuantity || !newHoldingPurchasePrice) {
+            setAddHoldingError('All fields are required.');
+            setAddHoldingLoading(false);
             return;
         }
-        if (isNaN(parseFloat(newHolding.quantity)) || parseFloat(newHolding.quantity) <= 0) {
-            setMessage('Quantity must be a positive number.');
-            setMessageType('error');
+        const quantity = parseFloat(newHoldingQuantity);
+        const purchasePrice = parseFloat(newHoldingPurchasePrice);
+        if (isNaN(quantity) || quantity <= 0) {
+            setAddHoldingError('Quantity must be a positive number.');
+            setAddHoldingLoading(false);
             return;
         }
-        if (isNaN(parseFloat(newHolding.purchasePrice)) || parseFloat(newHolding.purchasePrice) <= 0) {
-            setMessage('Purchase Price must be a positive number.');
-            setMessageType('error');
-            return;
-        }
-
-        const res = await addHolding({
-            ...newHolding,
-            symbol: newHolding.symbol.toUpperCase()
-        });
-
-        if (res.success) {
-            setMessage(`'${newHolding.symbol.toUpperCase()}' added to portfolio!`);
-            setMessageType('success');
-            setNewHolding({ symbol: '', quantity: '', purchasePrice: '', purchaseDate: '' }); // Reset form
-        } else {
-            const errorMsg = res.errors ? res.errors.map(err => err.msg).join(', ') : res.msg;
-            setMessage(`Error: ${errorMsg}`);
-            setMessageType('error');
-        }
-    };
-
-    const handleEditClick = (holding) => {
-        setEditingHoldingId(holding._id);
-        setEditFormData({
-            quantity: holding.quantity,
-            purchasePrice: holding.purchasePrice,
-            purchaseDate: holding.purchaseDate ? new Date(holding.purchaseDate).toISOString().split('T')[0] : ''
-        });
-    };
-
-    const handleEditFormChange = (e) => {
-        setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
-    };
-
-    const handleUpdateHolding = async (e, holdingId) => {
-        e.preventDefault();
-        setMessage('');
-
-        // Basic validation for updates
-        if (isNaN(parseFloat(editFormData.quantity)) || parseFloat(editFormData.quantity) <= 0) {
-            setMessage('Quantity must be a positive number.');
-            setMessageType('error');
-            return;
-        }
-        if (isNaN(parseFloat(editFormData.purchasePrice)) || parseFloat(editFormData.purchasePrice) <= 0) {
-            setMessage('Purchase Price must be a positive number.');
-            setMessageType('error');
+        if (isNaN(purchasePrice) || purchasePrice <= 0) {
+            setAddHoldingError('Purchase price must be a positive number.');
+            setAddHoldingLoading(false);
             return;
         }
 
-        const res = await updateHolding(holdingId, editFormData);
-        if (res.success) {
-            setMessage('Holding updated successfully!');
-            setMessageType('success');
-            setEditingHoldingId(null); // Exit edit mode
-        } else {
-            const errorMsg = res.errors ? res.errors.map(err => err.msg).join(', ') : res.msg;
-            setMessage(`Error updating holding: ${errorMsg}`);
-            setMessageType('error');
+        try {
+            const body = {
+                symbol: newHoldingSymbol,
+                quantity: quantity,
+                purchasePrice: purchasePrice,
+                purchaseDate: new Date().toISOString(), // Use current date for purchase
+            };
+            const res = await api.post('/api/portfolio/add', body);
+            setPortfolio(res.data); // Update portfolio with the new data from the backend
+            setNewHoldingSymbol(''); // Clear form fields
+            setNewHoldingQuantity('');
+            setNewHoldingPurchasePrice('');
+            setAddHoldingError(null); // Clear any previous errors
+            setLastPriceUpdateTimestamp(new Date().toISOString()); // Update timestamp after adding
+        } catch (err) {
+            console.error('Error adding holding:', err.response ? err.response.data : err.message);
+            setAddHoldingError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.msg || 'Failed to add holding. Please check inputs and try again.');
+        } finally {
+            setAddHoldingLoading(false);
         }
     };
 
-    const handleDeleteHolding = async (holdingId) => {
-        if (window.confirm('Are you sure you want to delete this holding?')) {
-            setMessage('');
-            const res = await deleteHolding(holdingId);
-            if (res.success) {
-                setMessage(res.msg || 'Holding deleted successfully!');
-                setMessageType('success');
-            } else {
-                setMessage(`Error: ${res.msg}`);
-                setMessageType('error');
-            }
-        }
-    };
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(value);
-    };
+    // --- Conditional Rendering ---
+    if (loading) {
+        return (
+            <PortfolioPageContainer>
+                <LoaderWrapper>
+                    <RotatingLoader size={36} /> <Message>Loading portfolio...</Message>
+                </LoaderWrapper>
+            </PortfolioPageContainer>
+        );
+    }
 
-    const formatPercentage = (value) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'percent',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(value / 100); // Divide by 100 because backend sends 5.5 for 5.5%
-    };
+    if (error) {
+        return (
+            <PortfolioPageContainer>
+                <ErrorMessage>{error}</ErrorMessage>
+            </PortfolioPageContainer>
+        );
+    }
 
-    // Determine P&L type for styling
-    const getPnLType = (value) => {
-        if (value > 0) return 'positive';
-        if (value < 0) return 'negative';
-        return 'neutral';
-    };
+    // Safely access portfolio data, providing defaults if portfolio is still null or empty
+    const { totalValue = 0, totalChange = 0, totalChangePercent = 0, cashBalance = 0, holdings = [] } = portfolio || {};
 
+    const isPositiveChange = totalChange >= 0;
 
     return (
-        <PageContainer>
-            <Header>Your Investment Portfolio</Header>
+        <PortfolioPageContainer>
+            <PortfolioHeader>My Portfolio</PortfolioHeader>
 
-            {message && <Message type={messageType}>{message}</Message>}
+            {isUpdatingPrices && !priceUpdateError && (
+                <Message style={{ fontSize: '0.9rem', color: '#00adef', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                    <RotatingRefresh size={18} /> Updating prices...
+                </Message>
+            )}
+            {priceUpdateError && (
+                <ErrorMessage style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                    <RefreshCcw size={18} color="#ef4444" /> {priceUpdateError}
+                </ErrorMessage>
+            )}
 
-            <SectionTitle>Portfolio Summary</SectionTitle>
-            <SummaryGrid>
+            {lastPriceUpdateTimestamp && !isUpdatingPrices && (
+                <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
+                    Last updated: {formatLastUpdateTime(lastPriceUpdateTimestamp)}
+                </p>
+            )}
+
+            <SummarySection>
                 <SummaryCard>
-                    <SummaryLabel>Total Portfolio Value</SummaryLabel>
-                    <SummaryValue>{formatCurrency(portfolio.totalValue)}</SummaryValue>
+                    <CardTitle><Wallet size={20} /> Cash Balance</CardTitle>
+                    <CardValue>${cashBalance.toFixed(2)}</CardValue>
                 </SummaryCard>
                 <SummaryCard>
-                    <SummaryLabel>Total Profit/Loss</SummaryLabel>
-                    <SummaryValue type={getPnLType(portfolio.totalProfitLoss)}>
-                        {formatCurrency(portfolio.totalProfitLoss)}
-                    </SummaryValue>
+                    <CardTitle><DollarSign size={20} /> Total Portfolio Value</CardTitle>
+                    <CardValue>${totalValue.toFixed(2)}</CardValue>
                 </SummaryCard>
                 <SummaryCard>
-                    <SummaryLabel>Total P&L Percentage</SummaryLabel>
-                    <SummaryValue type={getPnLType(portfolio.totalProfitLossPercentage)}>
-                        {formatPercentage(portfolio.totalProfitLossPercentage)}
-                    </SummaryValue>
+                    <CardTitle>{isPositiveChange ? <TrendingUp size={20} /> : <TrendingDown size={20} />} Daily Change</CardTitle>
+                    <CardValue className={isPositiveChange ? 'positive' : 'negative'}>
+                        ${totalChange.toFixed(2)} ({totalChangePercent.toFixed(2)}%)
+                    </CardValue>
                 </SummaryCard>
-            </SummaryGrid>
+            </SummarySection>
 
-            <SectionTitle>Add New Holding</SectionTitle>
-            <FormContainer>
+            {/* --- Add Holding Form Section --- */}
+            <AddHoldingSection>
+                <h3><PlusCircle size={24} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} /> Add New Holding</h3>
                 <AddHoldingForm onSubmit={handleAddHoldingSubmit}>
                     <FormGroup>
-                        <Label htmlFor="symbol">Symbol</Label>
-                        <Input
+                        <label htmlFor="newHoldingSymbol">Symbol:</label>
+                        <input
                             type="text"
-                            id="symbol"
-                            name="symbol"
+                            id="newHoldingSymbol"
+                            value={newHoldingSymbol}
+                            onChange={(e) => setNewHoldingSymbol(e.target.value)}
                             placeholder="e.g., AAPL, BTC"
-                            value={newHolding.symbol}
-                            onChange={handleNewHoldingChange}
                             required
+                            disabled={addHoldingLoading}
                         />
                     </FormGroup>
                     <FormGroup>
-                        <Label htmlFor="quantity">Quantity</Label>
-                        <Input
+                        <label htmlFor="newHoldingQuantity">Quantity:</label>
+                        <input
                             type="number"
-                            id="quantity"
-                            name="quantity"
-                            placeholder="e.g., 10"
-                            step="0.0001"
-                            value={newHolding.quantity}
-                            onChange={handleNewHoldingChange}
-                            required
-                        />
-                    </FormGroup>
-                    <FormGroup>
-                        <Label htmlFor="purchasePrice">Purchase Price (per unit)</Label>
-                        <Input
-                            type="number"
-                            id="purchasePrice"
-                            name="purchasePrice"
-                            placeholder="e.g., 175.50"
+                            id="newHoldingQuantity"
+                            value={newHoldingQuantity}
+                            onChange={(e) => setNewHoldingQuantity(e.target.value)}
                             step="0.01"
-                            value={newHolding.purchasePrice}
-                            onChange={handleNewHoldingChange}
+                            min="0.01"
                             required
+                            disabled={addHoldingLoading}
                         />
                     </FormGroup>
                     <FormGroup>
-                        <Label htmlFor="purchaseDate">Purchase Date (Optional)</Label>
-                        <Input
-                            type="date"
-                            id="purchaseDate"
-                            name="purchaseDate"
-                            value={newHolding.purchaseDate}
-                            onChange={handleNewHoldingChange}
+                        <label htmlFor="newHoldingPurchasePrice">Purchase Price:</label>
+                        <input
+                            type="number"
+                            id="newHoldingPurchasePrice"
+                            value={newHoldingPurchasePrice}
+                            onChange={(e) => setNewHoldingPurchasePrice(e.target.value)}
+                            step="0.01"
+                            min="0.01"
+                            required
+                            disabled={addHoldingLoading}
                         />
                     </FormGroup>
-                    <Button type="submit" style={{ '--button-span': 'full' }}>Add Holding</Button>
+                    <SubmitButton type="submit" disabled={addHoldingLoading}>
+                        {addHoldingLoading ? 'Adding...' : 'Add Holding'}
+                    </SubmitButton>
+                    {addHoldingError && <FormError>{addHoldingError}</FormError>}
                 </AddHoldingForm>
-            </FormContainer>
+            </AddHoldingSection>
 
-            <SectionTitle>Your Holdings</SectionTitle>
-            {portfolio.holdings && portfolio.holdings.length > 0 ? (
-                <TableContainer>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <Th>Symbol</Th>
-                                <Th>Quantity</Th>
-                                <Th>Purchase Price</Th>
-                                <Th>Current Price</Th>
-                                <Th>Current Value</Th>
-                                <Th>P&L</Th>
-                                <Th>P&L %</Th>
-                                <Th>Purchase Date</Th>
-                                <Th>Actions</Th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {portfolio.holdings.map((holding) => (
-                                <tr key={holding._id}>
-                                    {editingHoldingId === holding._id ? (
-                                        // Edit row
-                                        <>
-                                            <Td>{holding.symbol}</Td>
-                                            <Td>
-                                                <Input
-                                                    type="number"
-                                                    name="quantity"
-                                                    value={editFormData.quantity}
-                                                    onChange={handleEditFormChange}
-                                                    step="0.0001"
-                                                    style={{ width: '80px', padding: '0.4rem' }}
-                                                />
-                                            </Td>
-                                            <Td>
-                                                <Input
-                                                    type="number"
-                                                    name="purchasePrice"
-                                                    value={editFormData.purchasePrice}
-                                                    onChange={handleEditFormChange}
-                                                    step="0.01"
-                                                    style={{ width: '80px', padding: '0.4rem' }}
-                                                />
-                                            </Td>
-                                            <Td>{formatCurrency(holding.currentPrice)}</Td>
-                                            <Td>{formatCurrency(holding.currentValue)}</Td>
-                                            <TdValue type={getPnLType(holding.profitLoss)}>
-                                                {formatCurrency(holding.profitLoss)}
-                                            </TdValue>
-                                            <TdValue type={getPnLType(holding.profitLossPercentage)}>
-                                                {formatPercentage(holding.profitLossPercentage)}
-                                            </TdValue>
-                                            <Td>
-                                                <Input
-                                                    type="date"
-                                                    name="purchaseDate"
-                                                    value={editFormData.purchaseDate}
-                                                    onChange={handleEditFormChange}
-                                                    style={{ width: '120px', padding: '0.4rem' }}
-                                                />
-                                            </Td>
-                                            <Td>
-                                                <Button
-                                                    onClick={(e) => handleUpdateHolding(e, holding._id)}
-                                                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                                                >
-                                                    Save
-                                                </Button>
-                                                <Button
-                                                    onClick={() => setEditingHoldingId(null)}
-                                                    style={{ background: '#718096', marginLeft: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                                                >
-                                                    Cancel
-                                                </Button>
-                                            </Td>
-                                        </>
-                                    ) : (
-                                        // Display row
-                                        <>
-                                            <Td>{holding.symbol}</Td>
-                                            <Td>{holding.quantity}</Td>
-                                            <Td>{formatCurrency(holding.purchasePrice)}</Td>
-                                            <Td>{formatCurrency(holding.currentPrice)}</Td>
-                                            <Td>{formatCurrency(holding.currentValue)}</Td>
-                                            <TdValue type={getPnLType(holding.profitLoss)}>
-                                                {formatCurrency(holding.profitLoss)}
-                                            </TdValue>
-                                            <TdValue type={getPnLType(holding.profitLossPercentage)}>
-                                                {formatPercentage(holding.profitLossPercentage)}
-                                            </TdValue>
-                                            <Td>{new Date(holding.purchaseDate).toLocaleDateString()}</Td>
-                                            <Td>
-                                                <ActionButton onClick={() => handleEditClick(holding)}>
-                                                    <Edit size={18} />
-                                                </ActionButton>
-                                                <ActionButton variant="delete" onClick={() => handleDeleteHolding(holding._id)}>
-                                                    <Trash2 size={18} />
-                                                </ActionButton>
-                                            </Td>
-                                        </>
-                                    )}
+
+            <HoldingsSection>
+                <h3>Your Holdings</h3>
+                {holdings.length > 0 ? (
+                    <TableWrapper>
+                        <HoldingsTable>
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Quantity</th>
+                                    <th>Avg Cost</th>
+                                    <th>Current Price</th>
+                                    <th>Market Value</th>
+                                    <th>Gain/Loss</th>
+                                    <th>% Gain/Loss</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </TableContainer>
-            ) : (
-                <p style={{ textAlign: 'center', color: '#a0aec0' }}>Your portfolio is currently empty. Add your first holding above!</p>
-            )}
-        </PageContainer>
+                            </thead>
+                            <tbody>
+                                {holdings.map((holding) => {
+                                    // Make sure these fields exist on your holding object coming from backend
+                                    const marketValue = holding.currentValue !== undefined ? holding.currentValue : (holding.currentPrice * holding.quantity);
+                                    const costBasis = holding.purchasePrice * holding.quantity; // Use purchasePrice for initial cost basis
+                                    const gainLoss = holding.profitLoss !== undefined ? holding.profitLoss : (marketValue - costBasis);
+                                    const percentGainLoss = holding.profitLossPercentage !== undefined ? holding.profitLossPercentage : (costBasis === 0 ? 0 : (gainLoss / costBasis) * 100);
+                                    const isHoldingPositive = gainLoss >= 0;
+
+                                    return (
+                                        <tr key={holding._id || holding.symbol}> {/* Use _id if available, fallback to symbol */}
+                                            <td>{holding.symbol.toUpperCase()}</td>
+                                            <td>{holding.quantity.toFixed(2)}</td>
+                                            <td>${holding.purchasePrice.toFixed(2)}</td> {/* Use purchasePrice from backend */}
+                                            <td>${holding.currentPrice.toFixed(2)}</td>
+                                            <td>${marketValue.toFixed(2)}</td>
+                                            <td className={isHoldingPositive ? 'positive' : 'negative'}>
+                                                ${gainLoss.toFixed(2)}
+                                            </td>
+                                            <td className={isHoldingPositive ? 'positive' : 'negative'}>
+                                                {percentGainLoss.toFixed(2)}%
+                                            </td>
+                                            {/* Add Edit/Delete buttons here later */}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </HoldingsTable>
+                    </TableWrapper>
+                ) : (
+                    <Message>You don't have any holdings yet. Use the form above to add your first investment!</Message>
+                )}
+            </HoldingsSection>
+        </PortfolioPageContainer>
     );
 };
 

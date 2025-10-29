@@ -5,61 +5,85 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/authMiddleware'); // Your authentication middleware
 
 const Portfolio = require('../models/Portfolio'); // Portfolio model
+const axios = require('axios'); // Import axios for market data calls
 
 // Helper to fetch current prices (reusing existing logic or a new dedicated service)
 // For now, this is a placeholder. In a real app, you'd integrate Alpha Vantage, CoinGecko, etc.
 const getMarketPrice = async (symbol) => {
-    // This is a placeholder. You need to integrate your actual API calls here.
-    // For demonstration, let's return a simple mock price.
-    // In a real application, you would call Alpha Vantage for stocks, CoinGecko for crypto.
-    // You might also cache these prices to avoid hitting API limits.
+    try {
+        const type = symbol.length > 5 && (symbol.endsWith('USD') || symbol.endsWith('USDT')) ? 'crypto' : 'stock';
+        const marketDataApiKey = type === 'stock' ? process.env.ALPHA_VANTAGE_API_KEY : process.env.COINGECKO_API_KEY;
 
-    // Example mock logic:
-    const mockPrices = {
-        'AAPL': 175.00,
-        'MSFT': 420.00,
-        'GOOG': 150.00,
-        'BTC': 65000.00,
-        'ETH': 3200.00,
-        'AMZN': 180.00,
-        'NVDA': 900.00,
-        'TSLA': 170.00,
-        // Add more mock prices as needed
-    };
-    return mockPrices[symbol.toUpperCase()] || (Math.random() * 100 + 10); // Random price if not found
+        if (!marketDataApiKey) {
+            console.error(`Missing API key for ${type} market data.`);
+            // Fallback to mock price if no API key
+            const mockPrices = {
+                'AAPL': 175.00, 'MSFT': 420.00, 'GOOG': 150.00,
+                'BTC': 65000.00, 'ETH': 3200.00, 'AMZN': 180.00,
+                'NVDA': 900.00, 'TSLA': 170.00,
+            };
+            return mockPrices[symbol.toUpperCase()] || (Math.random() * 100 + 10);
+        }
+
+        // Call your actual marketData endpoint to get the price
+        // This is a simplified direct call for demonstration.
+        // Ideally, you'd import and use a function from marketDataController here.
+        // Make sure your backend PORT is set in .env
+        const response = await axios.get(`http://localhost:${process.env.PORT}/api/market-data/single/${symbol}?type=${type}`);
+        return response.data.price;
+    } catch (error) {
+        console.error(`Error fetching real market price for ${symbol}:`, error.message);
+        // Fallback to mock price or return null/throw error if external API fails
+        const mockPrices = {
+            'AAPL': 175.00, 'MSFT': 420.00, 'GOOG': 150.00,
+            'BTC': 65000.00, 'ETH': 3200.00, 'AMZN': 180.00,
+            'NVDA': 900.00, 'TSLA': 170.00,
+        };
+        return mockPrices[symbol.toUpperCase()] || (Math.random() * 100 + 10);
+    }
 };
 
 
 // @route   GET api/portfolio
-// @desc    Get user's entire portfolio with calculated current values
+// @desc    Get user's entire portfolio with calculated current values and cash balance
 // @access  Private
 router.get('/', auth, async (req, res) => {
     try {
         let portfolio = await Portfolio.findOne({ user: req.user.id });
 
         if (!portfolio) {
-            // If no portfolio exists, return an empty one
-            return res.json({ holdings: [], totalValue: 0, totalProfitLoss: 0, totalProfitLossPercentage: 0 });
+            // If no portfolio exists, return a default empty portfolio with cashBalance
+            return res.json({
+                cashBalance: 10000.00, // Default starting cash
+                holdings: [],
+                totalValue: 10000.00,
+                totalChange: 0.00,
+                totalChangePercent: 0.00
+            });
         }
 
-        let totalValue = 0;
-        let totalCost = 0;
+        let totalHoldingsValue = 0;
+        let totalHoldingsCost = 0;
 
-        // Calculate current value and P&L for each holding
         const updatedHoldings = await Promise.all(
             portfolio.holdings.map(async (holding) => {
                 const currentPrice = await getMarketPrice(holding.symbol);
-                const currentValue = holding.quantity * currentPrice;
+                if (currentPrice === null) {
+                    // Handle case where price could not be fetched
+                    console.warn(`Could not fetch current price for ${holding.symbol}. Using purchase price as fallback.`);
+                }
+                const effectivePrice = currentPrice !== null ? currentPrice : holding.purchasePrice; // Fallback
+                const currentValue = holding.quantity * effectivePrice;
                 const costBasis = holding.quantity * holding.purchasePrice;
                 const profitLoss = currentValue - costBasis;
                 const profitLossPercentage = costBasis > 0 ? (profitLoss / costBasis) * 100 : 0;
 
-                totalValue += currentValue;
-                totalCost += costBasis;
+                totalHoldingsValue += currentValue;
+                totalHoldingsCost += costBasis;
 
                 return {
                     ...holding.toObject(), // Convert Mongoose sub-document to plain object
-                    currentPrice: parseFloat(currentPrice.toFixed(2)),
+                    currentPrice: parseFloat(effectivePrice.toFixed(2)),
                     currentValue: parseFloat(currentValue.toFixed(2)),
                     profitLoss: parseFloat(profitLoss.toFixed(2)),
                     profitLossPercentage: parseFloat(profitLossPercentage.toFixed(2))
@@ -67,14 +91,20 @@ router.get('/', auth, async (req, res) => {
             })
         );
 
-        const totalProfitLoss = totalValue - totalCost;
-        const totalProfitLossPercentage = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
+        // Calculate portfolio-wide change
+        const totalChange = totalHoldingsValue - totalHoldingsCost;
+        const totalChangePercent = totalHoldingsCost === 0 ? 0 : (totalChange / totalHoldingsCost) * 100;
+
+        // Assuming cashBalance is stored directly on the Portfolio model, or default it.
+        // If cashBalance is not on your Portfolio model, you'll need to decide where it lives.
+        const cashBalance = portfolio.cashBalance !== undefined ? portfolio.cashBalance : 10000.00; // Use actual or default
 
         res.json({
+            cashBalance: parseFloat(cashBalance.toFixed(2)),
+            totalValue: parseFloat((totalHoldingsValue + cashBalance).toFixed(2)), // Total value includes cash
+            totalChange: parseFloat(totalChange.toFixed(2)),
+            totalChangePercent: parseFloat(totalChangePercent.toFixed(2)),
             holdings: updatedHoldings,
-            totalValue: parseFloat(totalValue.toFixed(2)),
-            totalProfitLoss: parseFloat(totalProfitLoss.toFixed(2)),
-            totalProfitLossPercentage: parseFloat(totalProfitLossPercentage.toFixed(2))
         });
 
     } catch (err) {
@@ -114,20 +144,60 @@ router.post(
             if (portfolio) {
                 // Portfolio exists, add new holding
                 portfolio.holdings.push(newHolding);
-                // Mark holdings array as modified for Mongoose change tracking
-                portfolio.markModified('holdings');
+                portfolio.markModified('holdings'); // Mark holdings array as modified for Mongoose change tracking
             } else {
-                // No portfolio, create a new one with this holding
+                // No portfolio, create a new one with this holding and default cash
                 portfolio = new Portfolio({
                     user: req.user.id,
+                    cashBalance: 10000.00, // Initialize cash balance for new portfolios
                     holdings: [newHolding]
                 });
             }
 
             await portfolio.save();
-            // Respond with the full portfolio including calculations
-            const response = await (await Portfolio.findOne({ user: req.user.id })).populate('holdings'); // Re-fetch to apply calculations
-            res.json(response); // We'll re-calculate on the client side after this for simplicity
+
+            // Re-fetch the portfolio to ensure all calculations are fresh for the response
+            // This is a bit inefficient, but ensures the response is consistent.
+            // A more optimized approach would recalculate directly here.
+            // const updatedPortfolio = await Portfolio.findOne({ user: req.user.id }); // No need to re-fetch, 'portfolio' object is already updated
+
+            // Now, apply the same calculations as in the GET /api/portfolio route
+            let totalHoldingsValue = 0;
+            let totalHoldingsCost = 0;
+            const holdingsWithPrices = await Promise.all(
+                portfolio.holdings.map(async (holding) => {
+                    const currentPrice = await getMarketPrice(holding.symbol);
+                    const effectivePrice = currentPrice !== null ? currentPrice : holding.purchasePrice;
+                    const currentValue = holding.quantity * effectivePrice;
+                    const costBasis = holding.quantity * holding.purchasePrice;
+                    const profitLoss = currentValue - costBasis;
+                    const profitLossPercentage = costBasis > 0 ? (profitLoss / costBasis) * 100 : 0;
+
+                    totalHoldingsValue += currentValue;
+                    totalHoldingsCost += costBasis;
+
+                    return {
+                        ...holding.toObject(),
+                        currentPrice: parseFloat(effectivePrice.toFixed(2)),
+                        currentValue: parseFloat(currentValue.toFixed(2)),
+                        profitLoss: parseFloat(profitLoss.toFixed(2)),
+                        profitLossPercentage: parseFloat(profitLossPercentage.toFixed(2))
+                    };
+                })
+            );
+
+            const totalChange = totalHoldingsValue - totalHoldingsCost;
+            const totalChangePercent = totalHoldingsCost === 0 ? 0 : (totalChange / totalHoldingsCost) * 100;
+            const currentCashBalance = portfolio.cashBalance !== undefined ? portfolio.cashBalance : 10000.00;
+
+
+            res.json({
+                cashBalance: parseFloat(currentCashBalance.toFixed(2)),
+                totalValue: parseFloat((totalHoldingsValue + currentCashBalance).toFixed(2)),
+                totalChange: parseFloat(totalChange.toFixed(2)),
+                totalChangePercent: parseFloat(totalChangePercent.toFixed(2)),
+                holdings: holdingsWithPrices,
+            });
 
         } catch (err) {
             console.error('Server Error in POST /api/portfolio/add:', err.message);
@@ -173,12 +243,46 @@ router.put(
             if (purchasePrice !== undefined) holdingToUpdate.purchasePrice = parseFloat(purchasePrice);
             if (purchaseDate !== undefined) holdingToUpdate.purchaseDate = purchaseDate;
 
-            // Mark holdings array as modified
-            portfolio.markModified('holdings');
+            portfolio.markModified('holdings'); // Mark holdings array as modified
             await portfolio.save();
 
-            // Respond with the full portfolio including calculations
-            res.json(portfolio); // We'll re-calculate on the client side after this for simplicity
+            // Re-fetch and recalculate the full portfolio for the response
+            // const updatedPortfolio = await Portfolio.findOne({ user: req.user.id }); // No need to re-fetch, 'portfolio' object is already updated
+            let totalHoldingsValue = 0;
+            let totalHoldingsCost = 0;
+            const holdingsWithPrices = await Promise.all(
+                portfolio.holdings.map(async (holding) => {
+                    const currentPrice = await getMarketPrice(holding.symbol);
+                    const effectivePrice = currentPrice !== null ? currentPrice : holding.purchasePrice;
+                    const currentValue = holding.quantity * effectivePrice;
+                    const costBasis = holding.quantity * holding.purchasePrice;
+                    const profitLoss = currentValue - costBasis;
+                    const profitLossPercentage = costBasis > 0 ? (profitLoss / costBasis) * 100 : 0;
+
+                    totalHoldingsValue += currentValue;
+                    totalHoldingsCost += costBasis;
+
+                    return {
+                        ...holding.toObject(),
+                        currentPrice: parseFloat(effectivePrice.toFixed(2)),
+                        currentValue: parseFloat(currentValue.toFixed(2)),
+                        profitLoss: parseFloat(profitLoss.toFixed(2)),
+                        profitLossPercentage: parseFloat(profitLossPercentage.toFixed(2))
+                    };
+                })
+            );
+
+            const totalChange = totalHoldingsValue - totalHoldingsCost;
+            const totalChangePercent = totalHoldingsCost === 0 ? 0 : (totalChange / totalHoldingsCost) * 100;
+            const currentCashBalance = portfolio.cashBalance !== undefined ? portfolio.cashBalance : 10000.00;
+
+            res.json({
+                cashBalance: parseFloat(currentCashBalance.toFixed(2)),
+                totalValue: parseFloat((totalHoldingsValue + currentCashBalance).toFixed(2)),
+                totalChange: parseFloat(totalChange.toFixed(2)),
+                totalChangePercent: parseFloat(totalChangePercent.toFixed(2)),
+                holdings: holdingsWithPrices,
+            });
 
         } catch (err) {
             console.error('Server Error in PUT /api/portfolio/update:', err.message);
@@ -199,7 +303,6 @@ router.delete('/remove/:holding_id', auth, async (req, res) => {
             return res.status(404).json({ msg: 'Portfolio not found' });
         }
 
-        // Filter out the holding to be removed
         const initialLength = portfolio.holdings.length;
         portfolio.holdings = portfolio.holdings.filter(
             (holding) => holding._id.toString() !== req.params.holding_id
@@ -212,7 +315,44 @@ router.delete('/remove/:holding_id', auth, async (req, res) => {
         portfolio.markModified('holdings'); // Mark as modified
         await portfolio.save();
 
-        res.json({ msg: 'Holding removed from portfolio', portfolio }); // Return updated portfolio
+        // Re-fetch and recalculate the full portfolio for the response
+        // const updatedPortfolio = await Portfolio.findOne({ user: req.user.id }); // No need to re-fetch, 'portfolio' object is already updated
+        let totalHoldingsValue = 0;
+        let totalHoldingsCost = 0;
+        const holdingsWithPrices = await Promise.all(
+            portfolio.holdings.map(async (holding) => {
+                const currentPrice = await getMarketPrice(holding.symbol);
+                const effectivePrice = currentPrice !== null ? currentPrice : holding.purchasePrice;
+                const currentValue = holding.quantity * effectivePrice;
+                const costBasis = holding.quantity * holding.purchasePrice;
+                const profitLoss = currentValue - costBasis;
+                const profitLossPercentage = costBasis > 0 ? (profitLoss / costBasis) * 100 : 0;
+
+                totalHoldingsValue += currentValue;
+                totalHoldingsCost += costBasis;
+
+                return {
+                    ...holding.toObject(),
+                    currentPrice: parseFloat(effectivePrice.toFixed(2)),
+                    currentValue: parseFloat(currentValue.toFixed(2)),
+                    profitLoss: parseFloat(profitLoss.toFixed(2)),
+                    profitLossPercentage: parseFloat(profitLossPercentage.toFixed(2))
+                };
+            })
+        );
+
+        const totalChange = totalHoldingsValue - totalHoldingsCost;
+        const totalChangePercent = totalHoldingsCost === 0 ? 0 : (totalChange / totalHoldingsCost) * 100;
+        const currentCashBalance = portfolio.cashBalance !== undefined ? portfolio.cashBalance : 10000.00;
+
+
+        res.json({
+            cashBalance: parseFloat(currentCashBalance.toFixed(2)),
+            totalValue: parseFloat((totalHoldingsValue + currentCashBalance).toFixed(2)),
+            totalChange: parseFloat(totalChange.toFixed(2)),
+            totalChangePercent: parseFloat(totalChangePercent.toFixed(2)),
+            holdings: holdingsWithPrices,
+        });
 
     } catch (err) {
         console.error('Server Error in DELETE /api/portfolio/remove:', err.message);

@@ -56,7 +56,7 @@ app.use(hpp());
 
 // 7. Apply Rate Limiting:
 // Applies the defined rate limiter to all incoming requests.
-app.use(limiter);
+// app.use(limiter);
 
 
 // === ROUTE IMPORTS ===
@@ -72,14 +72,23 @@ const newsRoutes = require('./routes/newsRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
+const stockRoutes = require('./routes/stockRoutes'); // <-- ADD THIS LINE for your new stock routes
 
+// NEW: Debugging middleware to see every request
+app.use((req, res, next) => {
+    console.log(`[APP.JS DEBUG] Incoming Request: ${req.method} ${req.url}`);
+    next();
+});
+
+app.use('/api/stocks', stockRoutes); // Your existing line
+// ...
 
 // === ROUTE DEFINITIONS ===
 // Define the base paths for your API routes.
 // Requests starting with these paths will be handled by the imported router.
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/market-data', marketDataRoutes);
+app.use('/api/market-data', require('./routes/marketDataRoutes'));
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 app.use('/api/portfolio', portfolioRoutes);
@@ -88,6 +97,7 @@ app.use('/api/news', newsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
 app.use('/api/predict', predictionRoutes);
+app.use('/api/stocks', stockRoutes); // <-- ADD THIS LINE to mount your new stock routes
 
 
 // === GLOBAL ERROR HANDLING MIDDLEWARE ===

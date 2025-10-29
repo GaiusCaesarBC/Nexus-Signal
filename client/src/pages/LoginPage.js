@@ -1,9 +1,9 @@
 // client/src/pages/LoginPage.js - Styled to match your desired aesthetic
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { LogIn, User, Lock, ArrowRight } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // Keyframe for fade-in animation
@@ -106,10 +106,10 @@ const FormGroup = styled.div`
     .icon {
         position: absolute;
         left: 1rem;
-        top: 50%; /* Adjusted from 3.2rem which might be too specific */
+        top: 50%;
         transform: translateY(-50%);
         color: #64748b;
-        font-size: 1.2rem; /* Adjusted for Lucide icons */
+        font-size: 1.2rem;
     }
 `;
 
@@ -126,7 +126,7 @@ const StyledButton = styled.button`
     transition: all 0.3s ease;
     margin-top: 1.5rem;
     box-shadow: 0 4px 15px rgba(0, 173, 237, 0.4);
-    animation: ${buttonGlow} 2s infinite ease-in-out; /* Continuous glow */
+    animation: ${buttonGlow} 2s infinite ease-in-out;
 
     &:hover {
         background: linear-gradient(90deg, #007bff 0%, #00adef 100%);
@@ -150,17 +150,17 @@ const StyledButton = styled.button`
 const LinksContainer = styled.div`
     margin-top: 1.5rem;
     display: flex;
-    flex-direction: column; /* Stack links vertically */
-    gap: 0.8rem; /* Space between links */
+    flex-direction: column;
+    gap: 0.8rem;
     font-size: 0.95rem;
 
     a {
-        color: #00adef; /* Primary blue for links */
+        color: #00adef;
         text-decoration: none;
         transition: color 0.3s ease;
 
         &:hover {
-            color: #f8fafc; /* Lighter on hover */
+            color: #f8fafc;
             text-decoration: underline;
         }
     }
@@ -173,36 +173,48 @@ const LoginPage = () => {
     const [localError, setLocalError] = useState('');
     const navigate = useNavigate();
 
-    const { login, loading: authLoading } = useAuth();
+    const { login, isAuthenticated, loading: authLoading } = useAuth();
 
     const isLoading = localLoading || authLoading;
+
+    useEffect(() => {
+        console.log('LoginPage useEffect: isAuthenticated =', isAuthenticated, 'authLoading =', authLoading);
+    }, [isAuthenticated, authLoading, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLocalLoading(true);
         setLocalError('');
 
-        const formData = {
-            email,
-            password,
-        };
+        console.log('LoginPage handleSubmit: Submitting login form...');
 
-        const result = await login(formData);
+        // Call the login function from AuthContext with separate email and password arguments
+        const success = await login(email, password); // Corrected this line
 
-        if (result.success) {
-            console.log('Login successful via AuthContext');
-            alert('Login successful! Welcome back.'); // Consider a more elegant notification
-            navigate('/dashboard');
+        if (success) {
+            console.log('LoginPage handleSubmit: Login successful via AuthContext. isAuthenticated (from useAuth):', isAuthenticated);
+            alert('Login successful! Welcome back.');
+
+            setTimeout(() => {
+                console.log('LoginPage handleSubmit: Navigating to /dashboard after delay.');
+                navigate('/dashboard', { replace: true });
+            }, 100);
+
         } else {
-            console.error('Login failed via AuthContext:', result.errors || 'Unknown error');
-            const errorMsg = result.errors && result.errors.length > 0
-                ? result.errors[0].msg
-                : 'Login failed. Please check your credentials.';
-            setLocalError(errorMsg);
+            // Simplified error handling, as AuthContext.js's login handles logging backend errors.
+            // If specific backend error messages are needed on the UI, modify AuthContext's login
+            // to return the error object from the backend instead of just true/false.
+            setLocalError('Login failed. Please check your credentials.');
+            console.error('LoginPage handleSubmit: Login failed via AuthContext: Check network tab for server response details.');
         }
 
         setLocalLoading(false);
     };
+
+    if (isAuthenticated && !authLoading) {
+        console.log('LoginPage (Render): User is authenticated and not loading. Redirecting to /dashboard.');
+        return <Navigate to="/dashboard" replace />;
+    }
 
     return (
         <LoginPageContainer>

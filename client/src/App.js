@@ -23,6 +23,7 @@ import TermsOfServicePage from './pages/TermsOfServicePage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import DisclaimerPage from './pages/DisclaimerPage';
 import NotFoundPage from './pages/NotFoundPage';
+import StockPage from './pages/StockPage'; // <--- ADD THIS LINE to import your new StockPage
 
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -51,7 +52,7 @@ function App() {
             <main style={{ flexGrow: 1, minHeight: 'calc(100vh - 120px)' }}>
                 <Routes>
                     {/* Public Routes */}
-                    <Route path="/" element={<LandingPage />} /> {/* <--- ADD THIS LINE */}
+                    <Route path="/" element={<LandingPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
                     <Route path="/pricing" element={<PricingPage />} />
@@ -63,8 +64,12 @@ function App() {
                     <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
                     <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
                     <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
-                    <Route path="/predict" element={<ProtectedRoute><PredictPage /></ProtectedRoute>} /> {/* Predict should likely be protected */}
-                    <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} /> {/* Settings should likely be protected */}
+                    <Route path="/predict" element={<ProtectedRoute><PredictPage /></ProtectedRoute>} />
+                    <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+
+                    {/* NEW: Stock Details Page Route */}
+                    {/* This route will capture the stock symbol from the URL (e.g., /stocks/AAPL) */}
+                    <Route path="/stocks/:symbol" element={<ProtectedRoute><StockPage /></ProtectedRoute>} /> {/* <-- ADD THIS LINE */}
 
                     {/* Catch-all for 404 Not Found pages */}
                     <Route path="*" element={<NotFoundPage />} />

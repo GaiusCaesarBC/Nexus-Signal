@@ -1,287 +1,153 @@
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+// client/src/context/AuthContext.js
+
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
-// Create a custom Axios instance
-const API_BASE_URL = process.env.NODE_ENV === 'production'
-    // This URL will be your Render backend service URL (e.g., https://your-service-name.onrender.com)
-    // MAKE SURE TO REPLACE THIS PLACEHOLDER WITH YOUR ACTUAL RENDER BACKEND URL!
-    ? 'https://nexus-signal.onrender.com' // <--- REPLACE THIS LINE WITH YOUR RENDER BACKEND URL!
-    : 'http://localhost:5000'; // Development API URL
+// Create a context for authentication
+const AuthContext = createContext(null);
 
-export const api = axios.create({
-    baseURL: API_BASE_URL,
+// Get the base API URL from environment variables
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
+// Create a pre-configured Axios instance for authenticated requests
+// This instance will automatically attach the x-auth-token header
+const authAxios = axios.create({
+    baseURL: API_URL,
     headers: {
-        'Content-Type': 'application/json'
-    }
+        'Content-Type': 'application/json',
+        // 'x-auth-token' will be added/updated by the interceptor
+    },
 });
 
-// Create Auth Context
-export const AuthContext = createContext();
-
-// Auth Provider Component
+// AuthProvider component
 export const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(localStorage.getItem('token'));
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [user, setUser] = useState(null); // To store user profile data
-    const [watchlist, setWatchlist] = useState([]); // State for user's watchlist
-    const [portfolio, setPortfolio] = useState({ // State for user's portfolio
-        holdings: [],
-        totalValue: 0,
-        totalProfitLoss: 0,
-        totalProfitLossPercentage: 0
-    });
+    const [user, setUser] = useState(null); // Stores user profile data
+    const [loading, setLoading] = useState(true); // Initial loading state for auth check
+    const [token, setToken] = useState(null); // Stores the raw JWT token
 
-    console.log('AuthContext Render: isAuthenticated=', isAuthenticated, 'loading=', loading, 'token=', token ? 'present' : 'absent');
-
-
-    // Set auth token to default headers for all 'api' requests
-    useEffect(() => {
-        console.log('AuthContext useEffect [token]: token changed to', token ? 'present' : 'absent');
-        if (token) {
-            api.defaults.headers.common['x-auth-token'] = token;
-            setIsAuthenticated(true); // <--- Make sure this is always called when token is present
-        } else {
-            delete api.defaults.headers.common['x-auth-token'];
-            setIsAuthenticated(false);
-        }
-    }, [token]);
-
-    // Function to load user, watchlist, and portfolio
-    const loadUserAndData = useCallback(async () => {
-        console.log('loadUserAndData: Initiated. Current token:', token ? 'present' : 'absent', 'Current isAuthenticated:', isAuthenticated);
-        if (!token) {
-            console.log('loadUserAndData: No token found. Setting unauthenticated state.');
-            setIsAuthenticated(false);
-            setLoading(false);
-            setUser(null);
-            setWatchlist([]);
-            setPortfolio({ holdings: [], totalValue: 0, totalProfitLoss: 0, totalProfitLossPercentage: 0 });
-            return;
-        }
-
-        try {
-            console.log('loadUserAndData: Attempting to fetch user data...');
-            const userRes = await api.get('/api/auth/me'); // Endpoint to get user data
-            setUser(userRes.data);
-            setIsAuthenticated(true); // This will re-set it, which is fine and ensures consistency
-            console.log('loadUserAndData: User data fetched successfully.');
-
-            console.log('loadUserAndData: Attempting to fetch watchlist...');
-            const watchlistRes = await api.get('/api/watchlist');
-            setWatchlist(watchlistRes.data);
-            console.log('loadUserAndData: Watchlist fetched successfully.');
-
-            console.log('loadUserAndData: Attempting to fetch portfolio...');
-            const portfolioRes = await api.get('/api/portfolio');
-            setPortfolio(portfolioRes.data);
-            console.log('loadUserAndData: Portfolio fetched successfully.');
-
-        } catch (err) {
-            console.error('loadUserAndData: Error loading user data (profile, watchlist, portfolio):', err.response?.data?.msg || err.message, err);
-            // Crucial: Clear token from localStorage and state if API calls fail
-            setToken(null);
-            localStorage.removeItem('token');
-            delete api.defaults.headers.common['x-auth-token'];
-            setIsAuthenticated(false);
-            setUser(null);
-            setWatchlist([]);
-            setPortfolio({ holdings: [], totalValue: 0, totalProfitLoss: 0, totalProfitLossPercentage: 0 }); // Clear portfolio
-        } finally {
-            setLoading(false);
-            // Log isAuthenticated from state directly after all updates
-            console.log('loadUserAndData: Finished. Final loading:', false, 'isAuthenticated (from state):', isAuthenticated);
-        }
-    }, [token]); // Removed isAuthenticated from useCallback dependencies because it causes infinite loop if used.
-                 // The 'token' change is sufficient to trigger it.
-
-    // Load user and all data on initial mount and when token changes (via loadUserAndData callback)
-    useEffect(() => {
-        console.log('AuthContext useEffect [loadUserAndData]: Triggering loadUserAndData');
-        loadUserAndData();
-    }, [loadUserAndData]); // loadUserAndData is a useCallback, so its identity changes only if its dependencies change (i.e., token)
-
-    // Register User
-    const register = async (formData) => {
-        console.log('AuthContext register function: Attempting registration...');
-        try {
-            const res = await api.post('/api/auth/register', formData);
-            console.log('AuthContext register function: Registration API successful. Token received:', res.data.token ? 'present' : 'absent');
-            setToken(res.data.token);
-            localStorage.setItem('token', res.data.token);
-            await loadUserAndData(); // Reload all data after successful registration
-            console.log('AuthContext register function: loadUserAndData completed after register. IsAuthenticated:', isAuthenticated); // Might log outdated state
-            return { success: true };
-        } catch (err) {
-            console.error('AuthContext Register error:', err.response?.data || err.message);
-            // Ensure token is cleared if registration fails
-            setToken(null);
-            localStorage.removeItem('token');
-            delete api.defaults.headers.common['x-auth-token'];
-            setIsAuthenticated(false);
-            return { success: false, errors: err.response?.data?.errors || [{ msg: 'Registration failed' }] };
-        }
-    };
-
-    // Login User
-    const login = async (formData) => {
-        console.log('AuthContext login function: Attempting login...');
-        try {
-            const res = await api.post('/api/auth/login', formData);
-            console.log('AuthContext login function: Login API successful. Token received:', res.data.token ? 'present' : 'absent');
-            setToken(res.data.token); // This will trigger the useEffect [token]
-            localStorage.setItem('token', res.data.token);
-            // Await loadUserAndData to ensure user data and auth state are fully loaded before returning
-            await loadUserAndData();
-            console.log('AuthContext login function: loadUserAndData completed after login. IsAuthenticated (at end of login func):', isAuthenticated); // This might log outdated state
-            return { success: true };
-        } catch (err) {
-            console.error('AuthContext Login error:', err.response?.data || err.message);
-            // Ensure token is cleared if login itself fails
-            setToken(null);
-            localStorage.removeItem('token');
-            delete api.defaults.headers.common['x-auth-token'];
-            setIsAuthenticated(false);
-            return { success: false, errors: err.response?.data?.errors || [{ msg: 'Login failed' }] };
-        }
-    };
-
-    // Logout User
-    const logout = () => {
-        console.log('AuthContext logout function: Initiated.');
-        setToken(null);
+    // Callback to perform logout actions
+    const logout = useCallback(() => {
+        localStorage.removeItem('token');
         setIsAuthenticated(false);
         setUser(null);
-        setWatchlist([]);
-        setPortfolio({ holdings: [], totalValue: 0, totalProfitLoss: 0, totalProfitLossPercentage: 0 }); // Clear portfolio
-        localStorage.removeItem('token');
-        delete api.defaults.headers.common['x-auth-token'];
-        console.log('AuthContext logout function: State cleared, token removed.');
-        // Optionally redirect to login page - this is usually handled by a router in the component
-    };
+        setToken(null);
+        // Remove token from the default headers of authAxios
+        delete authAxios.defaults.headers.common['x-auth-token'];
+        console.log('User logged out.');
+    }, []);
 
-    // Watchlist functions
-    const addToWatchlist = async (symbol) => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot add to watchlist.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
-        try {
-            const res = await api.post('/api/watchlist/add', { symbol });
-            setWatchlist(res.data);
-            return { success: true };
-        } catch (err) {
-            console.error('Error adding to watchlist:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to add to watchlist' };
-        }
-    };
+    // Effect to set up Axios request interceptor for attaching the token
+    // and a response interceptor for handling 401 (Unauthorized) errors globally.
+    useEffect(() => {
+        // Request Interceptor: Attach token from state or local storage
+        const requestInterceptor = authAxios.interceptors.request.use(
+            (config) => {
+                const currentToken = localStorage.getItem('token'); // Always get freshest token
+                if (currentToken) {
+                    config.headers['x-auth-token'] = currentToken;
+                }
+                return config;
+            },
+            (error) => Promise.reject(error)
+        );
 
-    const removeFromWatchlist = async (symbol) => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot remove from watchlist.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
-        try {
-            const res = await api.delete(`/api/watchlist/remove/${symbol}`);
-            setWatchlist(res.data);
-            return { success: true };
-        } catch (err) {
-            console.error('Error removing from watchlist:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to remove from watchlist' };
-        }
-    };
+        // Response Interceptor: Handle 401 Unauthorized errors
+        const responseInterceptor = authAxios.interceptors.response.use(
+            (response) => response,
+            (error) => {
+                if (error.response && error.response.status === 401 && isAuthenticated) {
+                    // Only auto-logout if we thought the user *was* authenticated.
+                    // This prevents double-logging if they're already logged out
+                    // and hit a public route that returns a 401 (less common).
+                    console.error('401 Unauthorized response received, logging out...');
+                    logout();
+                }
+                return Promise.reject(error);
+            }
+        );
 
-    // Portfolio functions
-    const fetchPortfolio = useCallback(async () => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot fetch portfolio.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
-        try {
-            const res = await api.get('/api/portfolio');
-            setPortfolio(res.data);
-            return { success: true, data: res.data };
-        } catch (err) {
-            console.error('Error fetching portfolio:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to fetch portfolio' };
-        }
-    }, [isAuthenticated]);
+        // Cleanup interceptors on component unmount
+        return () => {
+            authAxios.interceptors.request.eject(requestInterceptor);
+            authAxios.interceptors.response.eject(responseInterceptor);
+        };
+    }, [isAuthenticated, logout]); // Depend on isAuthenticated and logout callback
 
-    const addHolding = async (holdingData) => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot add holding.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
+    // Callback for user login
+    const login = useCallback(async (email, password) => {
+        setLoading(true);
         try {
-            const res = await api.post('/api/portfolio/add', holdingData);
-            await fetchPortfolio(); // Re-fetch portfolio to get updated calculations
-            return { success: true, data: res.data };
-        } catch (err) {
-            console.error('Error adding holding:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to add holding', errors: err.response?.data?.errors };
-        }
-    };
+            const res = await axios.post(`${API_URL}/api/auth/login`, { email, password });
+            const newToken = res.data.token;
+            localStorage.setItem('token', newToken);
+            setToken(newToken); // Update token state
+            setIsAuthenticated(true);
 
-    const updateHolding = async (holdingId, updatedData) => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot update holding.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
-        try {
-            const res = await api.put(`/api/portfolio/update/${holdingId}`, updatedData);
-            await fetchPortfolio(); // Re-fetch portfolio to get updated calculations
-            return { success: true, data: res.data };
+            // Fetch user profile immediately after successful login
+            // The interceptor will handle attaching the token for this call
+            const userRes = await authAxios.get(`/api/auth/me`); // Use authAxios here
+            setUser(userRes.data);
+            return true; // Indicate success
         } catch (err) {
-            console.error('Error updating holding:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to update holding', errors: err.response?.data?.errors };
+            console.error('Login failed:', err.response?.data?.msg || err.message);
+            // Ensure state is reset on login failure
+            setIsAuthenticated(false);
+            setUser(null);
+            setToken(null);
+            localStorage.removeItem('token'); // Clear any bad token
+            return false; // Indicate failure
+        } finally {
+            setLoading(false);
         }
-    };
+    }, []); // No need for API_URL dependency here because authAxios has it
 
-    const deleteHolding = async (holdingId) => {
-        if (!isAuthenticated) {
-            console.warn('User not authenticated. Cannot delete holding.');
-            return { success: false, msg: 'User not authenticated.' };
-        }
-        try {
-            const res = await api.delete(`/api/portfolio/remove/${holdingId}`);
-            await fetchPortfolio(); // Re-fetch portfolio to get updated calculations
-            return { success: true, msg: res.data.msg };
-        } catch (err) {
-            console.error('Error deleting holding:', err.response?.data?.msg || err.message);
-            return { success: false, msg: err.response?.data?.msg || 'Failed to delete holding' };
-        }
+    // Effect to check authentication status on initial app load
+    useEffect(() => {
+        const checkAuth = async () => {
+            const storedToken = localStorage.getItem('token');
+            if (storedToken) {
+                setToken(storedToken); // Set token state from local storage
+
+                try {
+                    // Use authAxios for this call as well, interceptor will attach the token
+                    const res = await authAxios.get(`/api/auth/me`);
+                    setUser(res.data);
+                    setIsAuthenticated(true);
+                } catch (err) {
+                    // Token validation failed (e.g., expired, invalid)
+                    console.error('Automatic token validation failed:', err.response?.data?.msg || err.message);
+                    logout(); // Log out the user
+                }
+            }
+            setLoading(false); // Authentication check is complete
+        };
+
+        checkAuth();
+    }, [logout]); // Depend on logout to ensure it's always the latest version
+
+    // Value provided by the context
+    const value = {
+        isAuthenticated,
+        user,
+        loading,
+        token, // Provide the raw token if needed by components for non-Axios uses
+        login,
+        logout,
+        api: authAxios, // Provide the pre-configured Axios instance
     };
 
     return (
-        <AuthContext.Provider
-            value={{
-                token,
-                isAuthenticated,
-                loading,
-                user, // Provide user profile data
-                watchlist, // Provide watchlist data
-                portfolio, // Provide portfolio data
-                api, // Provide the axios instance for other components
-                register,
-                login,
-                logout,
-                addToWatchlist,
-                removeFromWatchlist,
-                fetchPortfolio, // Provide portfolio functions
-                addHolding,
-                updateHolding,
-                deleteHolding
-            }}
-        >
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );
 };
 
-// Custom hook to use AuthContext
+// Custom hook to use the authentication context
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (context === undefined) {
+    if (!context) {
         throw new Error('useAuth must be used within an AuthProvider');
     }
     return context;
