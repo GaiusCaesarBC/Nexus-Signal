@@ -1,7 +1,7 @@
 Nexus Signal AI 📈🤖
 Nexus Signal AI is a full-stack, AI-powered market prediction platform designed to provide users with intelligent insights and a personalized dashboard. This project leverages a modern tech stack to deliver real-time data, predictive analysis, and an interactive user experience, establishing itself as the Nexus for clear trade Signals.
 
-Landing Page [https://nexus-signal.vercel.app]
+Landing Page [nexussignal.ai]
 
 ✨ Core Features
 This platform was built from the ground up and includes a comprehensive set of features for any modern financial application:
