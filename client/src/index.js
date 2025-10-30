@@ -1,4 +1,4 @@
-// client/src/index.js - CORRECTED JSX CLOSING TAG
+// client/src/index.js -
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

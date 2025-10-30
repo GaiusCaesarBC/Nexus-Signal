@@ -3,7 +3,7 @@
 // Load environment variables from .env file (for local development)
 // Render handles these as service environment variables in production.
 if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config({ path: './config/config.env' });
+require('dotenv').config();
 }
 
 // Import the Express app instance configured in app.js
