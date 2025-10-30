@@ -19,3 +19,9 @@ client/build/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+
+# server/.gitignore
+node_modules
+.env                 # This line is crucial to ignore your new .env file
+config/config.env
