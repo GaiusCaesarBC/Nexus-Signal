@@ -27,9 +27,9 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0"
   },
- "scripts": {
-  "start": "react-scripts start",
-  "build": "ls -l ./node_modules/.bin && echo $PATH && react-scripts build",
+"scripts": {
+  "start": "node ./node_modules/react-scripts/bin/react-scripts.js start",
+  "build": "node ./node_modules/react-scripts/bin/react-scripts.js build",
   "test": "react-scripts test",
   "eject": "react-scripts eject"
 },
