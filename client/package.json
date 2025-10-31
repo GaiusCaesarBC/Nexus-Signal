@@ -27,12 +27,12 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0"
   },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
+ "scripts": {
+  "start": "react-scripts start",
+  "build": "ls -l ./node_modules/.bin && echo $PATH && react-scripts build",
+  "test": "react-scripts test",
+  "eject": "react-scripts eject"
+},
   "eslintConfig": {
     "extends": [
       "react-app",
