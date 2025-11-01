@@ -7,7 +7,7 @@ import App from './App';
 import { BrowserRouter } from 'react-router-dom'; // Import BrowserRouter
 import { AuthProvider } from './context/AuthContext'; // Assuming AuthProvider is here
 import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/next';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -17,7 +17,6 @@ root.render(
         <App />
       </AuthProvider>
     </BrowserRouter> 
-     <SpeedInsights />
-    <Analytics /> {/* <--- THIS IS THE CORRECT CLOSING TAG */}
+ <Analytics speedInsights /> {/*<--- THIS IS THE CORRECT CLOSING TAG */}
   </React.StrictMode>
 );
