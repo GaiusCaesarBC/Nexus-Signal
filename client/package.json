@@ -17,7 +17,7 @@
     "react-dom": "^18.3.1",
     "react-loading-skeleton": "^3.4.0",
     "react-router-dom": "^6.24.0",
-    "react-scripts": "^0.0.0",
+    "react-scripts": "^5.0.1",
     "recharts": "^3.3.0",
     "styled-components": "^6.1.19",
     "web-vitals": "^2.1.4"
@@ -27,9 +27,9 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0"
   },
-"scripts": {
-  "start": "node ./node_modules/react-scripts/bin/react-scripts.js start",
-  "build": "node ./node_modules/react-scripts/bin/react-scripts.js build",
+ "scripts": {
+  "start": "react-scripts start",
+  "build": "ls -l ./node_modules/.bin && echo $PATH && react-scripts build",
   "test": "react-scripts test",
   "eject": "react-scripts eject"
 },

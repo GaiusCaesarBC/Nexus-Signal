@@ -21,8 +21,3 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# server/.gitignore
-node_modules
-.env                 # Exclude general .env files
-config/config.env    # Exclude the specific config.env that contains secrets
