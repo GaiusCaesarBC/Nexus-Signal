@@ -1,4 +1,4 @@
-// client/src/index.js -
+// client/src/index.js - CORRECTED
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -15,8 +15,13 @@ root.render(
     <BrowserRouter> {/* <--- THIS IS THE OPENING TAG */}
       <AuthProvider> {/* <--- WRAPPER 2: AuthProvider for authentication context */}
         <App />
+        <Analytics />       {/* <-- MOVE ANALYTICS HERE */}
+        <SpeedInsights />   {/* <-- MOVE SPEED INSIGHTS HERE */}
       </AuthProvider>
-    </BrowserRouter> 
- <Analytics speedInsights /> {/*<--- THIS IS THE CORRECT CLOSING TAG */}
+    </BrowserRouter>
   </React.StrictMode>
 );
+
+// If you have reportWebVitals(); it would go here, outside of root.render's JSX content.
+// For example:
+// reportWebVitals();
