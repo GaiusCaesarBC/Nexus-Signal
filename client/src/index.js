@@ -6,6 +6,7 @@ import './index.css'; // Your global CSS
 import App from './App';
 import { BrowserRouter } from 'react-router-dom'; // Import BrowserRouter
 import { AuthProvider } from './context/AuthContext'; // Assuming AuthProvider is here
+import { Analytics } from '@vercel/analytics/react';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
