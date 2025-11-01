@@ -1,9 +1,31 @@
 // client/src/components/Navbar.js - With integrated stock search & Hamburger Menu (FIXED ORDER)
 import React, { useState } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes, css } from 'styled-components'; // <-- IMPORT keyframes and css
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import logoImage from '../assets/nexus-signal-logo.png';
+
+// --- NEON GLOW PULSE KEYFRAMES ---
+const neonGlowPulse = keyframes`
+  0%, 100% {
+    text-shadow:
+      0 0 5px rgba(0, 255, 255, 0.7),
+      0 0 10px rgba(0, 255, 255, 0.5),
+      0 0 15px rgba(0, 255, 255, 0.3);
+    color: #00FFFF; /* Bright Cyan/Aqua */
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    text-shadow:
+      0 0 10px rgba(0, 255, 255, 1),
+      0 0 20px rgba(0, 255, 255, 0.8),
+      0 0 30px rgba(0, 255, 255, 0.6);
+    color: #00EEFF; /* Slightly brighter blue */
+    transform: scale(1.05); /* Slight pulsation effect */
+    opacity: 0.9;
+  }
+`;
 
 // --- NEW STYLED COMPONENTS FOR MOBILE MENU ---
 // Define HamburgerIcon first, it doesn't depend on other styled components
@@ -92,6 +114,7 @@ const NavLinks = styled.div`
     }
 `;
 
+// --- MODIFIED NavLink to include the pulsating pricing style ---
 const NavLink = styled(Link)`
     color: #b0c4de;
     text-decoration: none;
@@ -105,6 +128,13 @@ const NavLink = styled(Link)`
         color: #e0e0e0;
         background-color: rgba(0, 173, 237, 0.1);
     }
+
+    /* Apply the pulsating style if the 'ispulsating' prop is true */
+    ${({ ispulsating }) => ispulsating && css`
+        animation: ${neonGlowPulse} 1.5s infinite alternate;
+        color: #00FFFF; /* Ensure the base color is neon blue */
+        font-weight: bold;
+    `}
 `;
 
 const NavButton = styled.button`
@@ -280,7 +310,8 @@ const Navbar = () => {
                         <NavLink to="/portfolio">Portfolio</NavLink>
                         <NavLink to="/watchlist">Watchlist</NavLink>
                         <NavLink to="/predict">Predict</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink>
+                        {/* Pricing link for authenticated users - desktop */}
+                        <NavLink to="/pricing" ispulsating="true">Pricing</NavLink>
                         <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 )}
@@ -289,11 +320,13 @@ const Navbar = () => {
                     <>
                         <NavLink to="/login">Login</NavLink>
                         <NavLink to="/register">Register</NavLink>
-                        <NavLink to="/pricing">Pricing</NavLink>
+                        {/* Pricing link for non-authenticated users - desktop */}
+                        <NavLink to="/pricing" ispulsating="true">Pricing</NavLink>
                     </>
                 )}
                 {!isAuthenticated && shouldHideAuthLinks && (
-                    <NavLink to="/pricing">Pricing</NavLink>
+                    // Pricing link for non-authenticated users on specific pages - desktop
+                    <NavLink to="/pricing" ispulsating="true">Pricing</NavLink>
                 )}
             </NavLinks>
 
@@ -317,17 +350,20 @@ const Navbar = () => {
                         <NavLink to="/portfolio" onClick={() => setMenuOpen(false)}>Portfolio</NavLink>
                         <NavLink to="/watchlist" onClick={() => setMenuOpen(false)}>Watchlist</NavLink>
                         <NavLink to="/predict" onClick={() => setMenuOpen(false)}>Predict</NavLink>
-                        <NavLink to="/pricing" onClick={() => setMenuOpen(false)}>Pricing</NavLink>
+                        {/* Pricing link for authenticated users - mobile */}
+                        <NavLink to="/pricing" onClick={() => setMenuOpen(false)} ispulsating="true">Pricing</NavLink>
                         <NavButton onClick={handleLogout}>Logout</NavButton>
                     </>
                 ) : (
                     shouldHideAuthLinks ? (
-                        <NavLink to="/pricing" onClick={() => setMenuOpen(false)}>Pricing</NavLink>
+                        // Pricing link for non-authenticated users on specific pages - mobile
+                        <NavLink to="/pricing" onClick={() => setMenuOpen(false)} ispulsating="true">Pricing</NavLink>
                     ) : (
                         <>
                             <NavLink to="/login" onClick={() => setMenuOpen(false)}>Login</NavLink>
                             <NavLink to="/register" onClick={() => setMenuOpen(false)}>Register</NavLink>
-                            <NavLink to="/pricing" onClick={() => setMenuOpen(false)}>Pricing</NavLink>
+                            {/* Pricing link for non-authenticated users - mobile */}
+                            <NavLink to="/pricing" onClick={() => setMenuOpen(false)} ispulsating="true">Pricing</NavLink>
                         </>
                     )
                 )}

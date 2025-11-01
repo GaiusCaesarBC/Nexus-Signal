@@ -41,3 +41,40 @@ code {
 * {
     box-sizing: border-box;
 }
+
+/* client/src/index.css or Navbar.css */
+
+/* Define the glow animation */
+@keyframes neon-glow-pulse {
+  0%, 100% {
+    text-shadow:
+      0 0 5px rgba(0, 255, 255, 0.7),   /* Inner glow */
+      0 0 10px rgba(0, 255, 255, 0.5),  /* Medium glow */
+      0 0 15px rgba(0, 255, 255, 0.3);  /* Outer glow */
+    color: #00FFFF; /* Bright Cyan/Aqua */
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    text-shadow:
+      0 0 10px rgba(0, 255, 255, 1),   /* Stronger inner glow */
+      0 0 20px rgba(0, 255, 255, 0.8),  /* Stronger medium glow */
+      0 0 30px rgba(0, 255, 255, 0.6);  /* Stronger outer glow */
+    color: #00EEFF; /* Slightly brighter blue */
+    transform: scale(1.05); /* Slight pulsation effect */
+    opacity: 0.9;
+  }
+}
+
+/* Apply the animation to the Pricing link */
+.pulsating-pricing-link {
+  animation: neon-glow-pulse 1.5s infinite alternate; /* 1.5s duration, infinite, alternates direction */
+  /* Ensure the text itself is initially blue for consistency */
+  color: #00FFFF; /* Starting color, adjust if your nav has a different base text color */
+  font-weight: bold; /* Make it stand out more */
+  /* You might need to adjust z-index if it's getting covered by other elements */
+  /* z-index: 10; */
+}
+
+/* If your navbar links have a default color, you might need to make this class more specific */
+/* e.g., .navbar-link.pulsating-pricing-link { ... } */
