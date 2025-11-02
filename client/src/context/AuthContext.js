@@ -1,5 +1,3 @@
-// client/src/context/AuthContext.js
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
@@ -7,12 +5,14 @@ import axios from 'axios';
 const AuthContext = createContext(null);
 
 // Get the base API URL from environment variables
+// This should resolve to 'https://nexus-signal.onrender.com/api' on Vercel
+// and 'http://localhost:5000' during local development.
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Create a pre-configured Axios instance for authenticated requests
 // This instance will automatically attach the x-auth-token header
 const authAxios = axios.create({
-    baseURL: API_URL,
+    baseURL: API_URL, // Base URL for all authAxios requests
     headers: {
         'Content-Type': 'application/json',
         // 'x-auth-token' will be added/updated by the interceptor
@@ -78,7 +78,9 @@ export const AuthProvider = ({ children }) => {
     const login = useCallback(async (email, password) => {
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/auth/login`, { email, password });
+            // FIX HERE: Changed from `${API_URL}/api/auth/login` to `${API_URL}/auth/login`
+            // API_URL already includes '/api', so we don't add it again.
+            const res = await axios.post(`${API_URL}/auth/login`, { email, password }); 
             const newToken = res.data.token;
             localStorage.setItem('token', newToken);
             setToken(newToken); // Update token state
