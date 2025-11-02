@@ -78,17 +78,17 @@ export const AuthProvider = ({ children }) => {
     const login = useCallback(async (email, password) => {
         setLoading(true);
         try {
-            // FIX HERE: Changed from `${API_URL}/api/auth/login` to `${API_URL}/auth/login`
-            // API_URL already includes '/api', so we don't add it again.
+            // FIX HERE (1 of 2): Removed the extra '/api' from login endpoint
             const res = await axios.post(`${API_URL}/auth/login`, { email, password }); 
             const newToken = res.data.token;
             localStorage.setItem('token', newToken);
             setToken(newToken); // Update token state
             setIsAuthenticated(true);
 
-            // Fetch user profile immediately after successful login
-            // The interceptor will handle attaching the token for this call
-            const userRes = await authAxios.get(`/api/auth/me`); // Use authAxios here
+            // FIX HERE (2 of 2): Removed the extra '/api' from /auth/me endpoint
+            // Since authAxios has baseURL set to API_URL (which includes /api),
+            // we just need to provide the path *relative* to that base.
+            const userRes = await authAxios.get(`/auth/me`); 
             setUser(userRes.data);
             return true; // Indicate success
         } catch (err) {
@@ -112,8 +112,9 @@ export const AuthProvider = ({ children }) => {
                 setToken(storedToken); // Set token state from local storage
 
                 try {
-                    // Use authAxios for this call as well, interceptor will attach the token
-                    const res = await authAxios.get(`/api/auth/me`);
+                    // FIX HERE (3 of 3): Removed the extra '/api' from /auth/me endpoint
+                    // Again, authAxios has baseURL set to API_URL (which includes /api).
+                    const res = await authAxios.get(`/auth/me`); 
                     setUser(res.data);
                     setIsAuthenticated(true);
                 } catch (err) {
