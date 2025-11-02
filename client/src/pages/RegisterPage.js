@@ -242,8 +242,8 @@ const RegisterPage = () => {
 
         try {
             // UPDATED: Using your Codespace-forwarded URL for the backend
-            const backendBaseUrl = 'https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev';
-            const res = await fetch(`${backendBaseUrl}/api/auth/register`, {
+            const backendBaseUrl = process.env.REACT_APP_API_URL; 
+            const res = await fetch(`${backendBaseUrl}/auth/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
