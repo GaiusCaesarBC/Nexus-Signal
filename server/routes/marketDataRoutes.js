@@ -1,12 +1,12 @@
-// server/routes/marketDataRoutes.js
+// server/routes/marketDataRoutes.js - DEBUGGING REQUIRE ERROR
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware'); // Assuming this
+const auth = require('../middleware/authMiddleware'); // Assuming this path is correct
 
-const path = require('path'); // <--- Make sure this is at the top
-const fs = require('fs');   // <--- And this is at the top
+const path = require('path');
+const fs = require('fs');
 
-// --- Debugging lines start ---
+// --- Debugging lines (Keep for now) ---
 const currentDir = __dirname;
 const controllerFileName = 'marketDataController.js';
 const pathToControllerDir = path.join(currentDir, '../controllers');
@@ -37,18 +37,29 @@ if (!fs.existsSync(pathToControllerDir)) {
     }
 }
 console.log('-------------------------------------------');
-// --- Debugging lines end ---
+// --- End Debugging lines ---
 
 
-// THIS IS THE LINE THAT FAILS (now, hopefully with more info)
-const {
-    getSingleQuote,
-    getMultipleQuotes
-} = require('../controllers/marketDataController');
+// THIS IS THE CRITICAL BLOCK - ADDING TRY/CATCH AROUND REQUIRE
+let getSingleQuote, getMultipleQuotes;
+try {
+    const marketDataController = require(fullPathToController); // Use fullPathToController here for require
+    getSingleQuote = marketDataController.getSingleQuote;
+    getMultipleQuotes = marketDataController.getMultipleQuotes;
+    console.log('SUCCESS: marketDataController.js loaded successfully!');
+    console.log('getSingleQuote is:', typeof getSingleQuote);
+    console.log('getMultipleQuotes is:', typeof getMultipleQuotes);
+} catch (requireError) {
+    console.error('FATAL ERROR: Failed to load marketDataController.js!');
+    console.error('Details:', requireError);
+    // You might want to crash the server or define dummy functions here
+    getSingleQuote = (req, res) => res.status(500).json({ msg: 'Market data controller not loaded' });
+    getMultipleQuotes = (req, res) => res.status(500).json({ msg: 'Market data controller not loaded' });
+}
 
-// ... rest of your route definitions ...
 
-// Example routes (replace with your actual routes)
+// Define your API routes (unchanged from last correct version)
+router.get('/quote/:symbol', auth, getSingleQuote);
 router.get('/single/:symbol', auth, getSingleQuote);
 router.get('/quotes', auth, getMultipleQuotes);
 

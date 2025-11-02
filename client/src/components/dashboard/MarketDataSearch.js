@@ -1,17 +1,16 @@
-// client/src/components/dashboard/MarketDataSearch.js
+// client/src/components/dashboard/MarketDataSearch.js - REFINED
 import React, { useState } from 'react';
-import styled, { keyframes } from 'styled-components'; // Added keyframes import
+import styled, { keyframes } from 'styled-components';
 import Loader from '../Loader';
-import { DollarSign, Bitcoin, Search } from 'lucide-react'; // Added Search icon
+import { Search } from 'lucide-react'; // Only Search icon is directly used in JSX or logic here
 
-// Ensure keyframes are defined if used here, or imported from a global style file
 const pulseGlow = keyframes`
     0% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
     50% { box-shadow: 0 0 20px rgba(0, 173, 237, 0.8); }
     100% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
 `;
 
-const SearchCard = styled.div` // Changed from Card to SearchCard to be specific
+const SearchCard = styled.div`
     background: linear-gradient(135deg, #1e293b 0%, #2c3e50 100%);
     border-radius: 12px;
     padding: 2rem;
@@ -34,7 +33,7 @@ const SearchCard = styled.div` // Changed from Card to SearchCard to be specific
 const SearchForm = styled.form`
     display: flex;
     gap: 1rem;
-    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    flex-wrap: wrap;
 `;
 
 const SearchInput = styled.input`
@@ -45,7 +44,7 @@ const SearchInput = styled.input`
     background-color: #0d1a2f;
     color: #e0e0e0;
     font-size: 1rem;
-    min-width: 150px; /* ensure input doesn't get too small */
+    min-width: 150px;
 
     &:focus {
         outline: none;
@@ -85,10 +84,9 @@ const ToggleButtonGroup = styled.div`
     border-radius: 8px;
     overflow: hidden;
     border: 1px solid #00adef;
-    margin-bottom: 1rem; /* Space below the toggle buttons */
+    margin-bottom: 1rem;
 `;
 
-// Changed to use $active as a transient prop
 const ToggleButton = styled.button`
     padding: 0.8rem 1.5rem;
     background-color: ${props => (props.$active ? '#00adef' : '#1e293b')};
@@ -171,15 +169,26 @@ const MarketDataSearch = ({ api }) => {
 
         setSearchLoading(true);
         try {
-            const res = await api.get(`/api/market-data/quote/${searchSymbol}?type=${searchType}`);
+            // CORRECTED: Removed the leading /api as AuthContext's api instance already includes it in baseURL
+            const res = await api.get(`/market-data/quote/${searchSymbol}?type=${searchType}`);
             if (res.data) {
-                setQuoteData(res.data);
+                // Ensure number formatting is applied to relevant fields
+                const formattedData = {
+                    ...res.data,
+                    price: parseFloat(res.data.price).toFixed(2),
+                    change: parseFloat(res.data.change).toFixed(2),
+                    changePercent: parseFloat(res.data.changePercent).toFixed(2),
+                    high: parseFloat(res.data.high).toFixed(2),
+                    low: parseFloat(res.data.low).toFixed(2),
+                    volume: parseInt(res.data.volume).toLocaleString(), // Format volume for readability
+                };
+                setQuoteData(formattedData);
             } else {
-                setSearchError(`No quote found for ${searchType} symbol: ${searchSymbol}. Please try another symbol.`);
+                setSearchError(`No quote found for ${searchType} symbol: ${searchSymbol.toUpperCase()}. Please try another symbol.`);
             }
         } catch (err) {
             console.error(`Error fetching ${searchType} quote:`, err.response?.data?.msg || err.message);
-            setSearchError(err.response?.data?.msg || `Failed to fetch ${searchType} quote for ${searchSymbol}. Please ensure the symbol is correct and try again.`);
+            setSearchError(err.response?.data?.msg || `Failed to fetch ${searchType} quote for ${searchSymbol.toUpperCase()}. Please ensure the symbol is correct and try again.`);
         } finally {
             setSearchLoading(false);
         }
@@ -190,14 +199,22 @@ const MarketDataSearch = ({ api }) => {
             <h3><Search size={24} color="#f8fafc" /> Market Data Search</h3>
             <ToggleButtonGroup>
                 <ToggleButton
-                    $active={searchType === 'stock'} // <--- USE $active HERE
-                    onClick={() => setSearchType('stock')}
+                    $active={searchType === 'stock'}
+                    onClick={() => {
+                        setSearchType('stock');
+                        setSearchError(null); // Clear error on type change
+                        setQuoteData(null); // Clear previous data
+                    }}
                 >
                     Stock
                 </ToggleButton>
                 <ToggleButton
-                    $active={searchType === 'crypto'} // <--- USE $active HERE
-                    onClick={() => setSearchType('crypto')}
+                    $active={searchType === 'crypto'}
+                    onClick={() => {
+                        setSearchType('crypto');
+                        setSearchError(null); // Clear error on type change
+                        setQuoteData(null); // Clear previous data
+                    }}
                 >
                     Crypto
                 </ToggleButton>
@@ -218,9 +235,11 @@ const MarketDataSearch = ({ api }) => {
 
             {searchError && <ErrorMessage>{searchError}</ErrorMessage>}
 
+            {/* Conditional rendering for Loader and QuoteDisplay to ensure only one shows at a time */}
             {searchLoading && <Loader />}
 
-            {quoteData && !searchLoading && (
+            {/* Only show quoteData if not loading and no error */}
+            {quoteData && !searchLoading && !searchError && (
                 <QuoteDisplay>
                     <QuoteItem>
                         <h4>Symbol</h4>
@@ -232,27 +251,27 @@ const MarketDataSearch = ({ api }) => {
                     </QuoteItem>
                     <QuoteItem>
                         <h4>Price</h4>
-                        <p>${parseFloat(quoteData.price).toFixed(2)}</p>
+                        <p>${quoteData.price}</p> {/* Already formatted in state */}
                     </QuoteItem>
                     <QuoteItem>
                         <h4>Change</h4>
-                        <p><ChangeText>{parseFloat(quoteData.change).toFixed(2)}</ChangeText></p>
+                        <p><ChangeText>{quoteData.change}</ChangeText></p> {/* Already formatted in state */}
                     </QuoteItem>
                     <QuoteItem>
                         <h4>Change %</h4>
-                        <p><ChangeText>{parseFloat(quoteData.changePercent).toFixed(2)}%</ChangeText></p>
+                        <p><ChangeText>{quoteData.changePercent}%</ChangeText></p> {/* Already formatted in state */}
                     </QuoteItem>
                     <QuoteItem>
                         <h4>High</h4>
-                        <p>${parseFloat(quoteData.high).toFixed(2)}</p>
+                        <p>${quoteData.high}</p> {/* Already formatted in state */}
                     </QuoteItem>
                     <QuoteItem>
                         <h4>Low</h4>
-                        <p>${parseFloat(quoteData.low).toFixed(2)}</p>
+                        <p>${quoteData.low}</p> {/* Already formatted in state */}
                     </QuoteItem>
                     <QuoteItem>
                         <h4>Volume</h4>
-                        <p>{quoteData.volume.toLocaleString()}</p>
+                        <p>{quoteData.volume}</p> {/* Already formatted in state */}
                     </QuoteItem>
                 </QuoteDisplay>
             )}

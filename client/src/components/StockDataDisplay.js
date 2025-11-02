@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import RealTimeChart from './RealTimeChart';
-import axios from 'axios';
-import { useAuth } from '../context/AuthContext'; // Make sure this path is correct
+import axios from 'axios'; // Keep axios import for isCancel check, but use 'api' from context for requests
+import { useAuth } from '../context/AuthContext';
 
 const StockDataContainer = styled.div`
     background-color: #1a273b;
@@ -49,7 +49,6 @@ const RangeButton = styled.button`
     }
 `;
 
-// --- NEW STYLED COMPONENTS for Loading/Error ---
 const LoadingContainer = styled.div`
     display: flex;
     justify-content: center;
@@ -71,79 +70,85 @@ const ErrorContainer = styled.div`
 `;
 
 const StockDataDisplay = ({ symbol }) => {
-    // FIX HERE: Destructure `token` and `user` (for profile info if needed elsewhere)
-    // You have `isAuthenticated` also available, which might be more robust for the check.
-    const { token, isAuthenticated, user } = useAuth(); // <--- MODIFIED LINE
+    // FIX HERE: Destructure `api` (the configured axios instance)
+    const { token, isAuthenticated, api } = useAuth(); // <--- MODIFIED LINE: Added `api`
 
     const [chartData, setChartData] = useState([]);
     const [selectedRange, setSelectedRange] = useState('1M'); // Default range
-    const [loading, setLoading] = useState(false); // <--- NEW: Loading state
-    const [error, setError] = useState(null);       // <--- NEW: Error state
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
 
-    // Ref to prevent multiple fetches on quick range changes
     const fetchController = useRef(null);
 
-    // This is the ONE and ONLY useEffect for fetching data and logging
     useEffect(() => {
         console.log("StockDataDisplay - Received Symbol prop:", symbol);
-        console.log("StockDataDisplay - IsAuthenticated from useAuth:", isAuthenticated); // <--- Added log
-        console.log("StockDataDisplay - Raw token from useAuth:", token ? 'present' : 'absent'); // <--- Added log for raw token
-        console.log("StockDataDisplay - User object (profile data) from useAuth:", user); // <--- Log for profile user object
+        console.log("StockDataDisplay - IsAuthenticated from useAuth:", isAuthenticated);
+        console.log("StockDataDisplay - Raw token from useAuth:", token ? 'present' : 'absent');
+        console.log("StockDataDisplay - API client from useAuth:", api ? 'present' : 'absent'); // <--- Added log for api
 
-        // FIX HERE: Use `isAuthenticated` and `token` directly, not `user.token`
-        if (!isAuthenticated || !token || !symbol) { // <--- MODIFIED CONDITION
-            setError('Authentication required or no symbol provided.');
+        if (!isAuthenticated || !token || !symbol || !api) { // <--- MODIFIED CONDITION: Check for `api`
+            setError('Authentication required, API client not initialized, or no symbol provided.');
             setChartData([]);
-            setLoading(false); // Ensure loading is false if there's an immediate error
+            setLoading(false);
             return;
         }
 
         const fetchStockData = async () => {
-            // Cancel previous request if still pending
             if (fetchController.current) {
                 fetchController.current.abort();
             }
             fetchController.current = new AbortController();
             const { signal } = fetchController.current;
 
-            setLoading(true); // <--- Set loading true
-            setError(null);   // <--- Clear any previous error
-            setChartData([]); // <--- Clear previous data while loading
+            setLoading(true);
+            setError(null);
+            setChartData([]);
 
             try {
-                // Determine interval based on range (you might refine this more)
                 let intervalParam = '';
                 if (selectedRange === '1D') {
                     intervalParam = '5min';
                 } else if (selectedRange === '5D') {
-                    intervalParam = '60min'; // Use 60 min interval for 5 days
+                    intervalParam = '60min';
                 }
-                // For other ranges (1M, 6M, 1Y, YTD, MAX), no interval param is needed for daily data
 
-                const response = await axios.get(
-                    `${process.env.REACT_APP_API_URL}/api/stocks/historical/${symbol}`,
+                // Construct params object, only include interval if it has a value
+                const requestParams = {
+                    range: selectedRange,
+                };
+                if (intervalParam) {
+                    requestParams.interval = intervalParam;
+                }
+
+                // FIX HERE: Use the `api` instance from context and adjust URL path
+                const response = await api.get( // <--- MODIFIED LINE: Used `api.get`
+                    `/stocks/historical/${symbol}`, // <--- MODIFIED LINE: Removed leading `/api/` and `process.env.REACT_APP_API_URL`
                     {
-                        params: {
-                            range: selectedRange,
-                            interval: intervalParam, // Only send if relevant
-                        },
+                        params: requestParams, // <--- MODIFIED LINE: Use the constructed params object
+                        // Headers are already set by the `api` instance from AuthContext if configured to include x-auth-token
+                        // However, explicitly setting it here doesn't hurt and ensures it's always there.
                         headers: {
-                           'x-auth-token': token, // <--- MODIFIED LINE: Use the raw `token`
+                            'x-auth-token': token,
                         },
-                        signal: signal, // Attach abort signal
+                        signal: signal,
                     }
                 );
-                setChartData(response.data);
-                if (response.data.length === 0) {
-                      setError(`No historical data found for ${symbol} for the ${selectedRange} range.`);
+
+                // Assuming your backend response for /api/stocks/historical/:symbol
+                // returns data directly, or within a 'historicalData' key.
+                // The PredictPage.js expects it in 'historicalData'. Let's make this consistent.
+                const fetchedData = response.data.historicalData || response.data; // <--- Handle both direct array or nested historicalData
+
+                setChartData(fetchedData);
+                if (fetchedData.length === 0) {
+                    setError(`No historical data found for ${symbol} for the ${selectedRange} range.`);
                 }
             } catch (err) {
                 if (axios.isCancel(err)) {
                     console.log('Fetch aborted:', err.message);
-                    return; // Don't set error if request was cancelled
+                    return;
                 }
                 console.error('Error fetching stock data:', err);
-                // More specific error messages based on backend response
                 if (err.response && err.response.data && err.response.data.msg) {
                     setError(`Error: ${err.response.data.msg}`);
                 } else if (err.message) {
@@ -152,62 +157,58 @@ const StockDataDisplay = ({ symbol }) => {
                     setError('An unknown error occurred while fetching stock data.');
                 }
             } finally {
-                setLoading(false); // <--- Set loading false
-                fetchController.current = null; // Clear the controller
+                setLoading(false);
+                fetchController.current = null;
             }
         };
 
         fetchStockData();
 
-        // Cleanup function for unmounting
         return () => {
             if (fetchController.current) {
                 fetchController.current.abort();
             }
         };
-    }, [symbol, selectedRange, isAuthenticated, token, user]); // <--- MODIFIED DEPENDENCIES: Added isAuthenticated, token, user
+    }, [symbol, selectedRange, isAuthenticated, token, api]); // <--- MODIFIED DEPENDENCIES: Added `api`
 
     return (
         <StockDataContainer>
             <Header>{symbol.toUpperCase()} Stock Chart</Header>
             <RangeButtonContainer>
-                {['1D', '5D', '1M', '6M', '1Y', 'YTD', 'MAX'].map((range) => (
+                {['1D', '5D', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map((range) => ( // Added 3M and 5Y
                     <RangeButton
                         key={range}
                         active={selectedRange === range}
                         onClick={() => setSelectedRange(range)}
-                        disabled={loading} // <--- Disable buttons while loading
+                        disabled={loading}
                     >
                         {range}
                     </RangeButton>
                 ))}
             </RangeButtonContainer>
 
-            {/* --- NEW: Conditional Rendering for Loading/Error/Chart --- */}
             {loading && (
                 <LoadingContainer>
                     Loading {symbol.toUpperCase()} data for {selectedRange} range...
                 </LoadingContainer>
             )}
 
-            {error && !loading && ( // Show error if present and not currently loading
+            {error && !loading && (
                 <ErrorContainer>
                     {error}
                 </ErrorContainer>
             )}
 
-            {!loading && !error && chartData.length > 0 && ( // Only show chart if not loading, no error, and data exists
+            {!loading && !error && chartData.length > 0 && (
                 <RealTimeChart data={chartData} />
             )}
 
-            {!loading && !error && chartData.length === 0 && ( // Case for no data found, no error, not loading
-                   <LoadingContainer>
-                       No chart data available for {symbol.toUpperCase()} for the {selectedRange} range.
-                       This might happen for very new symbols or specific ranges.
-                   </LoadingContainer>
+            {!loading && !error && chartData.length === 0 && (
+                <LoadingContainer>
+                    No chart data available for {symbol.toUpperCase()} for the {selectedRange} range.
+                    This might happen for very new symbols or specific ranges.
+                </LoadingContainer>
             )}
-            {/* --- END NEW CONDITIONAL RENDERING --- */}
-
         </StockDataContainer>
     );
 };

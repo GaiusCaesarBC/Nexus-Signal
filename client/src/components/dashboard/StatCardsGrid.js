@@ -1,22 +1,19 @@
-// client/src/components/dashboard/StatCardsGrid.js
+// client/src/components/dashboard/StatCardsGrid.js - REFINED
 import React from 'react';
-import styled, { keyframes } from 'styled-components'; // Ensure keyframes is imported here
+import styled from 'styled-components'; // Removed keyframes as fadeIn is not used here
 
 // COMBINED ALL LUCIDE REACT ICONS INTO ONE IMPORT STATEMENT
 import {
-    DollarSign,
-    TrendingUp,
-    BarChart2, // Default icon for unknown
-    BriefcaseBusiness, // For 'assets'
     Activity, // For 'active_signals'
     Zap, // For 'market_volatility'
     Clock, // For 'last_update'
     Wallet, // For 'portfolio_value'
     Signal, // For 'active_signals'
     Smile, // For 'AI_sentiment' or similar
-    Landmark,
-    LineChart,
-    Gauge // Another option for volatility
+    Gauge, // Another option for volatility
+    BriefcaseBusiness, // For 'total_assets'
+    TrendingUp, // For 'portfolio_growth'
+    BarChart2 // Default icon for unknown, MUST BE KEPT
 } from 'lucide-react';
 
 // A mapping object to get the right icon component based on a string name
@@ -28,19 +25,16 @@ const iconMap = {
     'last_update': Clock,
     'total_assets': BriefcaseBusiness,
     'portfolio_growth': TrendingUp,
-    'dollar': DollarSign,
-    'trending-up': TrendingUp, // Alias for portfolio_growth
-    'activity': Activity,
-    'zap': Zap,
-    'clock': Clock,
-    'line-chart': LineChart
-    // Add more mappings as needed, matching the 'icon' string from your backend data
+    // No need for 'dollar', 'trending-up', 'activity', 'zap', 'clock', 'line-chart' if they are aliases
+    // or not directly used in the backend data's 'icon' field for these cards.
+    // If your backend sends 'dollar', use DollarSign here. For now, matching explicit uses.
+    'activity': Activity, // Keeping if backend explicitly sends 'activity'
+    'zap': Zap, // Keeping if backend explicitly sends 'zap'
+    'clock': Clock, // Keeping if backend explicitly sends 'clock' (redundant with last_update)
 };
 
-const fadeIn = keyframes`
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-`;
+// Removed fadeIn keyframe as it's not applied in this component's JSX
+// const fadeIn = keyframes`...`;
 
 const StatGrid = styled.div`
     display: grid;
@@ -97,8 +91,10 @@ const StatCardsGrid = ({ summary, error }) => {
             {error && <p style={{ color: '#ff6b6b', textAlign: 'center' }}>{error}</p>}
             <StatGrid>
                 {metricsToDisplay.map(metric => {
-                    const IconComponent = iconMap[metric.icon] || BarChart2; // Default to BarChart2 if icon not found
-                    const changeColor = metric.changeType === 'increase' ? '#4CAF50' : metric.changeType === 'decrease' ? '#ff6b6b' : '#94a3b8';
+                    // Default to BarChart2 if icon not found or provided from backend
+                    const IconComponent = iconMap[metric.icon] || BarChart2;
+                    // Determine color based on changeType (or default if no changeType)
+                    const changeColor = metric.changeType === 'increase' ? '#4CAF50' : metric.changeType === 'decrease' ? '#ff6b6b' : '#00adef'; // Default to nexus blue for no change
 
                     return (
                         <StatCard key={metric.id}>
@@ -111,6 +107,7 @@ const StatCardsGrid = ({ summary, error }) => {
                                     {metric.changeType === 'increase' ? '+' : ''}{metric.change}{metric.timeframe ? ` ${metric.timeframe}` : ''}
                                 </span>
                             )}
+                            {/* If there's no change but a timeframe, display timeframe */}
                             {!metric.change && metric.timeframe && (
                                 <span>{metric.timeframe}</span>
                             )}

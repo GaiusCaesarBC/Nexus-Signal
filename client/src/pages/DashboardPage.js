@@ -1,10 +1,10 @@
-// client/src/pages/DashboardPage.js
+// client/src/pages/DashboardPage.js - FINAL CORRECTED VERSION
 import React, { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Loader from '../components/Loader';
-import axios from 'axios'; // <--- ADDED AXIOS
+// axios import removed as it's no longer used directly, 'api' from AuthContext is used instead
 
 // Import your new dashboard sub-components
 import DashboardHeader from '../components/dashboard/DashboardHeader';
@@ -12,15 +12,13 @@ import StatCardsGrid from '../components/dashboard/StatCardsGrid';
 import MarketDataSearch from '../components/dashboard/MarketDataSearch';
 import AIDataGraph from '../components/dashboard/AIDataGraph';
 import NewsFeedCard from '../components/dashboard/NewsFeedCard';
-import DashboardCard from '../components/dashboard/DashboardCard'; // <--- ADDED DashboardCard
+import DashboardCard from '../components/dashboard/DashboardCard';
 
 // Icon Imports (using lucide-react as an example)
-import { DollarSign, TrendingUp, BarChart2, BriefcaseBusiness, Bitcoin, LineChart, Newspaper } from 'lucide-react'; // <--- ADDED LineChart, BriefcaseBusiness, Bitcoin
+// Removed unused icons, keeping only those explicitly used or planned
+import { BriefcaseBusiness, Bitcoin, LineChart } from 'lucide-react';
 
-// Define API_URL (ensure REACT_APP_API_URL is set in client/.env)
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'; // <--- ADDED API_URL
-
-// --- Keyframes and other global styles (keep these, as they define the overall page look) ---
+// --- Keyframes and other global styles ---
 const fadeIn = keyframes`
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
@@ -138,7 +136,6 @@ const ErrorMessage = styled.p`
     animation: ${pulseGlow} 1.5s infinite alternate;
 `;
 
-// NEW: Styled component for the grid of market data cards
 const MarketOverviewGrid = styled.div`
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -153,35 +150,22 @@ const DashboardPage = () => {
     const navigate = useNavigate();
 
     // State for dashboard summary data (fetched here and passed down)
- const [dashboardSummary, setDashboardSummary] = useState({
-    activeSignals: 'N/A',
-    portfolioGrowth: 'N/A',
-    marketVolatility: 'N/A',
-    lastUpdate: 'N/A'
-});
+    const [dashboardSummary, setDashboardSummary] = useState([]);
     const [dashboardLoading, setDashboardLoading] = useState(true);
     const [dashboardError, setDashboardError] = useState(null);
 
-    // NEW: State for market overview data
+    // State for market overview data
     const [marketData, setMarketData] = useState(null);
     const [loadingMarketData, setLoadingMarketData] = useState(true);
     const [errorMarketData, setErrorMarketData] = useState(null);
+
     const [aiGraphData, setAiGraphData] = useState([]);
     const [aiGraphLoading, setAiGraphLoading] = useState(true);
     const [aiGraphError, setAiGraphError] = useState(null);
+
     const [news, setNews] = useState([]);
     const [newsLoading, setNewsLoading] = useState(true);
     const [newsError, setNewsError] = useState(null);
-    // Mock data for the graph for now (will be dynamic later)
-    const mockChartData = [
-        { name: 'Mon', value: 4000 },
-        { name: 'Tue', value: 3000 },
-        { name: 'Wed', value: 2000 },
-        { name: 'Thu', value: 2780 },
-        { name: 'Fri', value: 1890 },
-        { name: 'Sat', value: 2390 },
-        { name: 'Sun', value: 3490 },
-    ];
 
     // Effect for authentication redirection
     useEffect(() => {
@@ -190,43 +174,42 @@ const DashboardPage = () => {
         }
     }, [isAuthenticated, authLoading, navigate]);
 
-// Effect for fetching dashboard summary data
-useEffect(() => {
-    const fetchDashboardSummary = async () => {
-        if (!api) {
-            setDashboardError("API client not initialized for dashboard summary.");
-            setDashboardLoading(false);
-            return;
-        }
-
-        setDashboardLoading(true);
-        setDashboardError(null);
-        try {
-            const res = await api.get('/api/dashboard/summary');
-            if (res.data && Array.isArray(res.data.mainMetrics)) {
-                setDashboardSummary(res.data.mainMetrics); // Set the array of metrics
-            } else {
-                setDashboardError('Invalid summary data format.');
-                setDashboardSummary([]); // Ensure it's an array even on malformed data
+    // Effect for fetching dashboard summary data
+    useEffect(() => {
+        const fetchDashboardSummary = async () => {
+            if (!api || !isAuthenticated) {
+                setDashboardLoading(false);
+                return;
             }
-        } catch (err) { // <<< THIS CATCH BLOCK WAS MISSING
-            console.error('Error fetching dashboard summary:', err.response?.data?.msg || err.message);
-            setDashboardError('Failed to fetch dashboard summary.');
-        } finally { // <<< THIS FINALLY BLOCK WAS ALSO MISSING
-            setDashboardLoading(false);
+
+            setDashboardLoading(true);
+            setDashboardError(null);
+            try {
+                // CORRECTED: Path is now relative to the baseURL set in AuthContext (which already includes /api)
+                const res = await api.get('/dashboard/summary');
+                if (res.data && Array.isArray(res.data.mainMetrics)) {
+                    setDashboardSummary(res.data.mainMetrics);
+                } else {
+                    setDashboardError('Invalid summary data format.');
+                    setDashboardSummary([]);
+                }
+            } catch (err) {
+                console.error('Error fetching dashboard summary:', err.response?.data?.msg || err.message);
+                setDashboardError('Failed to fetch dashboard summary.');
+            } finally {
+                setDashboardLoading(false);
+            }
+        };
+
+        if (isAuthenticated && !authLoading && api) {
+            fetchDashboardSummary();
         }
-    };
+    }, [api, isAuthenticated, authLoading]);
 
-    if (isAuthenticated && !authLoading && api) {
-        fetchDashboardSummary();
-    }
-}, [api, isAuthenticated, authLoading]);
-
-    // NEW: Effect for fetching market overview data
+    // Effect for fetching market overview data
     useEffect(() => {
         const fetchMarketOverview = async () => {
-            if (!api) { // Use the `api` instance from AuthContext
-                setErrorMarketData("API client not initialized for market data.");
+            if (!api || !isAuthenticated) {
                 setLoadingMarketData(false);
                 return;
             }
@@ -234,7 +217,8 @@ useEffect(() => {
             setLoadingMarketData(true);
             setErrorMarketData(null);
             try {
-                const res = await api.get(`${API_URL}/api/dashboard/market-overview`);
+                // CORRECTED: Path is now relative to the baseURL set in AuthContext (which already includes /api)
+                const res = await api.get('/dashboard/market-overview');
                 setMarketData(res.data);
             } catch (err) {
                 console.error("Error fetching market overview data:", err.response?.data?.msg || err.message);
@@ -247,69 +231,71 @@ useEffect(() => {
         if (isAuthenticated && !authLoading && api) {
             fetchMarketOverview();
         }
-    }, [api, isAuthenticated, authLoading]); // Dependencies: api, isAuthenticated, authLoading
-// Effect for fetching AI Graph Data
-useEffect(() => {
-    const fetchAiGraphData = async () => {
-        if (!api) {
-            setAiGraphError("API client not initialized for AI graph data.");
-            setAiGraphLoading(false);
-            return;
-        }
+    }, [api, isAuthenticated, authLoading]);
 
-        setAiGraphLoading(true);
-        setAiGraphError(null);
-        try {
-            const res = await api.get('/api/dashboard/ai-graph-data');
-            if (res.data && Array.isArray(res.data)) {
-                setAiGraphData(res.data);
-            } else {
-                setAiGraphError('Invalid AI graph data format.');
-                setAiGraphData([]);
+    // Effect for fetching AI Graph Data
+    useEffect(() => {
+        const fetchAiGraphData = async () => {
+            if (!api || !isAuthenticated) {
+                setAiGraphLoading(false);
+                return;
             }
-        } catch (err) {
-            console.error('Error fetching AI graph data:', err.response?.data?.msg || err.message);
-            setAiGraphError('Failed to fetch AI graph data.');
-        } finally {
-            setAiGraphLoading(false);
-        }
-    };
 
-    if (isAuthenticated && !authLoading && api) {
-        fetchAiGraphData();
-    }
-}, [api, isAuthenticated, authLoading]); // Dependencies
-// Effect for fetching News Data
-useEffect(() => {
-    const fetchNews = async () => {
-        if (!api) {
-            setNewsError("API client not initialized for news data.");
-            setNewsLoading(false);
-            return;
-        }
-
-        setNewsLoading(true);
-        setNewsError(null);
-        try {
-            const res = await api.get('/api/dashboard/news');
-            if (res.data && Array.isArray(res.data)) {
-                setNews(res.data);
-            } else {
-                setNewsError('Invalid news data format.');
-                setNews([]);
+            setAiGraphLoading(true);
+            setAiGraphError(null);
+            try {
+                // CORRECTED: Path is now relative to the baseURL set in AuthContext (which already includes /api)
+                const res = await api.get('/dashboard/ai-graph-data');
+                if (res.data && Array.isArray(res.data)) {
+                    setAiGraphData(res.data);
+                } else {
+                    setAiGraphError('Invalid AI graph data format.');
+                    setAiGraphData([]);
+                }
+            } catch (err) {
+                console.error('Error fetching AI graph data:', err.response?.data?.msg || err.message);
+                setAiGraphError('Failed to fetch AI graph data.');
+            } finally {
+                setAiGraphLoading(false);
             }
-        } catch (err) {
-            console.error('Error fetching news:', err.response?.data?.msg || err.message);
-            setNewsError('Failed to fetch news.');
-        } finally {
-            setNewsLoading(false);
-        }
-    };
+        };
 
-    if (isAuthenticated && !authLoading && api) {
-        fetchNews();
-    }
-}, [api, isAuthenticated, authLoading]); // Dependencies
+        if (isAuthenticated && !authLoading && api) {
+            fetchAiGraphData();
+        }
+    }, [api, isAuthenticated, authLoading]);
+
+    // Effect for fetching News Data
+    useEffect(() => {
+        const fetchNews = async () => {
+            if (!api || !isAuthenticated) {
+                setNewsLoading(false);
+                return;
+            }
+
+            setNewsLoading(true);
+            setNewsError(null);
+            try {
+                // CORRECTED: Path is now relative to the baseURL set in AuthContext (which already includes /api)
+                const res = await api.get('/dashboard/news');
+                if (res.data && Array.isArray(res.data)) {
+                    setNews(res.data);
+                } else {
+                    setNewsError('Invalid news data format.');
+                    setNews([]);
+                }
+            } catch (err) {
+                console.error('Error fetching news:', err.response?.data?.msg || err.message);
+                setNewsError('Failed to fetch news.');
+            } finally {
+                setNewsLoading(false);
+            }
+        };
+
+        if (isAuthenticated && !authLoading && api) {
+            fetchNews();
+        }
+    }, [api, isAuthenticated, authLoading]);
 
     if (authLoading || dashboardLoading) {
         return <Loader />;
@@ -337,6 +323,7 @@ useEffect(() => {
                 {dashboardError && <ErrorMessage>{dashboardError}</ErrorMessage>}
 
                 {/* 2. Stat Cards Grid */}
+                {/* Ensure your StatCardsGrid component correctly handles an array for summary */}
                 <StatCardsGrid summary={dashboardSummary} />
 
                 <SectionTitle>Real-Time Market Data & Analytics</SectionTitle>
@@ -344,17 +331,15 @@ useEffect(() => {
                 <TwoColumnLayout>
                     <MainContentArea>
                         {/* 3. AI Data Graph */}
-                        {/* We pass mockChartData for now, but this component is ready for real data */}
-                       {/* This is a placeholder, ensure your actual AIDataGraph component receives these props */}
-<AIDataGraph
-    data={aiGraphData}
-    loading={aiGraphLoading}
-    error={aiGraphError}
-/>
+                        <AIDataGraph
+                            data={aiGraphData}
+                            loading={aiGraphLoading}
+                            error={aiGraphError}
+                        />
 
                         {/* NEW: Market Overview Data Card */}
                         <Card>
-                            <SectionTitle style={{ marginBottom: '1rem', textAlign: 'left', '&::after': { left: '0', transform: 'translateX(0)', width: '60px' } }}>
+                            <SectionTitle style={{ marginBottom: '1rem', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                                 <LineChart size={24} color="#00adef" /> Global Market Snapshot
                             </SectionTitle>
                             {loadingMarketData ? (
@@ -391,7 +376,6 @@ useEffect(() => {
                         {/* END NEW MARKET OVERVIEW CARD */}
 
                         {/* 4. Market Data Search */}
-                        {/* MarketDataSearch will handle its own internal state for searchSymbol, quoteData etc. */}
                         <MarketDataSearch api={api} />
 
                     </MainContentArea>
@@ -399,18 +383,18 @@ useEffect(() => {
                     <SideContentArea>
                         {/* 5. News Feed Card */}
                         <NewsFeedCard
-    news={news}
-    loading={newsLoading}
-    error={newsError}
-/>
-                        {/* Quick Links Card (moved here from previous iteration, can be a generic Card) */}
+                            news={news}
+                            loading={newsLoading}
+                            error={newsError}
+                        />
+                        {/* Quick Links Card */}
                         <Card>
                             <h3>Quick Links</h3>
                             <p>This section can host quick links to other parts of your app or external resources.</p>
                             <ul>
-                                {/* Changed to use RouterNavLink for proper navigation, assuming it's imported or will be */}
-                                <li><a href="/predict" style={{ color: '#00adef', textDecoration: 'none', fontWeight: 'bold' }}>Go to Predictions</a></li>
-                                <li><a href="/settings" style={{ color: '#00adef', textDecoration: 'none', fontWeight: 'bold' }}>Account Settings</a></li>
+                                {/* Changed to use Link for proper navigation */}
+                                <li><Link to="/predict" style={{ color: '#00adef', textDecoration: 'none', fontWeight: 'bold' }}>Go to Predictions</Link></li>
+                                <li><Link to="/settings" style={{ color: '#00adef', textDecoration: 'none', fontWeight: 'bold' }}>Account Settings</Link></li>
                                 {/* Add more links */}
                             </ul>
                         </Card>

@@ -1,13 +1,13 @@
-// client/src/components/dashboard/NewsFeedCard.js
-import React from 'react'; // No need for useState, useEffect here anymore
+// client/src/components/dashboard/NewsFeedCard.js - REFINED
+import React from 'react';
 import styled, { keyframes } from 'styled-components';
 import { Newspaper } from 'lucide-react';
 import Loader from '../Loader'; // Assuming this Loader component exists
 
 const pulseGlow = keyframes`
-    0% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
-    50% { box-shadow: 0 0 20px rgba(0, 173, 237, 0.8); }
-    100% { box-shadow: 0 0 5px rgba(0, 173, 237, 0.4); }
+    0% { box-shadow: 0 0 5px rgba(255, 107, 107, 0.4); }
+    50% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.8); }
+    100% { box-shadow: 0 0 5px rgba(255, 107, 107, 0.4); }
 `;
 
 const Card = styled.div`
@@ -20,6 +20,7 @@ const Card = styled.div`
     flex-direction: column;
     gap: 1.5rem;
     height: 100%;
+    position: relative; /* Essential for positioning children absolutely */
 `;
 
 const NewsFeedHeader = styled.h3`
@@ -37,7 +38,7 @@ const NewsList = styled.ul`
     margin: 0;
     flex-grow: 1;
     overflow-y: auto;
-    max-height: 500px; // Ensure there's a max-height for scrolling
+    max-height: 500px; /* Ensure there's a max-height for scrolling */
     scrollbar-width: thin;
     scrollbar-color: #00adef #1e293b;
 
@@ -60,8 +61,8 @@ const NewsItem = styled.li`
     padding-bottom: 1rem;
     border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
     display: flex;
-    align-items: flex-start; // Align items to the top
-    gap: 1rem; // Space between image and text
+    align-items: flex-start;
+    gap: 1rem;
 
     &:last-child {
         border-bottom: none;
@@ -70,14 +71,14 @@ const NewsItem = styled.li`
     }
 
     img {
-        width: 80px; // Fixed width for thumbnails
-        height: 60px; // Fixed height for thumbnails
-        object-fit: cover; // Cover the area, cropping if necessary
+        width: 80px;
+        height: 60px;
+        object-fit: cover;
         border-radius: 4px;
-        flex-shrink: 0; // Prevent image from shrinking
+        flex-shrink: 0;
     }
 
-    div { // Wrapper for text content
+    div {
         flex-grow: 1;
     }
 
@@ -107,32 +108,44 @@ const NewsItem = styled.li`
     }
 `;
 
-const InfoMessage = styled.p`
-    color: #94a3b8;
-    margin-top: 1.5rem;
-    font-size: 1rem;
+const CenteredMessage = styled.div`
+    position: absolute; /* Position relative to Card */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%; /* Ensure it doesn't take up 100% width and potentially overflow */
     text-align: center;
+    font-size: 1.1rem;
+    color: #94a3b8;
 `;
 
-const ErrorMessage = styled.p`
+const StyledLoader = styled(Loader)`
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10; /* Ensure loader is on top */
+`;
+
+const ErrorMessage = styled(CenteredMessage)`
     color: #ff6b6b;
-    margin-top: 1.5rem;
-    font-size: 1rem;
     font-weight: bold;
-    text-align: center;
     animation: ${pulseGlow} 1.5s infinite alternate;
 `;
+
 
 // NewsFeedCard component now receives news, loading, and error as props
 const NewsFeedCard = ({ news, loading, error }) => {
     return (
         <Card>
             <NewsFeedHeader>
-                <Newspaper size={24} color="#f8fafc" /> Latest Market News
+                <Newspaper size={24} color="#00adef" /> {/* Changed icon color to Nexus blue */}
+                Latest Market News
             </NewsFeedHeader>
 
-            {loading && <Loader />}
+            {loading && <StyledLoader />}
             {error && <ErrorMessage>{error}</ErrorMessage>}
+
             {!loading && !error && (
                 <NewsList>
                     {news && news.length > 0 ? (
@@ -141,15 +154,15 @@ const NewsFeedCard = ({ news, loading, error }) => {
                                 {item.image && <img src={item.image} alt={item.headline} />}
                                 <div>
                                     <a href={item.url || "#"} target="_blank" rel="noopener noreferrer">
-                                        {item.headline} {/* Changed from item.title to item.headline */}
+                                        {item.headline}
                                     </a>
-                                    <p>{item.summary}</p> {/* Display summary */}
-                                    <span>{item.source} • {item.datetime}</span> {/* Display datetime */}
+                                    <p>{item.summary}</p>
+                                    <span>{item.source} • {item.datetime}</span>
                                 </div>
                             </NewsItem>
                         ))
                     ) : (
-                        <InfoMessage>No news available at the moment.</InfoMessage>
+                        <CenteredMessage>No news available at the moment.</CenteredMessage>
                     )}
                 </NewsList>
             )}

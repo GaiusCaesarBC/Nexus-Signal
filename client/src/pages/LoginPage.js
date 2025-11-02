@@ -1,10 +1,8 @@
-// client/src/pages/LoginPage.js - Styled to match your desired aesthetic
-
 import React, { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { LogIn, User, Lock, ArrowRight } from 'lucide-react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext'; // This is where the login function is called from
 
 // Keyframe for fade-in animation
 const fadeIn = keyframes`
@@ -179,7 +177,8 @@ const LoginPage = () => {
 
     useEffect(() => {
         console.log('LoginPage useEffect: isAuthenticated =', isAuthenticated, 'authLoading =', authLoading);
-    }, [isAuthenticated, authLoading, navigate]);
+        // Removed the navigate call here to prevent premature redirects
+    }, [isAuthenticated, authLoading]); // Removed navigate from dependencies for now
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -188,22 +187,19 @@ const LoginPage = () => {
 
         console.log('LoginPage handleSubmit: Submitting login form...');
 
-        // Call the login function from AuthContext with separate email and password arguments
         const success = await login(email, password); // Corrected this line
 
         if (success) {
             console.log('LoginPage handleSubmit: Login successful via AuthContext. isAuthenticated (from useAuth):', isAuthenticated);
             alert('Login successful! Welcome back.');
 
+            // Navigate after a short delay to ensure AuthContext state is fully updated
             setTimeout(() => {
                 console.log('LoginPage handleSubmit: Navigating to /dashboard after delay.');
                 navigate('/dashboard', { replace: true });
             }, 100);
 
         } else {
-            // Simplified error handling, as AuthContext.js's login handles logging backend errors.
-            // If specific backend error messages are needed on the UI, modify AuthContext's login
-            // to return the error object from the backend instead of just true/false.
             setLocalError('Login failed. Please check your credentials.');
             console.error('LoginPage handleSubmit: Login failed via AuthContext: Check network tab for server response details.');
         }
@@ -211,6 +207,7 @@ const LoginPage = () => {
         setLocalLoading(false);
     };
 
+    // This ensures an immediate redirect if isAuthenticated is true and not still loading auth state
     if (isAuthenticated && !authLoading) {
         console.log('LoginPage (Render): User is authenticated and not loading. Redirecting to /dashboard.');
         return <Navigate to="/dashboard" replace />;
