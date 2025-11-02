@@ -1,19 +1,17 @@
-// client/src/pages/RegisterPage.js - Complete and Updated File (with Codespace backend URL)
+// client/src/pages/RegisterPage.js - Complete and Updated File (with username field)
 
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { UserPlus, User, Lock, CheckCircle, ArrowRight } from 'lucide-react'; // Icons for visual emphasis
-import { Link, useNavigate } from 'react-router-dom'; // Import Link and useNavigate
+import { UserPlus, User, Lock, CheckCircle, ArrowRight } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
-// Keyframe for fade-in animation
 const fadeIn = keyframes`
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 `;
 
-// Keyframe for button glow effect
 const buttonGlow = keyframes`
-  0% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.4); } /* Green glow */
+  0% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.4); }
   50% { box-shadow: 0 0 15px rgba(34, 197, 94, 0.8); }
   100% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.4); }
 `;
@@ -36,7 +34,7 @@ const RegisterFormCard = styled.div`
     border-radius: 15px;
     padding: 3rem 4rem;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(34, 197, 94, 0.3); /* Green border for sign-up */
+    border: 1px solid rgba(34, 197, 94, 0.3);
     text-align: center;
     max-width: 450px;
     width: 100%;
@@ -49,7 +47,7 @@ const RegisterFormCard = styled.div`
 
 const Title = styled.h1`
     font-size: 2.8rem;
-    color: #22c55e; /* Green for sign-up */
+    color: #22c55e;
     margin-bottom: 2rem;
     letter-spacing: -0.5px;
     text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
@@ -82,7 +80,7 @@ const FormGroup = styled.div`
 
     input {
         width: 100%;
-        padding: 0.9rem 1.2rem 0.9rem 3.5rem; /* Left padding for icon */
+        padding: 0.9rem 1.2rem 0.9rem 3.5rem;
         background-color: #0f172a;
         border: 1px solid #334155;
         border-radius: 8px;
@@ -92,7 +90,7 @@ const FormGroup = styled.div`
         box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 
         &:focus {
-            border-color: #22c55e; /* Green focus */
+            border-color: #22c55e;
             box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3), inset 0 1px 3px rgba(0, 0, 0, 0.3);
             outline: none;
         }
@@ -108,7 +106,7 @@ const FormGroup = styled.div`
         top: 50%;
         transform: translateY(-50%);
         color: #64748b;
-        font-size: 1.2rem; /* Adjusted for Lucide icons */
+        font-size: 1.2rem;
     }
 `;
 
@@ -168,7 +166,7 @@ const CheckboxGroup = styled.div`
 const StyledButton = styled.button`
     width: 100%;
     padding: 1rem 1.5rem;
-    background: linear-gradient(90deg, #22c55e 0%, #10b981 100%); /* Green gradient */
+    background: linear-gradient(90deg, #22c55e 0%, #10b981 100%);
     border: none;
     border-radius: 8px;
     color: #f8fafc;
@@ -176,9 +174,9 @@ const StyledButton = styled.button`
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s ease;
-    margin-top: 0.5rem; /* Adjusted margin due to checkbox */
+    margin-top: 0.5rem;
     box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
-    animation: ${buttonGlow} 2s infinite ease-in-out; /* Continuous glow */
+    animation: ${buttonGlow} 2s infinite ease-in-out;
 
     &:hover {
         background: linear-gradient(90deg, #10b981 0%, #22c55e 100%);
@@ -217,17 +215,18 @@ const LinksContainer = styled.div`
 
 const RegisterPage = () => {
     const [email, setEmail] = useState('');
+    const [username, setUsername] = useState(''); // <--- ADDED: Username state
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(''); // State to hold error messages
-    const navigate = useNavigate(); // Initialize useNavigate hook
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
-        setError(''); // Clear previous errors
+        setError('');
 
         if (password !== confirmPassword) {
             setError('Passwords do not match!');
@@ -241,28 +240,24 @@ const RegisterPage = () => {
         }
 
         try {
-            // UPDATED: Using your Codespace-forwarded URL for the backend
-            const backendBaseUrl = process.env.REACT_APP_API_URL; 
-            const res = await fetch(`${backendBaseUrl}/auth/register`, {
+            const backendBaseUrl = process.env.REACT_APP_API_URL;
+            // <--- MODIFIED: Include username in the request body
+            const res = await fetch(`${backendBaseUrl}/api/auth/register`, { // Ensure this path is correct, your logs showed /api/auth/register
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ username, email, password }), // <--- MODIFIED: Sending username
             });
 
             const data = await res.json();
 
-            if (res.ok) { // If response status is 2xx (e.g., 200, 201)
+            if (res.ok) {
                 console.log('Registration successful:', data);
-                // In a real app, you might save the token to localStorage if the backend returns one directly
-                // localStorage.setItem('token', data.token); 
                 alert('Registration successful! You can now log in.');
-                navigate('/login'); // Redirect to login page
+                navigate('/login');
             } else {
-                // Handle API errors (e.g., user already exists, validation errors from express-validator)
                 console.error('Registration failed:', data);
-                // Extract error message from backend response
                 setError(data.msg || (data.errors && data.errors[0] && data.errors[0].msg) || 'Registration failed');
             }
         } catch (err) {
@@ -280,6 +275,20 @@ const RegisterPage = () => {
                     <UserPlus size={40} /> Create Your Account
                 </Title>
                 <form onSubmit={handleSubmit}>
+                    {/* ADDED: Username input field */}
+                    <FormGroup>
+                        <label htmlFor="username">Username</label>
+                        <User className="icon" size={20} />
+                        <input
+                            type="text"
+                            id="username"
+                            placeholder="Choose a username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                        />
+                    </FormGroup>
+                    {/* Existing Email input field */}
                     <FormGroup>
                         <label htmlFor="email">Email</label>
                         <User className="icon" size={20} />
@@ -292,6 +301,7 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
+                    {/* Existing Password input field */}
                     <FormGroup>
                         <label htmlFor="password">Password</label>
                         <Lock className="icon" size={20} />
@@ -304,6 +314,7 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
+                    {/* Existing Confirm Password input field */}
                     <FormGroup>
                         <label htmlFor="confirmPassword">Confirm Password</label>
                         <CheckCircle className="icon" size={20} />
@@ -316,6 +327,7 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
+                    {/* Existing Checkbox Group */}
                     <CheckboxGroup>
                         <input
                             type="checkbox"
@@ -328,7 +340,7 @@ const RegisterPage = () => {
                             I agree to the <Link to="/terms-of-service">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>
                         </label>
                     </CheckboxGroup>
-                    {error && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</p>} {/* Error message display */}
+                    {error && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</p>}
                     <StyledButton type="submit" disabled={loading || !agreeToTerms}>
                         {loading ? 'Registering...' : 'Register'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
                     </StyledButton>
