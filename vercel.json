@@ -1,30 +1,26 @@
 {
   "version": 2,
   "builds": [
-    // Build your frontend
     {
       "src": "client/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "outputDirectory": "build" // Default output of create-react-app build
+        "outputDirectory": "build"
       }
     },
-    // Build your backend as a serverless function
     {
-      "src": "server/index.js", // <-- Confirm this is your Express entry point (e.g., exports `app`)
+      "src": "server/index.js",
       "use": "@vercel/node"
     }
   ],
   "rewrites": [
-    // Rewrite API requests to your backend serverless function
     {
       "source": "/api/(.*)",
-      "destination": "/server/index.js" // <-- Must match the `src` of your backend build
+      "destination": "/server/index.js"
     },
-    // Rewrite all other requests to your frontend's built index.html
     {
       "source": "/(.*)",
-      "destination": "/client/build/index.html" // <-- Adjust path if your build output is different
+      "destination": "/client/build/index.html"
     }
   ]
 }
