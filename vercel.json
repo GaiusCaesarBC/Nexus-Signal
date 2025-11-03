@@ -9,20 +9,17 @@
       }
     },
     {
-      "src": "api/index.js",
+      "src": "server/index.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": [
-          "server/**",
-          "api/**"
-        ]
+        "includeFiles": ["server/**"]
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/index.js"
+      "dest": "/server/index.js"
     },
     {
       "src": "/(.*)",
