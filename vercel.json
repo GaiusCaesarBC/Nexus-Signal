@@ -1,17 +1,19 @@
 {
   "version": 2,
-  "projects": [
+  "builds": [
     {
-      "name": "client",
-      "root": "client",
-      "buildCommand": "npm run build",
-      "outputDirectory": "build"
+      "src": "client/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
     },
     {
-      "name": "server",
-      "root": "server",
-      "buildCommand": "npm install",
-      "outputDirectory": ""
+      "src": "server/index.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["server/**"]
+      }
     }
   ],
   "rewrites": [
