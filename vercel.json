@@ -1,9 +1,19 @@
+{
+  "version": 2,
+  "builds": [
     {
-      "rewrites": [
-        {
-          "source": "/(.*)",
-          "destination": "/index.html"
-        }
-      ]
+      "src": "server/index.js", // Or server/app.js, whatever your main backend entry file is
+      "use": "@vercel/node"
     }
-    
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)", // Matches any request starting with /api/
+      "dest": "server/index.js" // Or server/app.js, routes to your backend entry
+    },
+    {
+      "src": "/(.*)", // Matches all other requests (for your frontend)
+      "dest": "/index.html" // Or your frontend's entry point, e.g., /client/index.html
+    }
+  ]
+}
