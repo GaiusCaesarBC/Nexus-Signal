@@ -24,6 +24,13 @@ const limiter = rateLimit({
 // This will correctly handle the OPTIONS request from your frontend.
 app.use(cors());
 
+// NEW WORKAROUND: Explicitly handle OPTIONS method for preflight requests.
+// This is done to bypass proxy servers or CDN configurations that might block
+// the preflight request before it hits the cors() middleware correctly,
+// potentially leading to a 405 Method Not Allowed error.
+app.options('*', cors()); // <--- ADDED THIS LINE
+
+
 // 2. Helmet: Set security-related HTTP headers
 app.use(helmet());
 
@@ -69,7 +76,7 @@ app.use((req, res, next) => {
 // Define the base paths for your API routes.
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/market-data', marketDataRoutes); // Corrected to use imported variable
+app.use('/api/market-data', marketDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 app.use('/api/portfolio', portfolioRoutes);
@@ -77,8 +84,8 @@ app.use('/api/copilot', copilotRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
-app.use('/api/predict', predictionRoutes); // Mount for prediction specific logic
-app.use('/api/stocks', stockRoutes);     // Mount for general stock data, e.g. historical data
+app.use('/api/predict', predictionRoutes);
+app.use('/api/stocks', stockRoutes);
 
 
 // === GLOBAL ERROR HANDLING MIDDLEWARE ===
