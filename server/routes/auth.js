@@ -37,11 +37,14 @@ router.get('/me', auth, async (req, res) => {
 // @route   POST api/auth/register
 // @desc    Register user
 // @access  Public
+// server/routes/auth.js (excerpt for /register route)
+
 router.post(
     '/register',
     [ // Middleware array for input validation
         body('email', 'Please include a valid email').isEmail(),
-        body('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 })
+        body('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 }),
+        body('username', 'Username is required').notEmpty().isLength({ min: 3 }) // <-- ADD USERNAME VALIDATION
     ],
     async (req, res) => { // The actual route handler function
         const errors = validationResult(req);
@@ -50,10 +53,10 @@ router.post(
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { email, password } = req.body;
+        const { email, password, username } = req.body; // <-- EXTRACT USERNAME HERE
 
         try {
-            // See if user exists
+            // See if user exists by email
             let user = await User.findOne({ email });
 
             if (user) {
@@ -61,10 +64,19 @@ router.post(
                 return res.status(400).json({ msg: 'User already exists' });
             }
 
+            // Also check if username exists (if it's unique in your model)
+            let userByUsername = await User.findOne({ username });
+            if (userByUsername) {
+                console.log(`[Auth Route /register] Registration failed: Username ${username} already taken.`);
+                return res.status(400).json({ msg: 'Username already taken' });
+            }
+
+
             // Create new user instance
             user = new User({
                 email,
-                password // This will be hashed before saving
+                password,
+                username // <-- INCLUDE USERNAME HERE
             });
 
             // Hash password
@@ -72,7 +84,7 @@ router.post(
             user.password = await bcrypt.hash(password, salt);
 
             await user.save(); // Save user to database
-            console.log(`[Auth Route /register] New user created: ${user.email}`);
+            console.log(`[Auth Route /register] New user created: ${user.email} (Username: ${user.username})`); // Log username too
 
             // Return jsonwebtoken
             const payload = {
@@ -83,8 +95,8 @@ router.post(
 
             jwt.sign(
                 payload,
-                process.env.JWT_SECRET, // Make sure JWT_SECRET is defined in your .env file
-                { expiresIn: '1h' }, // Token expires in 1 hour
+                process.env.JWT_SECRET,
+                { expiresIn: '1h' },
                 (err, token) => {
                     if (err) {
                         console.error('[Auth Route /register] JWT signing error:', err.message);
