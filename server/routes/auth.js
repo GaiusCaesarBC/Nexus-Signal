@@ -1,4 +1,4 @@
-// server/routes/auth.js - **UPDATED with Login Debugging Logs**
+// server/routes/auth.js
 
 const express = require('express');
 const router = express.Router();
@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator'); // For input validation
 
 const User = require('../models/User'); // User model
-// IMPORTANT: Make sure the path matches your actual file structure
+// IMPORTANT: Make sure the path matches your actual file structure for authMiddleware
 const auth = require('../middleware/authMiddleware'); // <--- IMPORT YOUR EXISTING AUTH MIDDLEWARE
 
 // @route   GET api/auth/me
@@ -34,15 +34,19 @@ router.get('/me', auth, async (req, res) => {
     }
 });
 
+// @route   POST api/auth/register
+// @desc    Register user
+// @access  Public
 router.post(
     '/register',
-    [
+    [ // Middleware array for input validation
         body('email', 'Please include a valid email').isEmail(),
         body('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 })
     ],
-    async (req, res) => {
+    async (req, res) => { // The actual route handler function
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log('[Auth Route /register] Validation errors:', errors.array());
             return res.status(400).json({ errors: errors.array() });
         }
 
@@ -53,14 +57,14 @@ router.post(
             let user = await User.findOne({ email });
 
             if (user) {
-                console.log(`Registration failed: User with email ${email} already exists.`);
+                console.log(`[Auth Route /register] Registration failed: User with email ${email} already exists.`);
                 return res.status(400).json({ msg: 'User already exists' });
             }
 
             // Create new user instance
             user = new User({
                 email,
-                password
+                password // This will be hashed before saving
             });
 
             // Hash password
@@ -68,6 +72,7 @@ router.post(
             user.password = await bcrypt.hash(password, salt);
 
             await user.save(); // Save user to database
+            console.log(`[Auth Route /register] New user created: ${user.email}`);
 
             // Return jsonwebtoken
             const payload = {
@@ -78,17 +83,20 @@ router.post(
 
             jwt.sign(
                 payload,
-                process.env.JWT_SECRET,
+                process.env.JWT_SECRET, // Make sure JWT_SECRET is defined in your .env file
                 { expiresIn: '1h' }, // Token expires in 1 hour
                 (err, token) => {
-                    if (err) throw err;
+                    if (err) {
+                        console.error('[Auth Route /register] JWT signing error:', err.message);
+                        throw err;
+                    }
                     res.json({ token });
-                    console.log(`Registration successful for ${email}. Token issued.`);
+                    console.log(`[Auth Route /register] Registration successful for ${email}. Token issued.`);
                 }
             );
 
         } catch (err) {
-            console.error('Server error during registration:', err.message);
+            console.error('[Auth Route /register] Server error during registration:', err.message);
             res.status(500).send('Server error');
         }
     }
@@ -99,13 +107,14 @@ router.post(
 // @access  Public
 router.post(
     '/login',
-    [
+    [ // Middleware array for input validation
         body('email', 'Please include a valid email').isEmail(),
         body('password', 'Password is required').exists()
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log('[Auth Route /login] Validation errors:', errors.array());
             return res.status(400).json({ errors: errors.array() });
         }
 
@@ -114,29 +123,27 @@ router.post(
         // --- DEBUGGING LOGS START ---
         console.log('--- LOGIN ATTEMPT ---');
         console.log('Received Email:', email);
-        console.log('Received Password (WARNING: Do NOT log in production):', password); // Be cautious logging raw passwords in prod
+        // console.log('Received Password (WARNING: Do NOT log in production):', password); // Be cautious logging raw passwords in prod
+        // --- DEBUGGING LOGS END ---
 
         try {
             let user = await User.findOne({ email });
 
             if (!user) {
-                console.log('Login failed: User not found for email:', email);
+                console.log('[Auth Route /login] Login failed: User not found for email:', email);
                 return res.status(400).json({ msg: 'Invalid Credentials' });
             }
-            console.log('User found. Email:', user.email);
-            console.log('Stored hashed password in DB:', user.password);
-
+            console.log('[Auth Route /login] User found. Email:', user.email);
+            // console.log('Stored hashed password in DB:', user.password); // Again, avoid logging this in production
 
             // Check if password matches
             const isMatch = await bcrypt.compare(password, user.password);
 
             if (!isMatch) {
-                console.log('Login failed: Password mismatch for user:', user.email);
+                console.log('[Auth Route /login] Login failed: Password mismatch for user:', user.email);
                 return res.status(400).json({ msg: 'Invalid Credentials' });
             }
-            console.log('Password matched for user:', user.email);
-
-            // --- DEBUGGING LOGS END ---
+            console.log('[Auth Route /login] Password matched for user:', user.email);
 
 
             // Return jsonwebtoken
@@ -148,17 +155,20 @@ router.post(
 
             jwt.sign(
                 payload,
-                process.env.JWT_SECRET,
+                process.env.JWT_SECRET, // Make sure JWT_SECRET is defined in your .env file
                 { expiresIn: '1h' },
                 (err, token) => {
-                    if (err) throw err;
+                    if (err) {
+                        console.error('[Auth Route /login] JWT signing error:', err.message);
+                        throw err;
+                    }
                     res.json({ token });
-                    console.log(`Login successful for ${email}. Token issued.`);
+                    console.log(`[Auth Route /login] Login successful for ${email}. Token issued.`);
                 }
             );
 
         } catch (err) {
-            console.error('Server error during login:', err.message);
+            console.error('[Auth Route /login] Server error during login:', err.message);
             res.status(500).send('Server error');
         }
     }
@@ -183,12 +193,13 @@ router.put('/update-profile', auth, async (req, res) => {
         if (username !== undefined) user.username = username; // Assuming 'username' field in User model
         if (email !== undefined) {
             // Optional: Add email validation and uniqueness check here if allowed to change
+            // Example: if (email && email !== user.email && await User.findOne({ email })) { return res.status(400).json({ msg: 'Email already in use' }); }
             user.email = email;
         }
 
-        // Update nested settings fields
-        if (notifications !== undefined) user.notifications = notifications; // Assuming 'notifications' field in User model
-        if (appPreferences !== undefined) user.appPreferences = appPreferences; // Assuming 'appPreferences' field in User model
+        // Update nested settings fields (ensure your User model supports these fields)
+        if (notifications !== undefined) user.notifications = notifications;
+        if (appPreferences !== undefined) user.appPreferences = appPreferences;
 
 
         // Handle password change if newPassword is provided
@@ -220,4 +231,5 @@ router.put('/update-profile', auth, async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
 module.exports = router;
