@@ -5,7 +5,7 @@
       "src": "client/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "outputDirectory": "public"
+        "distDir": "build"
       }
     },
     {
@@ -25,12 +25,8 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/(.*\\.(?:js|css|map|json|png|jpg|jpeg|gif|svg|ico|txt))$",
-      "destination": "/public/$1"
-    },
-    {
       "source": "/(.*)",
-      "destination": "/public/index.html"
+      "destination": "/client/build/index.html"
     }
   ]
 }
