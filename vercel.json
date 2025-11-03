@@ -9,17 +9,20 @@
       }
     },
     {
-      "src": "server/index.js",
+      "src": "api/index.js", // <-- POINT TO YOUR NEW API ENTRY FILE
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["server/**"]
+        "includeFiles": [
+          "server/**",   // Include your entire server directory
+          "api/**"      // Include your new api directory (e.g., api/index.js)
+        ]
       }
     }
   ],
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/server/index.js"
+      "destination": "/api/index.js" // <-- REWRITE TO YOUR NEW API ENTRY FILE
     },
     {
       "source": "/(.*)",
