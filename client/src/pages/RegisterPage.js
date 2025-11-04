@@ -324,7 +324,7 @@ const RegisterPage = () => {
                             id="confirmPassword"
                             placeholder="••••••••"
                             value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)} {/* FIXED THIS LINE */}
+                            onChange={(e) => setConfirmPassword(e.target.value)} 
                             required
                         />
                     </FormGroup>
