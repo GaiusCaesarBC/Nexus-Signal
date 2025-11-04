@@ -1,4 +1,4 @@
-// client/src/pages/RegisterPage.js - Corrected File
+// client/src/pages/RegisterPage.js - Corrected File (Confirm Password Fix)
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { UserPlus, User, Lock, CheckCircle, ArrowRight } from 'lucide-react';
@@ -213,9 +213,6 @@ const LinksContainer = styled.div`
     }
 `;
 
-// Define API_URL here, using process.env.REACT_APP_API_URL
-// The value from Vercel's environment variables will be injected during the build
-// Fallback to localhost for local development
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const RegisterPage = () => {
@@ -245,37 +242,29 @@ const RegisterPage = () => {
         }
 
         try {
-            // Using axios for cleaner request handling
-            const res = await axios.post(`${API_URL}/auth/register`, { // Corrected API call
+            const res = await axios.post(`${API_URL}/auth/register`, {
                 username,
                 email,
                 password
             });
 
-            if (res.status === 201 || res.status === 200) { // Check for 200 or 201 for success
+            if (res.status === 201 || res.status === 200) {
                 console.log('Registration successful:', res.data);
                 alert('Registration successful! You can now log in.');
                 navigate('/login');
             } else {
-                // This block might be redundant with axios, as it throws errors for non-2xx statuses
-                // but good for explicit checking
                 console.error('Registration failed with unexpected status:', res.status, res.data);
                 setError(res.data.msg || 'Registration failed');
             }
         } catch (err) {
             console.error('Network or server error:', err);
-            // Axios error handling includes response data for non-2xx statuses
             if (err.response) {
-                // The request was made and the server responded with a status code
-                // that falls out of the range of 2xx
                 console.error('Server response error:', err.response.data);
                 setError(err.response.data.msg || (err.response.data.errors && err.response.data.errors[0] && err.response.data.errors[0].msg) || 'Registration failed');
             } else if (err.request) {
-                // The request was made but no response was received
                 console.error('No response received from server:', err.request);
                 setError('No response from server. Check your internet connection or backend status.');
             } else {
-                // Something else happened while setting up the request
                 console.error('Error setting up request:', err.message);
                 setError('Error sending registration request. Please try again.');
             }
@@ -335,7 +324,7 @@ const RegisterPage = () => {
                             id="confirmPassword"
                             placeholder="••••••••"
                             value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.checked)} // Corrected this line
+                            onChange={(e) => setConfirmPassword(e.target.value)} {/* FIXED THIS LINE */}
                             required
                         />
                     </FormGroup>
