@@ -10,13 +10,16 @@
     },
     {
       "src": "server/index.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["server/**"]
+      }
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server/index.js"
+    { 
+      "src": "/api/(.*)", 
+      "dest": "/server/index.js" 
     },
     {
       "src": "/static/(.*)",
@@ -41,10 +44,6 @@
     {
       "src": "/logo512.png",
       "dest": "/client/build/logo512.png"
-    },
-    {
-      "src": "/index.html",
-      "dest": "/client/build/index.html"
     },
     {
       "src": "/(.*)",
