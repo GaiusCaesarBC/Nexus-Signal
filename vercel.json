@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "client/package.json",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "build"
@@ -23,31 +23,31 @@
     },
     {
       "src": "/static/(.*)",
-      "dest": "/client/build/static/$1"
+      "dest": "/build/static/$1"
     },
     {
       "src": "/favicon.ico",
-      "dest": "/client/build/favicon.ico"
+      "dest": "/build/favicon.ico"
     },
     {
       "src": "/asset-manifest.json",
-      "dest": "/client/build/asset-manifest.json"
+      "dest": "/build/asset-manifest.json"
     },
     {
       "src": "/manifest.json",
-      "dest": "/client/build/manifest.json"
+      "dest": "/build/manifest.json"
     },
     {
       "src": "/logo192.png",
-      "dest": "/client/build/logo192.png"
+      "dest": "/build/logo192.png"
     },
     {
       "src": "/logo512.png",
-      "dest": "/client/build/logo512.png"
+      "dest": "/build/logo512.png"
     },
     {
       "src": "/(.*)",
-      "dest": "/client/build/index.html"
+      "dest": "/build/index.html"
     }
   ]
 }
