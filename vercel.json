@@ -2,13 +2,49 @@
   "version": 2,
   "builds": [
     {
-      "src": "client/package.json",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "build"
       }
+    },
+    {
+      "src": "../server/index.js",
+      "use": "@vercel/node"
     }
   ],
-  "installCommand": "npm install --prefix client && npm install",
-  "buildCommand": "npm run build --prefix client"
+  "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "/build/static/$1"
+    },
+    {
+      "src": "/favicon.ico",
+      "dest": "/build/favicon.ico"
+    },
+    {
+      "src": "/asset-manifest.json",
+      "dest": "/build/asset-manifest.json"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "/build/manifest.json"
+    },
+    {
+      "src": "/logo192.png",
+      "dest": "/build/logo192.png"
+    },
+    {
+      "src": "/logo512.png",
+      "dest": "/build/logo512.png"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "https://YOUR_RENDER_BACKEND_URL.onrender.com/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/build/index.html"
+    }
+  ]
 }
