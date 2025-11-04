@@ -1,19 +1,17 @@
-// client/src/context/AuthContext.js - CORRECTED FOR BASEURL CONSISTENCY
+// client/src/context/AuthContext.js - CORRECTED
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext(null);
 
-// Define the base API URL without the /api suffix for now
-// This should resolve to 'https://nexus-signal.onrender.com' on Vercel
-// and 'http://localhost:5000' during local development.
-const BASE_API_ROOT_URL = process.env.REACT_APP_API_URL_ROOT || 'http://localhost:5000';
+// Use a single environment variable that points directly to the API base URL
+// e.g., 'https://nexus-signal.onrender.com/api'
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
 
 // Create a pre-configured Axios instance for authenticated requests
 // It will automatically attach the x-auth-token header.
-// IMPORTANT: We add '/api' here once to the baseURL.
 const authAxios = axios.create({
-    baseURL: `${BASE_API_ROOT_URL}/api`, // This will be e.g. http://localhost:5000/api
+    baseURL: API_BASE_URL, // Use the full API base URL here
     headers: {
         'Content-Type': 'application/json',
     },
@@ -30,10 +28,14 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
         setUser(null);
         setToken(null);
-        delete authAxios.defaults.headers.common['x-auth-token'];
+        // Ensure to remove the header if it was set globally on authAxios instance
+        if (authAxios.defaults.headers.common['x-auth-token']) {
+            delete authAxios.defaults.headers.common['x-auth-token'];
+        }
         console.log('User logged out.');
     }, []);
 
+    // Effect for Axios interceptors (to attach token to requests and handle 401s)
     useEffect(() => {
         const requestInterceptor = authAxios.interceptors.request.use(
             (config) => {
@@ -49,9 +51,15 @@ export const AuthProvider = ({ children }) => {
         const responseInterceptor = authAxios.interceptors.response.use(
             (response) => response,
             (error) => {
-                if (error.response && error.response.status === 401 && isAuthenticated) {
-                    console.error('401 Unauthorized response received, logging out...');
-                    logout();
+                if (error.response && error.response.status === 401) {
+                    // Check if token was present, to avoid logging out if user was already unauthenticated
+                    const storedToken = localStorage.getItem('token');
+                    if (storedToken) {
+                        console.error('401 Unauthorized response received with a token, logging out...');
+                        logout();
+                    } else {
+                        console.warn('401 Unauthorized response received, but no token was stored. User was likely already unauthenticated.');
+                    }
                 }
                 return Promise.reject(error);
             }
@@ -61,21 +69,21 @@ export const AuthProvider = ({ children }) => {
             authAxios.interceptors.request.eject(requestInterceptor);
             authAxios.interceptors.response.eject(responseInterceptor);
         };
-    }, [isAuthenticated, logout]);
+    }, [logout]); // logout is a dependency because it's used inside the interceptor
 
+    // The login function
     const login = useCallback(async (email, password) => {
         setLoading(true);
         try {
-            // Use standard axios for login as it doesn't need the token yet
-            // Use the full URL including /api here
-            const res = await axios.post(`${BASE_API_ROOT_URL}/api/auth/login`, { email, password });
+            // Use the authAxios instance directly for login, its baseURL is already set
+            const res = await authAxios.post('/auth/login', { email, password }); // Path relative to baseURL
             const newToken = res.data.token;
             localStorage.setItem('token', newToken);
             setToken(newToken);
             setIsAuthenticated(true);
 
-            // Use authAxios for fetching user profile, it handles the token and base URL
-            const userRes = await authAxios.get('/auth/me'); // path relative to baseURL (which is /api)
+            // Fetch user profile (now authAxios will automatically include the new token)
+            const userRes = await authAxios.get('/auth/me'); // Path relative to baseURL
             setUser(userRes.data);
             return true;
         } catch (err) {
@@ -90,26 +98,34 @@ export const AuthProvider = ({ children }) => {
         }
     }, []);
 
+    // Effect to check authentication status on initial load
     useEffect(() => {
         const checkAuth = async () => {
+            setLoading(true); // Ensure loading is true while checking auth
             const storedToken = localStorage.getItem('token');
             if (storedToken) {
                 setToken(storedToken);
+                // Set token for the default authAxios instance header immediately
+                // This ensures subsequent requests within this initial render or before interceptor runs have the token
+                authAxios.defaults.headers.common['x-auth-token'] = storedToken;
 
                 try {
-                    // Use authAxios here, path relative to baseURL
-                    const res = await authAxios.get('/auth/me');
+                    const res = await authAxios.get('/auth/me'); // Path relative to baseURL
                     setUser(res.data);
                     setIsAuthenticated(true);
                 } catch (err) {
                     console.error('Automatic token validation failed:', err.response?.data?.msg || err.message);
+                    // This will also trigger the response interceptor which calls logout()
+                    // So explicit logout() here is often redundant, but good for clarity.
                     logout();
                 }
+            } else {
+                setIsAuthenticated(false);
             }
             setLoading(false);
         };
         checkAuth();
-    }, [logout]);
+    }, [logout]); // logout is a dependency
 
     const value = {
         isAuthenticated,
@@ -118,7 +134,7 @@ export const AuthProvider = ({ children }) => {
         token,
         login,
         logout,
-        api: authAxios, // Provide the pre-configured Axios instance
+        api: authAxios, // Provide the pre-configured Axios instance for other components
     };
 
     return (
