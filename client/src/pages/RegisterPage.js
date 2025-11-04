@@ -1,9 +1,9 @@
-// client/src/pages/RegisterPage.js - Complete and Updated File (with username field)
-
+// client/src/pages/RegisterPage.js - Corrected File
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { UserPlus, User, Lock, CheckCircle, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios'; // Import axios for easier HTTP requests
 
 const fadeIn = keyframes`
     from { opacity: 0; transform: translateY(20px); }
@@ -213,9 +213,14 @@ const LinksContainer = styled.div`
     }
 `;
 
+// Define API_URL here, using process.env.REACT_APP_API_URL
+// The value from Vercel's environment variables will be injected during the build
+// Fallback to localhost for local development
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
 const RegisterPage = () => {
     const [email, setEmail] = useState('');
-    const [username, setUsername] = useState(''); // <--- ADDED: Username state
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [agreeToTerms, setAgreeToTerms] = useState(false);
@@ -240,29 +245,40 @@ const RegisterPage = () => {
         }
 
         try {
-            const backendBaseUrl = process.env.REACT_APP_API_URL;
-            // <--- MODIFIED: Include username in the request body
-            const res = await fetch(`${backendBaseUrl}/api/auth/register`, { // Ensure this path is correct, your logs showed /api/auth/register
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, email, password }), // <--- MODIFIED: Sending username
+            // Using axios for cleaner request handling
+            const res = await axios.post(`${API_URL}/auth/register`, { // Corrected API call
+                username,
+                email,
+                password
             });
 
-            const data = await res.json();
-
-            if (res.ok) {
-                console.log('Registration successful:', data);
+            if (res.status === 201 || res.status === 200) { // Check for 200 or 201 for success
+                console.log('Registration successful:', res.data);
                 alert('Registration successful! You can now log in.');
                 navigate('/login');
             } else {
-                console.error('Registration failed:', data);
-                setError(data.msg || (data.errors && data.errors[0] && data.errors[0].msg) || 'Registration failed');
+                // This block might be redundant with axios, as it throws errors for non-2xx statuses
+                // but good for explicit checking
+                console.error('Registration failed with unexpected status:', res.status, res.data);
+                setError(res.data.msg || 'Registration failed');
             }
         } catch (err) {
             console.error('Network or server error:', err);
-            setError('Could not connect to the server. Please ensure the backend is running and accessible.');
+            // Axios error handling includes response data for non-2xx statuses
+            if (err.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                console.error('Server response error:', err.response.data);
+                setError(err.response.data.msg || (err.response.data.errors && err.response.data.errors[0] && err.response.data.errors[0].msg) || 'Registration failed');
+            } else if (err.request) {
+                // The request was made but no response was received
+                console.error('No response received from server:', err.request);
+                setError('No response from server. Check your internet connection or backend status.');
+            } else {
+                // Something else happened while setting up the request
+                console.error('Error setting up request:', err.message);
+                setError('Error sending registration request. Please try again.');
+            }
         } finally {
             setLoading(false);
         }
@@ -275,7 +291,6 @@ const RegisterPage = () => {
                     <UserPlus size={40} /> Create Your Account
                 </Title>
                 <form onSubmit={handleSubmit}>
-                    {/* ADDED: Username input field */}
                     <FormGroup>
                         <label htmlFor="username">Username</label>
                         <User className="icon" size={20} />
@@ -288,7 +303,6 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
-                    {/* Existing Email input field */}
                     <FormGroup>
                         <label htmlFor="email">Email</label>
                         <User className="icon" size={20} />
@@ -301,7 +315,6 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
-                    {/* Existing Password input field */}
                     <FormGroup>
                         <label htmlFor="password">Password</label>
                         <Lock className="icon" size={20} />
@@ -314,7 +327,6 @@ const RegisterPage = () => {
                             required
                         />
                     </FormGroup>
-                    {/* Existing Confirm Password input field */}
                     <FormGroup>
                         <label htmlFor="confirmPassword">Confirm Password</label>
                         <CheckCircle className="icon" size={20} />
@@ -323,11 +335,10 @@ const RegisterPage = () => {
                             id="confirmPassword"
                             placeholder="••••••••"
                             value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            onChange={(e) => setConfirmPassword(e.target.checked)} // Corrected this line
                             required
                         />
                     </FormGroup>
-                    {/* Existing Checkbox Group */}
                     <CheckboxGroup>
                         <input
                             type="checkbox"
