@@ -1,31 +1,32 @@
-// client/src/components/ProtectedRoute.js
+// client/src/components/ProtectedRoute.js - REFINED
 import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
     const { isAuthenticated, loading } = useAuth();
 
-    // STICKY NOTE: "Hey, bouncer here! Am I logged in? (`isAuthenticated`) Is the check still going on? (`loading`)"
-    console.log('ProtectedRoute Render: isAuthenticated=', isAuthenticated, 'loading=', loading);
+    console.log('ProtectedRoute: Rendered. isAuthenticated:', isAuthenticated, 'loading:', loading);
 
+    // While authentication status is being determined, show nothing or a loading spinner
     if (loading) {
-        // STICKY NOTE: "Still figuring out if they're logged in. Hold on."
-        console.log('ProtectedRoute: Still loading auth state. Displaying message.');
+        console.log('ProtectedRoute: AuthContext is loading, showing nothing (or spinner).');
         return (
-            <div>Verifying access...</div> // Or your styled loading message
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh', color: '#e0e0e0' }}>
+                Loading content...
+            </div>
         );
     }
 
-    if (isAuthenticated) {
-        // STICKY NOTE: "Yup, they're logged in! Let them into the dashboard."
-        console.log('ProtectedRoute: Authenticated. Rendering children.');
-        return children; // This shows the Dashboard
+    // If not authenticated and not loading anymore, redirect to login
+    if (!isAuthenticated) {
+        console.log('ProtectedRoute: Not authenticated and finished loading, redirecting to /login.');
+        return <Navigate to="/login" replace />;
     }
 
-    // STICKY NOTE: "Nope, not logged in. Send them back to the login page."
-    console.log('ProtectedRoute: Not authenticated. Redirecting to login.');
-    return <Navigate to="/login" replace />; // This sends you back to /login
+    // If authenticated and not loading, render the protected children
+    console.log('ProtectedRoute: Authenticated and finished loading, rendering children.');
+    return children;
 };
 
 export default ProtectedRoute;

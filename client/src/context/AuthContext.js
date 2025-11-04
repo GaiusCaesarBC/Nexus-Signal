@@ -1,4 +1,4 @@
-// client/src/context/AuthContext.js - CORRECTED
+// client/src/context/AuthContext.js - REFINED
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
@@ -20,7 +20,7 @@ const authAxios = axios.create({
 export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true); // Default to true while checking auth
     const [token, setToken] = useState(null);
 
     const logout = useCallback(() => {
@@ -32,7 +32,7 @@ export const AuthProvider = ({ children }) => {
         if (authAxios.defaults.headers.common['x-auth-token']) {
             delete authAxios.defaults.headers.common['x-auth-token'];
         }
-        console.log('User logged out.');
+        console.log('AuthContext: User logged out. LocalStorage token removed.');
     }, []);
 
     // Effect for Axios interceptors (to attach token to requests and handle 401s)
@@ -40,8 +40,9 @@ export const AuthProvider = ({ children }) => {
         const requestInterceptor = authAxios.interceptors.request.use(
             (config) => {
                 const currentToken = localStorage.getItem('token');
-                if (currentToken) {
+                if (currentToken && !config.headers['x-auth-token']) { // Only set if not already present
                     config.headers['x-auth-token'] = currentToken;
+                    console.log('AuthContext: Request interceptor adding x-auth-token.');
                 }
                 return config;
             },
@@ -52,13 +53,12 @@ export const AuthProvider = ({ children }) => {
             (response) => response,
             (error) => {
                 if (error.response && error.response.status === 401) {
-                    // Check if token was present, to avoid logging out if user was already unauthenticated
                     const storedToken = localStorage.getItem('token');
                     if (storedToken) {
-                        console.error('401 Unauthorized response received with a token, logging out...');
+                        console.error('AuthContext: 401 Unauthorized response received with a token, logging out...');
                         logout();
                     } else {
-                        console.warn('401 Unauthorized response received, but no token was stored. User was likely already unauthenticated.');
+                        console.warn('AuthContext: 401 Unauthorized response received, but no token was stored. User was likely already unauthenticated or token was invalid.');
                     }
                 }
                 return Promise.reject(error);
@@ -68,64 +68,83 @@ export const AuthProvider = ({ children }) => {
         return () => {
             authAxios.interceptors.request.eject(requestInterceptor);
             authAxios.interceptors.response.eject(responseInterceptor);
+            console.log('AuthContext: Axios interceptors ejected.');
         };
-    }, [logout]); // logout is a dependency because it's used inside the interceptor
+    }, [logout]);
 
     // The login function
     const login = useCallback(async (email, password) => {
         setLoading(true);
         try {
-            // Use the authAxios instance directly for login, its baseURL is already set
+            console.log('AuthContext: Attempting login for', email);
             const res = await authAxios.post('/auth/login', { email, password }); // Path relative to baseURL
             const newToken = res.data.token;
             localStorage.setItem('token', newToken);
             setToken(newToken);
+            authAxios.defaults.headers.common['x-auth-token'] = newToken; // Set immediately for current session
             setIsAuthenticated(true);
 
-            // Fetch user profile (now authAxios will automatically include the new token)
+            console.log('AuthContext: Login successful, fetching user profile.');
             const userRes = await authAxios.get('/auth/me'); // Path relative to baseURL
             setUser(userRes.data);
+            console.log('AuthContext: User data fetched:', userRes.data);
             return true;
         } catch (err) {
-            console.error('Login failed:', err.response?.data?.msg || err.message);
+            console.error('AuthContext: Login failed:', err.response?.data?.msg || err.message, err.response?.status);
             setIsAuthenticated(false);
             setUser(null);
             setToken(null);
             localStorage.removeItem('token');
+            // Ensure header is cleared on login failure as well
+            if (authAxios.defaults.headers.common['x-auth-token']) {
+                delete authAxios.defaults.headers.common['x-auth-token'];
+            }
             return false;
         } finally {
             setLoading(false);
+            console.log('AuthContext: Login process finished.');
         }
     }, []);
 
-    // Effect to check authentication status on initial load
+    // Effect to check authentication status on initial load/mount
     useEffect(() => {
         const checkAuth = async () => {
-            setLoading(true); // Ensure loading is true while checking auth
+            console.log('AuthContext: Initial checkAuth started.');
             const storedToken = localStorage.getItem('token');
+            console.log('AuthContext: Stored token:', storedToken ? 'found' : 'not found');
+
             if (storedToken) {
                 setToken(storedToken);
                 // Set token for the default authAxios instance header immediately
-                // This ensures subsequent requests within this initial render or before interceptor runs have the token
                 authAxios.defaults.headers.common['x-auth-token'] = storedToken;
 
                 try {
+                    console.log('AuthContext: Attempting /auth/me to validate token.');
                     const res = await authAxios.get('/auth/me'); // Path relative to baseURL
                     setUser(res.data);
                     setIsAuthenticated(true);
+                    console.log('AuthContext: Token validated, user is authenticated.', res.data);
                 } catch (err) {
-                    console.error('Automatic token validation failed:', err.response?.data?.msg || err.message);
-                    // This will also trigger the response interceptor which calls logout()
-                    // So explicit logout() here is often redundant, but good for clarity.
-                    logout();
+                    console.error('AuthContext: Token validation failed on startup:', err.response?.data?.msg || err.message, err.response?.status);
+                    logout(); // Token invalid or expired, log out
                 }
             } else {
                 setIsAuthenticated(false);
+                console.log('AuthContext: No stored token, user not authenticated.');
             }
-            setLoading(false);
+            setLoading(false); // Authentication check is complete
+            console.log('AuthContext: checkAuth finished. isAuthenticated:', isAuthenticated, 'loading:', false);
         };
+        
         checkAuth();
-    }, [logout]); // logout is a dependency
+
+        // Cleanup function for useEffect (optional, but good practice if you had
+        // listeners that needed cleanup when component unmounts)
+        return () => {
+            console.log('AuthContext: AuthProvider unmounting.');
+            // No specific cleanup needed for this checkAuth effect as it's a one-time run on mount.
+        };
+    }, [logout, isAuthenticated]); // Added isAuthenticated to dependency array to reflect state changes immediately in console.log
 
     const value = {
         isAuthenticated,

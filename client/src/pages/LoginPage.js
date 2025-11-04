@@ -1,3 +1,4 @@
+// client/src/pages/LoginPage.js - NO CHANGES NEEDED
 import React, { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { LogIn, User, Lock, ArrowRight } from 'lucide-react';
