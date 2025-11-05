@@ -2,7 +2,7 @@
 
 const axios = require('axios');
 const asyncHandler = require('express-async-handler'); // For async error handling
-const { LRUCache } = require('lru-cache'); // For caching API responses
+const { LRUCache } = require('lru-cache'); // CORRECTED IMPORT FOR LRUCache
 
 // Initialize LRU cache for crypto data
 const cryptoCache = new LRUCache({
@@ -44,14 +44,10 @@ const mapFrontendToCoinGecko = (interval, range) => {
     // CoinGecko uses 'days' parameter.
     switch (range) {
         case '1D':
-            cgDays = 1; // For 1 day, CoinGecko often provides hourly or even minute data (depending on API)
-            // If interval is minute/hourly for '1D', CoinGecko's '1' day parameter works for granularity.
-            // For minute data, CoinGecko's 'days=1' can give hourly. For truly minute-by-minute, might need a different endpoint or special handling.
-            // For simplicity, we'll keep `hourly` if a short interval is selected.
+            cgDays = 1;
             if (['1min', '5min', '15min', '30min'].includes(interval)) {
-                // CoinGecko's /coins/{id}/market_chart endpoint is better for granular short-term data.
-                // We'll primarily use 'days' parameter and let CoinGecko decide granularity for '1' day.
-                // It usually gives hourly data for days=1. For minute-level, it requires a different approach if truly needed.
+                // For 1 day with short intervals, CoinGecko's /market_chart with days=1 typically gives hourly.
+                // We'll stick to 'hourly' granularity here.
             }
             break;
         case '5D': cgDays = 5; break;
@@ -65,17 +61,10 @@ const mapFrontendToCoinGecko = (interval, range) => {
     }
 
     // Special handling for short intervals and days parameter for CoinGecko
-    // CoinGecko /market_chart with days=1 gives hourly data.
-    // For more granular than hourly on days=1, you'd need to consider a different CoinGecko endpoint
-    // or aggregate from a higher frequency source, which is out of scope for a direct historical call here.
-    if (cgDays === 1 && cgInterval === 'hourly') {
-        // CoinGecko's API for `days=1` typically provides hourly data.
-        // It does not provide minute data with the `/market_chart` endpoint for `days=1` for 'hourly' interval directly.
-        // For sub-hourly intervals, `days` usually needs to be < 1 or a different endpoint.
-        // For now, we'll stick to 'hourly' granularity for `days=1` if requested.
-        // The frontend interval (`1min`, `5min`, etc.) will act as a hint, but actual CoinGecko data might be hourly.
-    } else if (cgDays <= 90 && ['1h', '5h', '12h'].includes(interval)) {
+    if (cgDays <= 90 && ['1h', '5h', '12h'].includes(interval)) {
         cgInterval = 'hourly';
+    } else if (cgDays === 1 && ['1min', '5min', '15min', '30min'].includes(interval)) {
+        cgInterval = 'hourly'; // Best granularity for days=1 on CoinGecko /market_chart
     } else {
         cgInterval = 'daily'; // For ranges > 90 days, CoinGecko only provides daily
     }
@@ -103,25 +92,12 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         return res.status(200).json(cachedData);
     }
 
-    // CoinGecko uses `id` (e.g., 'bitcoin') rather than `symbol` (e.g., 'BTC') for many endpoints.
-    // We need to first convert the symbol to a CoinGecko ID.
-    let coinId = symbol.toLowerCase(); // Assume symbol is also the ID for common ones like 'bitcoin', 'ethereum'
-                                      // Or if frontend sends 'btc', 'eth', we assume this mapping.
+    let coinId = symbol.toLowerCase();
 
     try {
         // Step 1: Search for the coin ID by symbol (e.g., BTC -> bitcoin)
-        // CoinGecko's `/search` endpoint can help with this, but it's rate-limited.
-        // For simplicity, we'll try a direct ID first (e.g., 'bitcoin', 'ethereum')
-        // if the symbol matches common IDs, or fetch a list of coins and map.
-
-        // A more robust solution would be to cache the full list of coins or use a dedicated mapping.
-        // For now, let's try to get a direct ID.
-        // A direct lookup might be required if `symbol` isn't the `id`.
-        // Example: /coins/list gives id, symbol, name.
-        // For a quick fix, let's assume popular symbols (BTC, ETH) are often their ID or easily matched.
-        // If 'BTC' is passed, we might need to query CoinGecko to find its ID ('bitcoin').
-
-        // Let's implement a quick lookup for common symbols to their IDs
+        // This makes an extra API call. For production, consider caching `coins/list`
+        // or having a more robust lookup strategy.
         const coinListResponse = await axios.get(`${COINGECKO_API_BASE}/coins/list`);
         const coin = coinListResponse.data.find(c =>
             c.symbol.toLowerCase() === symbol.toLowerCase() || c.id.toLowerCase() === symbol.toLowerCase()
