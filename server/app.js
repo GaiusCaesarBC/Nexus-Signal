@@ -18,42 +18,26 @@ const limiter = rateLimit({
 
 
 // === CORE MIDDLEWARE ===
-// Order matters! Middleware is executed in the order it's defined.
-
-// 1. CORS: Enable All CORS Requests (should be first for preflight requests)
-// THIS IS THE CRUCIAL CHANGE: EXPLICITLY DEFINE YOUR CORS OPTIONS
 const corsOptions = {
-    origin: '*', // Allow ALL origins (Vercel, localhost, anything)
-    credentials: true, // Allow cookies and auth headers
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all common methods
-    allowedHeaders: ['*'], // Allow ALL headers (including x-auth-token)
+    origin: '*',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['*'],
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));// <--- Pass the SAME options here too
+app.options('*', cors(corsOptions));
 
-
-// 2. Helmet: Set security-related HTTP headers
 app.use(helmet());
-
-// 3. Body Parser: Parse JSON bodies (limit prevents large payloads)
 app.use(express.json({ limit: '10kb' }));
-
-// 4. Data Sanitization: Prevent NoSQL query injection
+app.use(express.urlencoded({ extended: false })); // ADDED: You usually need this for form data
 app.use(mongoSanitize());
-
-// 5. Data Sanitization: Prevent XSS attacks
 app.use(xss());
-
-// 6. Prevent Parameter Pollution:
 app.use(hpp());
-
-// 7. Apply Rate Limiting (uncomment when ready, placed after other security middleware)
 // app.use(limiter);
 
 
 // === ROUTE IMPORTS ===
-// Import all your route files. Ensure these paths are correct relative to app.js.
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/userRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
@@ -64,9 +48,9 @@ const copilotRoutes = require('./routes/copilotRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
-const predictionRoutes = require('./routes/predictionRoutes'); // Assuming this will handle /api/predict
-const stockRoutes = require('./routes/stockRoutes');           // Assuming this will handle /api/stocks/historical
-const cryptoRoutes = require('./routes/cryptoRoutes');         // <--- ADD THIS LINE FOR CRYPTO ROUTES
+const predictionRoutes = require('./routes/predictionRoutes');
+const stockRoutes = require('./routes/stockRoutes');
+const cryptoRoutes = require('./routes/cryptoRoutes'); // <--- CRITICAL: ENSURE THIS IS PRESENT
 
 
 // NEW: Debugging middleware to see every request - Keep this for now!
@@ -76,7 +60,6 @@ app.use((req, res, next) => {
 });
 
 // === ROUTE DEFINITIONS ===
-// Define the base paths for your API routes.
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/market-data', marketDataRoutes);
@@ -89,13 +72,13 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
 app.use('/api/predict', predictionRoutes);
 app.use('/api/stocks', stockRoutes);
-app.use('/api/crypto', cryptoRoutes); // <--- ADD THIS LINE FOR CRYPTO ROUTES
+app.use('/api/crypto', cryptoRoutes); // <--- CRITICAL: ENSURE THIS IS PRESENT AND CORRECT
 
 
 // === GLOBAL ERROR HANDLING MIDDLEWARE ===
 app.use((err, req, res, next) => {
-    console.error(err.stack); // Log the error stack for debugging
-    res.status(err.statusCode || 500).send(err.message || 'Something broke!'); // Send a generic error response
+    console.error(err.stack);
+    res.status(err.statusCode || 500).send(err.message || 'Something broke!');
 });
 
 
