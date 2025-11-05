@@ -2,7 +2,7 @@
 
 const axios = require('axios');
 const asyncHandler = require('express-async-handler'); // For async error handling
-const LRUCache = require('lru-cache'); // For caching API responses
+const { LRUCache } = require('lru-cache'); // For caching API responses
 
 // Initialize LRU cache for crypto data
 const cryptoCache = new LRUCache({
