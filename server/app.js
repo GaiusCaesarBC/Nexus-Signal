@@ -23,19 +23,14 @@ const limiter = rateLimit({
 // 1. CORS: Enable All CORS Requests (should be first for preflight requests)
 // THIS IS THE CRUCIAL CHANGE: EXPLICITLY DEFINE YOUR CORS OPTIONS
 const corsOptions = {
-    origin: 'https://www.nexussignal.ai', // <--- IMPORTANT: Explicitly allow your Vercel frontend
-    credentials: true, // <--- CRITICAL: Allow sending/receiving cookies/auth headers
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all necessary HTTP methods
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'], // <--- IMPORTANT: Allow x-auth-token
+    origin: '*', // Allow ALL origins (Vercel, localhost, anything)
+    credentials: true, // Allow cookies and auth headers
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all common methods
+    allowedHeaders: ['*'], // Allow ALL headers (including x-auth-token)
 };
 
-app.use(cors(corsOptions)); // Apply CORS with your specific options
-
-// NEW WORKAROUND: Explicitly handle OPTIONS method for preflight requests.
-// This is done to bypass proxy servers or CDN configurations that might block
-// the preflight request before it hits the cors() middleware correctly,
-// potentially leading to a 405 Method Not Allowed error.
-app.options('*', cors(corsOptions)); // <--- Pass the SAME options here too
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));// <--- Pass the SAME options here too
 
 
 // 2. Helmet: Set security-related HTTP headers
