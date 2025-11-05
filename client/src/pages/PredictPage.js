@@ -50,10 +50,13 @@ const PredictPage = () => {
     // Reset interval when prediction type changes
     useEffect(() => {
         if (predictionType === 'stock') {
-            setSelectedInterval('1d');
+            setSelectedInterval('1d'); // Default stock interval
         } else {
-            setSelectedInterval('1d');
+            setSelectedInterval('1d'); // Default crypto interval
         }
+        setSearchTerm(''); // Clear search term on type change
+        setPredictionData(null); // Clear previous data
+        setError(null); // Clear errors
     }, [predictionType]);
 
     const fetchPrediction = useCallback(async () => {
@@ -68,13 +71,9 @@ const PredictPage = () => {
 
         try {
             let endpoint;
-            let queryParams = '';
-
-            // Construct endpoint based on type and interval
+            // No need for queryParams for interval as it's part of the path
             if (predictionType === 'stock') {
                 endpoint = `/predict/stock/${searchTerm}/${selectedInterval}`;
-                // For Alpha Vantage, 'range' is determined by the interval on the backend
-                // The `interval` param will be mapped on the backend for Alpha Vantage calls (e.g., '1m' -> '1min')
             } else { // crypto
                 endpoint = `/predict/crypto/${searchTerm}/${selectedInterval}`;
             }
@@ -229,7 +228,16 @@ const PredictPage = () => {
                                 selectedInterval === interval ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
                             }`}
                         >
-                            {interval.replace('m', ' Min').replace('h', ' Hr').replace('d', ' Day').replace('w', ' Week').replace('mo', ' Month').replace('y', ' Year')}
+                            {/* Improved display text for intervals */}
+                            {interval
+                                .replace('m', ' Min')
+                                .replace('h', ' Hr')
+                                .replace('d', ' Day')
+                                .replace('w', ' Week')
+                                .replace('mo', ' Month')
+                                .replace('y', ' Year')
+                                .replace('1 Day', '1 Day') // Ensure '1d' becomes '1 Day'
+                            }
                         </button>
                     ))}
                 </div>
