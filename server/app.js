@@ -65,7 +65,8 @@ const newsRoutes = require('./routes/newsRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes'); // Assuming this will handle /api/predict
-const stockRoutes = require('./routes/stockRoutes');           // Assuming this will handle /api/stocks/historical
+const stockRoutes = require('./routes/stockRoutes');           // Assuming this will handle /api/stocks/historical
+const cryptoRoutes = require('./routes/cryptoRoutes');         // <--- ADD THIS LINE FOR CRYPTO ROUTES
 
 
 // NEW: Debugging middleware to see every request - Keep this for now!
@@ -88,6 +89,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
 app.use('/api/predict', predictionRoutes);
 app.use('/api/stocks', stockRoutes);
+app.use('/api/crypto', cryptoRoutes); // <--- ADD THIS LINE FOR CRYPTO ROUTES
 
 
 // === GLOBAL ERROR HANDLING MIDDLEWARE ===
