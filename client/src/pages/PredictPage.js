@@ -1,6 +1,7 @@
-// client/src/pages/PredictPage.js - UPDATED with Labels and Percentage Change
-import React, { useState, useEffect } from 'react';
-import styled from 'styled-components';
+// client/src/pages/PredictPage.js
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -12,9 +13,6 @@ import {
     Tooltip,
     Legend,
 } from 'chart.js';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import Loader from '../components/Loader';
 
 // Register Chart.js components
 ChartJS.register(
@@ -27,318 +25,100 @@ ChartJS.register(
     Legend
 );
 
-// --- Styled Components ---
-const PredictContainer = styled.div`
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 3rem 1.5rem;
-    min-height: calc(100vh - var(--navbar-height));
-    background-color: transparent;
-    color: #e0e0e0;
-`;
-
-const PredictBox = styled.div`
-    background-color: #2c3e50;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    padding: 2.5rem;
-    max-width: 900px;
-    width: 100%;
-    margin-bottom: 2rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-`;
-
-const InputGroup = styled.div`
-    display: flex;
-    justify-content: center;
-    align-items: center; /* Align items vertically in the center */
-    margin-bottom: 1.5rem;
-    width: 100%;
-    max-width: 800px; /* Increased max-width to accommodate new labels and selects */
-    flex-wrap: wrap; /* Allow items to wrap on smaller screens */
-    gap: 1rem; /* Space between elements */
-
-    & > * { /* Apply margin to direct children */
-        margin-bottom: 0.5rem; /* Add some vertical spacing */
-    }
-`;
-
-const Input = styled.input`
-    padding: 0.8rem 1rem;
-    border: 1px solid #3f51b5;
-    border-radius: 4px;
-    font-size: 1rem;
-    flex: 2; /* Allow input to take more space */
-    min-width: 180px; /* Minimum width for input */
-    background-color: #34495e;
-    color: #e0e0e0;
-
-    &:focus {
-        outline: none;
-        border-color: #5d74e3;
-        box-shadow: 0 0 0 3px rgba(93, 116, 227, 0.5);
-    }
-`;
-
-const Select = styled.select`
-    padding: 0.8rem 1rem;
-    border: 1px solid #3f51b5;
-    border-radius: 4px;
-    font-size: 1rem;
-    background-color: #34495e;
-    color: #e0e0e0;
-    flex: 1; /* Allow selects to take equal space */
-    min-width: 120px; /* Minimum width for selects */
-
-    &:focus {
-        outline: none;
-        border-color: #5d74e3;
-        box-shadow: 0 0 0 3px rgba(93, 116, 227, 0.5);
-    }
-`;
-
-const ControlLabel = styled.p`
-    font-size: 0.95rem;
-    color: #b0c4de;
-    margin: 0;
-    white-space: nowrap; /* Prevent label from wrapping */
-`;
-
-const Button = styled.button`
-    padding: 0.8rem 1.5rem;
-    background-color: #3f51b5;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    flex-shrink: 0; /* Don't allow button to shrink */
-
-    &:hover {
-        background-color: #5d74e3;
-    }
-
-    &:disabled {
-        background-color: #5a6a7c;
-        cursor: not-allowed;
-    }
-`;
-
-const PredictionResult = styled.div`
-    margin-top: 1.5rem;
-    text-align: center;
-    background-color: #34495e;
-    padding: 1.5rem;
-    border-radius: 8px;
-    width: 100%;
-    max-width: 400px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-`;
-
-const PredictionValue = styled.p`
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: ${props => props.direction === 'Up' ? '#28a745' : props.direction === 'Down' ? '#dc3545' : '#ffc107'};
-    margin: 0.5rem 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-`;
-
-const DirectionArrow = styled.span`
-    font-size: 1.8rem;
-    margin-left: 0.8rem;
-    margin-right: -0.5rem;
-    vertical-align: middle;
-`;
-
-const ResultDetail = styled.p`
-    font-size: 1.1rem;
-    color: #b0c4de;
-    margin-top: 0.5rem;
-`;
-
-const ChartContainer = styled.div`
-    margin-top: 2rem;
-    width: 100%;
-    height: 400px;
-    background-color: #34495e;
-    padding: 1rem;
-    border-radius: 8px;
-    max-width: 900px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-`;
-
-const ErrorMessage = styled.p`
-    color: #ff6b6b;
-    margin-top: 1rem;
-    font-size: 0.95rem;
-`;
-
-const InitialMessage = styled.p`
-    color: #b0c4de;
-    font-size: 1.1rem;
-    margin-top: 1rem;
-`;
+const stockIntradayIntervals = ['1m', '5m', '1h', '5h', '12h'];
+const stockLongTermIntervals = ['1d', '1w', '1mo', '6mo', '1y'];
+const cryptoIntradayIntervals = ['1m', '5m', '1h', '5h', '12h'];
+const cryptoLongTermIntervals = ['1d', '1w', '1mo', '6mo', '1y'];
 
 const PredictPage = () => {
-    const { api, isAuthenticated, loading: authLoading } = useAuth();
-    const navigate = useNavigate();
-    const [symbol, setSymbol] = useState('');
-    const [selectedRange, setSelectedRange] = useState('6M'); // Default range
-    const [selectedInterval, setSelectedInterval] = useState('1d'); // Default interval
-    const [prediction, setPrediction] = useState(null);
+    const { api } = useAuth(); // Use the authenticated axios instance
+    const [predictionType, setPredictionType] = useState('stock'); // 'stock' or 'crypto'
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedInterval, setSelectedInterval] = useState('1d'); // Default to 1 Day
+    const [predictionData, setPredictionData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [chartData, setChartData] = useState(null);
-    const [currentPrice, setCurrentPrice] = useState(null); // To store the last known historical price
 
+    const getAvailableIntervals = () => {
+        if (predictionType === 'stock') {
+            return [...stockIntradayIntervals, ...stockLongTermIntervals];
+        } else {
+            return [...cryptoIntradayIntervals, ...cryptoLongTermIntervals];
+        }
+    };
+
+    // Reset interval when prediction type changes
     useEffect(() => {
-        if (!authLoading && !isAuthenticated) {
-            navigate('/login');
+        if (predictionType === 'stock') {
+            setSelectedInterval('1d');
+        } else {
+            setSelectedInterval('1d');
         }
-    }, [isAuthenticated, authLoading, navigate]);
+    }, [predictionType]);
 
-    const onSubmit = async (e) => {
-        e.preventDefault();
-        setError(null);
-        setPrediction(null);
-        setChartData(null);
-        setCurrentPrice(null); // Reset current price
-
-        if (!symbol) {
-            setError('Please enter a stock symbol (e.g., AAPL).');
-            return;
-        }
-
-        if (!api) {
-            setError('API client not initialized. Please ensure you are logged in and try again.');
-            setLoading(false);
-            console.error("API client (axios instance) is undefined.");
-            return;
-        }
-
-        if (!isAuthenticated) {
-            setError('You must be logged in to get predictions.');
-            setLoading(false);
+    const fetchPrediction = useCallback(async () => {
+        if (!searchTerm) {
+            setError('Please enter a symbol.');
             return;
         }
 
         setLoading(true);
+        setError(null);
+        setPredictionData(null);
+
         try {
-            console.log(`Fetching historical data for ${symbol} with range=${selectedRange}, interval=${selectedInterval}`);
-            const res = await api.get(`/stocks/historical/${symbol}?range=${selectedRange}&interval=${selectedInterval}`);
-            console.log('Historical Data API response:', res.data);
+            let endpoint;
+            let queryParams = '';
 
-            const { historicalData } = res.data;
-
-            if (!historicalData || historicalData.length === 0) {
-                setError(`No historical data found for ${symbol} with the selected range and interval.`);
-                setLoading(false);
-                return;
+            // Construct endpoint based on type and interval
+            if (predictionType === 'stock') {
+                endpoint = `/predict/stock/${searchTerm}/${selectedInterval}`;
+                // For Alpha Vantage, 'range' is determined by the interval on the backend
+                // The `interval` param will be mapped on the backend for Alpha Vantage calls (e.g., '1m' -> '1min')
+            } else { // crypto
+                endpoint = `/predict/crypto/${searchTerm}/${selectedInterval}`;
             }
 
-            const lastHistoricalClose = historicalData[historicalData.length - 1].close;
-            setCurrentPrice(lastHistoricalClose); // Store the last historical close price
+            console.log(`Fetching ${predictionType} prediction for ${searchTerm} with interval ${selectedInterval}. Endpoint: ${endpoint}`);
+            const res = await api.get(endpoint);
 
-            // --- TEMPORARY MOCK PREDICTION FOR FRONTEND LOGIC ---
-            // You will replace this with an actual prediction API call or logic
-            const mockPredictionPrice = lastHistoricalClose * (1 + (Math.random() - 0.5) * 0.05); // +/- 2.5%
-            const mockPredictedDirection = mockPredictionPrice > lastHistoricalClose ? 'Up' : 'Down';
-            const mockConfidence = Math.floor(Math.random() * (95 - 60 + 1)) + 60; // 60-95%
-            const mockPredictionMessage = `Based on historical data for the last ${selectedRange}, the model predicts a ${mockPredictedDirection} movement.`;
-            // --- END TEMPORARY MOCK ---
-
-            setPrediction({
-                symbol: symbol,
-                predictedPrice: mockPredictionPrice,
-                predictedDirection: mockPredictedDirection,
-                confidence: mockConfidence,
-                predictionMessage: mockPredictionMessage
-            });
-
-            // Prepare chart data
-            const labels = historicalData.map(d => {
-                // If time is a Unix timestamp (from intraday), convert to readable date for labels
-                if (typeof d.time === 'number') {
-                    return new Date(d.time * 1000).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'short' });
-                }
-                return d.time; // YYYY-MM-DD for daily data
-            });
-            const closePrices = historicalData.map(d => d.close);
-
-            // Add the predicted point to the chart data
-            const lastHistoricalPointTime = historicalData.length > 0 ? historicalData[historicalData.length - 1].time : (new Date().getTime() / 1000);
-            let predictedTimeLabel;
-
-            if (typeof lastHistoricalPointTime === 'number') { // Intraday
-                const predictedDateTime = new Date(lastHistoricalPointTime * 1000);
-                predictedDateTime.setHours(predictedDateTime.getHours() + 24); // Assuming next day's opening
-                predictedTimeLabel = predictedDateTime.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'short' });
-            } else { // Daily (YYYY-MM-DD)
-                const predictedDate = new Date(lastHistoricalPointTime);
-                predictedDate.setDate(predictedDate.getDate() + 1); // Predict for the next day
-                predictedTimeLabel = predictedDate.toISOString().split('T')[0];
-            }
-
-
-            labels.push(predictedTimeLabel);
-            closePrices.push(mockPredictionPrice);
-
-            setChartData({
-                labels: labels,
-                datasets: [
-                    {
-                        label: `${symbol} Close Price (Historical)`,
-                        data: closePrices.slice(0, closePrices.length - 1),
-                        fill: false,
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                        borderColor: 'rgba(75, 192, 192, 0.8)',
-                        tension: 0.1,
-                        pointRadius: 0,
-                    },
-                    {
-                        label: `Predicted Price`,
-                        data: Array(closePrices.length - 1).fill(null).concat([mockPredictionPrice]),
-                        fill: false,
-                        backgroundColor: '#00adef',
-                        borderColor: '#00adef',
-                        pointRadius: 6,
-                        pointBackgroundColor: '#00adef',
-                        pointBorderColor: '#fff',
-                        tension: 0.1,
-                        borderDash: [5, 5],
-                    }
-                ],
-            });
+            console.log('Prediction API response:', res.data);
+            setPredictionData(res.data);
 
         } catch (err) {
-            console.error('Error fetching prediction or historical data:', err.response?.data?.msg || err.message);
-            setError(err.response?.data?.msg || 'Failed to fetch prediction. Please check the symbol and try again.');
+            console.error('Error fetching prediction:', err.response?.data || err.message);
+            setError(err.response?.data?.msg || 'Failed to fetch prediction. Please try again.');
         } finally {
             setLoading(false);
         }
+    }, [api, predictionType, searchTerm, selectedInterval]);
+
+    // Prepare data for Chart.js
+    const chartData = {
+        labels: predictionData?.data?.map(item => new Date(item.time * 1000).toLocaleString()) || [],
+        datasets: [
+            {
+                label: 'Actual Price',
+                data: predictionData?.data?.filter(item => item.actualPrice !== null).map(item => item.actualPrice),
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 2,
+                pointRadius: 1,
+                tension: 0.4,
+                spanGaps: true, // Connects gaps in data (e.g. if actualPrice is null)
+            },
+            {
+                label: 'Predicted Price',
+                data: predictionData?.data?.filter(item => item.predictedPrice !== null).map(item => item.predictedPrice),
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.4,
+                spanGaps: true,
+            },
+        ],
     };
-
-    if (authLoading) {
-        return <Loader />;
-    }
-
-    if (!isAuthenticated) {
-        return (
-            <PredictContainer>
-                <PredictBox>
-                    <ErrorMessage>You need to be logged in to access the prediction features.</ErrorMessage>
-                    <Button onClick={() => navigate('/login')}>Login Now</Button>
-                </PredictBox>
-            </PredictContainer>
-        );
-    }
 
     const chartOptions = {
         responsive: true,
@@ -347,17 +127,15 @@ const PredictPage = () => {
             legend: {
                 position: 'top',
                 labels: {
-                    color: '#e0e0e0',
-                },
+                    color: '#e0e0e0', // Light color for legend text
+                }
             },
             title: {
                 display: true,
-                text: `${symbol} Price Trend & Prediction`,
-                color: '#e0e0e0',
+                text: `${predictionType === 'stock' ? 'Stock' : 'Crypto'} Price Prediction for ${searchTerm}`,
+                color: '#e0e0e0', // Light color for title
             },
             tooltip: {
-                mode: 'index',
-                intersect: false,
                 callbacks: {
                     label: function(context) {
                         let label = context.dataset.label || '';
@@ -375,139 +153,132 @@ const PredictPage = () => {
         scales: {
             x: {
                 ticks: {
-                    color: '#e0e0e0',
-                    maxTicksLimit: 10
+                    color: '#a0a0a0', // Light color for x-axis ticks
                 },
                 grid: {
-                    color: 'rgba(255, 255, 255, 0.1)',
+                    color: 'rgba(255, 255, 255, 0.1)', // Light grid lines
                 },
             },
             y: {
                 ticks: {
-                    color: '#e0e0e0',
+                    color: '#a0a0a0', // Light color for y-axis ticks
                     callback: function(value) {
-                        return `$${value.toFixed(2)}`;
+                        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 5 }).format(value);
                     }
                 },
                 grid: {
-                    color: 'rgba(255, 255, 255, 0.1)',
+                    color: 'rgba(255, 255, 255, 0.1)', // Light grid lines
                 },
             },
         },
     };
 
-    const rangeOptions = [
-        { value: '1D', label: '1 Day' },
-        { value: '5D', label: '5 Days' },
-        { value: '1M', label: '1 Month' },
-        { value: '3M', label: '3 Months' },
-        { value: '6M', label: '6 Months' },
-        { value: '1Y', label: '1 Year' },
-        { value: '5Y', label: '5 Years' },
-        { value: 'MAX', label: 'Max' },
-    ];
-
-    const intervalOptions = [
-        { value: '1min', label: '1 Minute (Intraday)' }, // Adjusted labels for clarity
-        { value: '5min', label: '5 Minutes (Intraday)' },
-        { value: '15min', label: '15 Minutes (Intraday)' },
-        { value: '30min', label: '30 Minutes (Intraday)' },
-        { value: '60min', label: '60 Minutes (Intraday)' },
-        { value: '1d', label: '1 Day (Daily)' },
-        // { value: '1wk', label: '1 Week (Daily)' }, // Alpha Vantage doesn't directly support 1wk interval in intraday or daily for `interval` param
-        // { value: '1mo', label: '1 Month (Daily)' }, // Alpha Vantage doesn't directly support 1mo interval in intraday or daily for `interval` param
-    ];
-
-
-    // Calculate percentage change if we have both current and predicted prices
-    const percentageChange = currentPrice && prediction?.predictedPrice
-        ? ((prediction.predictedPrice - currentPrice) / currentPrice) * 100
-        : 0;
-    const percentageChangeDirection = percentageChange >= 0 ? 'Up' : 'Down';
-    const percentageChangeColor = percentageChangeDirection === 'Up' ? '#28a745' : '#dc3545';
+    const allIntervals = getAvailableIntervals();
 
     return (
-        <PredictContainer>
-            <PredictBox>
-                <h2>Stock Price Prediction</h2>
-                <p>Enter a stock symbol to get AI-driven insights and a prediction for the next trading day.</p>
-                <InputGroup>
-                    <Input
-                        type="text"
-                        placeholder="Enter stock symbol (e.g., AAPL)"
-                        aria-label="Stock Symbol"
-                        value={symbol}
-                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                        onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                                onSubmit(e);
-                            }
-                        }}
-                    />
+        <div className="min-h-screen bg-gray-900 text-gray-100 p-6">
+            <h1 className="text-4xl font-bold mb-8 text-center text-teal-400">Price Prediction</h1>
 
-                    <div> {/* Wrapper for label and select */}
-                        <ControlLabel>Historical Data Range:</ControlLabel>
-                        <Select value={selectedRange} onChange={(e) => setSelectedRange(e.target.value)}>
-                            {rangeOptions.map(option => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </Select>
+            {/* Prediction Type Toggle */}
+            <div className="flex justify-center mb-8 space-x-4">
+                <button
+                    onClick={() => setPredictionType('stock')}
+                    className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-300 ${
+                        predictionType === 'stock' ? 'bg-teal-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                >
+                    Stock Prediction
+                </button>
+                <button
+                    onClick={() => setPredictionType('crypto')}
+                    className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-300 ${
+                        predictionType === 'crypto' ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                >
+                    Crypto Prediction
+                </button>
+            </div>
+
+            {/* Search and Fetch */}
+            <div className="flex justify-center mb-8">
+                <input
+                    type="text"
+                    placeholder={`Enter ${predictionType === 'stock' ? 'Stock Ticker (e.g., AAPL)' : 'Crypto Symbol (e.g., BTC, ETH)'}`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
+                    className="w-full max-w-md p-3 rounded-l-lg bg-gray-800 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+                <button
+                    onClick={fetchPrediction}
+                    disabled={loading}
+                    className="px-6 py-3 rounded-r-lg bg-teal-500 hover:bg-teal-600 text-white font-semibold transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {loading ? 'Predicting...' : 'Get Prediction'}
+                </button>
+            </div>
+
+            {/* Interval Selection */}
+            <div className="mb-8 p-4 bg-gray-800 rounded-lg shadow-md max-w-4xl mx-auto">
+                <h3 className="text-xl font-semibold mb-4 text-center">Select Interval</h3>
+                <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                    {allIntervals.map(interval => (
+                        <button
+                            key={interval}
+                            onClick={() => setSelectedInterval(interval)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                                selectedInterval === interval ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                            }`}
+                        >
+                            {interval.replace('m', ' Min').replace('h', ' Hr').replace('d', ' Day').replace('w', ' Week').replace('mo', ' Month').replace('y', ' Year')}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Prediction Results Display */}
+            <div className="max-w-6xl mx-auto bg-gray-800 p-6 rounded-lg shadow-xl">
+                {error && <p className="text-red-500 text-center text-lg mb-4">{error}</p>}
+                {loading && (
+                    <div className="flex justify-center items-center h-64">
+                        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-teal-500"></div>
+                        <p className="ml-4 text-lg">Fetching data and running prediction...</p>
                     </div>
-
-                    <div> {/* Wrapper for label and select */}
-                        <ControlLabel>Chart Interval:</ControlLabel>
-                        <Select value={selectedInterval} onChange={(e) => setSelectedInterval(e.target.value)}>
-                            {intervalOptions.map(option => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </Select>
-                    </div>
-
-                    <Button onClick={onSubmit} disabled={loading}>
-                        {loading ? 'Predicting...' : 'Get Prediction'}
-                    </Button>
-                </InputGroup>
-
-                {error && <ErrorMessage>{error}</ErrorMessage>}
-                {loading && <Loader />}
-
-                {!prediction && !loading && !error && (
-                    <InitialMessage>Type a stock symbol above and click "Get Prediction" to start.</InitialMessage>
                 )}
 
-                {prediction && (
-                    <PredictionResult>
-                        <h3>Prediction for {prediction.symbol}:</h3>
-                        <PredictionValue direction={prediction.predictedDirection}>
-                            {prediction.predictedPrice ? `$${prediction.predictedPrice.toFixed(2)}` : prediction.predictedDirection}
-                            {prediction.predictedDirection === 'Up' && <DirectionArrow>▲</DirectionArrow>}
-                            {prediction.predictedDirection === 'Down' && <DirectionArrow>▼</DirectionArrow>}
-                            {prediction.predictedDirection === 'Neutral' && <DirectionArrow>━</DirectionArrow>}
-                        </PredictionValue>
-                        {currentPrice && prediction?.predictedPrice && (
-                            <ResultDetail style={{ color: percentageChangeColor }}>
-                                Current: ${currentPrice.toFixed(2)} &nbsp;|&nbsp;
-                                Predicted Change: {percentageChange.toFixed(2)}% {percentageChangeDirection === 'Up' ? '▲' : '▼'}
-                            </ResultDetail>
-                        )}
-                        <ResultDetail>
-                            <strong>Direction:</strong> {prediction.predictedDirection} ({prediction.confidence.toFixed(2)}%)
-                        </ResultDetail>
-                        {prediction.predictionMessage && <ResultDetail>{prediction.predictionMessage}</ResultDetail>}
-                    </PredictionResult>
+                {predictionData && !loading && !error && (
+                    <div>
+                        <h2 className="text-3xl font-bold mb-4 text-center">
+                            {predictionData.symbol} ({predictionData.interval.toUpperCase()})
+                        </h2>
+                        <div className="h-96 mb-8">
+                            <Line data={chartData} options={chartOptions} />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center text-lg">
+                            <div className="bg-gray-700 p-4 rounded-lg">
+                                <p className="text-gray-400">Last Actual Price:</p>
+                                <p className="text-white font-bold">
+                                    {predictionData.historicalData?.length > 0
+                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(predictionData.historicalData[predictionData.historicalData.length - 1].close)
+                                        : 'N/A'}
+                                </p>
+                            </div>
+                            <div className="bg-gray-700 p-4 rounded-lg">
+                                <p className="text-gray-400">Predicted Price:</p>
+                                <p className="text-teal-400 font-bold">
+                                    {predictionData.predictedPrice
+                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(predictionData.predictedPrice)
+                                        : 'N/A'}
+                                </p>
+                            </div>
+                            <div className="bg-gray-700 p-4 rounded-lg">
+                                <p className="text-gray-400">Prediction Message:</p>
+                                <p className="text-gray-200">{predictionData.predictionMessage || 'No specific message.'}</p>
+                            </div>
+                        </div>
+                    </div>
                 )}
-            </PredictBox>
-
-            {chartData && (
-                <ChartContainer>
-                    <Line data={chartData} options={chartOptions} />
-                </ChartContainer>
-            )}
-        </PredictContainer>
+            </div>
+        </div>
     );
 };
 
