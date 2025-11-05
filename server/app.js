@@ -21,14 +21,21 @@ const limiter = rateLimit({
 // Order matters! Middleware is executed in the order it's defined.
 
 // 1. CORS: Enable All CORS Requests (should be first for preflight requests)
-// This will correctly handle the OPTIONS request from your frontend.
-app.use(cors());
+// THIS IS THE CRUCIAL CHANGE: EXPLICITLY DEFINE YOUR CORS OPTIONS
+const corsOptions = {
+    origin: 'https://www.nexussignal.ai', // <--- IMPORTANT: Explicitly allow your Vercel frontend
+    credentials: true, // <--- CRITICAL: Allow sending/receiving cookies/auth headers
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all necessary HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'], // <--- IMPORTANT: Allow x-auth-token
+};
+
+app.use(cors(corsOptions)); // Apply CORS with your specific options
 
 // NEW WORKAROUND: Explicitly handle OPTIONS method for preflight requests.
 // This is done to bypass proxy servers or CDN configurations that might block
 // the preflight request before it hits the cors() middleware correctly,
 // potentially leading to a 405 Method Not Allowed error.
-app.options('*', cors()); // <--- ADDED THIS LINE
+app.options('*', cors(corsOptions)); // <--- Pass the SAME options here too
 
 
 // 2. Helmet: Set security-related HTTP headers
@@ -63,7 +70,7 @@ const newsRoutes = require('./routes/newsRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes'); // Assuming this will handle /api/predict
-const stockRoutes = require('./routes/stockRoutes');           // Assuming this will handle /api/stocks/historical
+const stockRoutes = require('./routes/stockRoutes');           // Assuming this will handle /api/stocks/historical
 
 
 // NEW: Debugging middleware to see every request - Keep this for now!
