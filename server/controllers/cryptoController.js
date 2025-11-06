@@ -1,4 +1,4 @@
-// server/controllers/cryptoController.js - FINAL CORRECT EXPORT STRUCTURE
+// server/controllers/cryptoController.js - COMPLETE & CORRECT EXPORT
 
 require('dotenv').config();
 const axios = require('axios');
@@ -11,12 +11,12 @@ const cryptoCache = new LRUCache({
     ttl: 1000 * 60 * 10,
 });
 
-// CoinGecko API Base URL (FOR FREE PUBLIC API)
 const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 
-// Helper to map frontend intervals/ranges to CoinGecko parameters
+// Helper for introducing a delay (needed due to aggressive rate limits)
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 const mapFrontendToCoinGecko = (interval, range) => {
-    // ... (Your mapFrontendToCoinGecko logic remains unchanged) ...
     let cgInterval = 'daily';
     let cgDays = 30;
 
@@ -43,11 +43,7 @@ const mapFrontendToCoinGecko = (interval, range) => {
     return { cgDays, cgInterval };
 };
 
-// @desc    Get historical crypto data (and mock prediction)
-// @route   GET /api/crypto/historical/:symbol
-// @access  Private
 const getCryptoHistoricalData = asyncHandler(async (req, res) => {
-    // ... (The main logic block for fetching data remains here) ...
     const { symbol } = req.params;
     const { range, interval } = req.query;
 
@@ -69,7 +65,8 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
     try {
         console.log(`[CryptoController] Fetching data for ${symbol}, Range: ${range}, Interval: ${interval}`);
 
-        await delay(1500); // 1.5 second pause
+        // --- RATE LIMIT MANAGEMENT: DELAY BEFORE EXTERNAL API CALLS ---
+        await delay(1500); // Wait 1.5 seconds
 
         const coinListResponse = await axios.get(`${COINGECKO_API_BASE}/coins/list`);
         const coin = coinListResponse.data.find(c =>
@@ -81,7 +78,7 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         }
         coinId = coin.id;
 
-        await delay(1500); // 1.5 second pause
+        await delay(1500); // Wait another 1.5 seconds
 
         const { cgDays, cgInterval } = mapFrontendToCoinGecko(interval, range);
         const vsCurrency = 'usd';
@@ -89,7 +86,7 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         coingeckoUrl = `${COINGECKO_API_BASE}/coins/${coinId}/market_chart?vs_currency=${vsCurrency}&days=${cgDays}&interval=${cgInterval}`;
         console.log(`[CryptoController] Calling CoinGecko URL: ${coingeckoUrl}`);
 
-        const response = await axios.get(coingeckoUrl); // No headers for free public API
+        const response = await axios.get(coingeckoUrl);
 
         if (!response.data || !response.data.prices || response.data.prices.length === 0) {
             return res.status(404).json({ msg: `No historical data found for ${symbol} from CoinGecko.` });
@@ -145,8 +142,4 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
     }
 });
 
-// We need to ensure that the necessary helper functions are included or defined locally
-// For simplicity, I've combined the logic here.
-
-// Export the function using the exports object syntax
-exports.getCryptoHistoricalData = getCryptoHistoricalData; // <--- FINAL CORRECT EXPORT
+exports.getCryptoHistoricalData = getCryptoHistoricalData; // <--- THE EXPLICIT EXPORT
