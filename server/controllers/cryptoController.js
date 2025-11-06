@@ -1,9 +1,9 @@
-// server/controllers/cryptoController.js - FULL CODE FOR FREE COINGECKO API
+// server/controllers/cryptoController.js - FULL CODE FOR FREE COINGECKO API WITH RATE LIMIT MANAGEMENT
 
-require('dotenv').config(); // Ensure environment variables are loaded
+require('dotenv').config();
 const axios = require('axios');
 const asyncHandler = require('express-async-handler');
-const { LRUCache } = require('lru-cache'); // CORRECTED IMPORT FOR LRUCache
+const { LRUCache } = require('lru-cache');
 
 // Initialize LRU cache for crypto data
 const cryptoCache = new LRUCache({
@@ -12,16 +12,16 @@ const cryptoCache = new LRUCache({
 });
 
 // CoinGecko API Base URL (FOR FREE PUBLIC API)
-const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3'; // <--- RESET TO PUBLIC URL
+const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 
-// NO API KEY NEEDED FOR FREE PUBLIC ENDPOINTS
+// Helper for introducing a delay
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms)); // <--- DELAY FUNCTION DEFINED GLOBALLY
 
 // Helper to map frontend intervals/ranges to CoinGecko parameters
 const mapFrontendToCoinGecko = (interval, range) => {
     let cgInterval = 'daily';
     let cgDays = 30;
 
-    // Map interval
     switch (interval) {
         case '1min':
         case '5min':
@@ -43,7 +43,6 @@ const mapFrontendToCoinGecko = (interval, range) => {
             cgInterval = 'daily';
     }
 
-    // Map range (frontend sends '1D', '1M', '6M', '1Y', '5Y', 'MAX')
     switch (range) {
         case '1D': cgDays = 1; break;
         case '5D': cgDays = 5; break;
@@ -87,15 +86,15 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
     }
 
     let coinId = symbol.toLowerCase();
-    let coingeckoUrl = ''; // Declare coingeckoUrl in a wider scope
+    let coingeckoUrl = '';
 
     try {
         console.log(`[CryptoController] Fetching data for ${symbol}, Range: ${range}, Interval: ${interval}`);
 
+        // --- RATE LIMIT MANAGEMENT: DELAY BEFORE EXTERNAL API CALLS ---
+        // Introduce a delay before the first CoinGecko API call (coins/list)
+        await delay(1500); // Wait 1.5 seconds (1500ms) to respect potential ~1 request/sec limit
 
-        // Introduce a small delay before the first CoinGecko API call
-        await delay(500); // Wait 500ms before hitting CoinGecko for coin list
-        
         // Step 1: Search for the coin ID by symbol (e.g., BTC -> bitcoin)
         const coinListResponse = await axios.get(`${COINGECKO_API_BASE}/coins/list`);
         const coin = coinListResponse.data.find(c =>
@@ -107,24 +106,25 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         }
         coinId = coin.id;
 
+        // Introduce another delay before the second CoinGecko API call (market_chart)
+        await delay(1500); // Wait another 1.5 seconds
+
         // Step 2: Fetch historical market chart data using the CoinGecko ID
         const { cgDays, cgInterval } = mapFrontendToCoinGecko(interval, range);
         const vsCurrency = 'usd';
 
-        // CoinGecko /market_chart endpoint
         coingeckoUrl = `${COINGECKO_API_BASE}/coins/${coinId}/market_chart?vs_currency=${vsCurrency}&days=${cgDays}&interval=${cgInterval}`;
         console.log(`[CryptoController] Calling CoinGecko URL: ${coingeckoUrl}`);
 
-        const response = await axios.get(coingeckoUrl); // <--- REMOVED HEADERS WITH API KEY
+        const response = await axios.get(coingeckoUrl); // No headers for free public API
 
         if (!response.data || !response.data.prices || response.data.prices.length === 0) {
             return res.status(404).json({ msg: `No historical data found for ${symbol} from CoinGecko.` });
         }
 
-        // CoinGecko returns data as [timestamp, price]. Convert to our desired format.
         const historicalData = response.data.prices.map(item => ({
-            time: item[0] / 1000, // CoinGecko provides milliseconds, convert to seconds
-            close: item[1], // We'll just use price as close price for simplicity
+            time: item[0] / 1000,
+            close: item[1],
         })).filter(d => d.close !== null);
 
         if (historicalData.length === 0) {
@@ -134,7 +134,7 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         const lastClosePrice = historicalData[historicalData.length - 1].close;
 
         // --- MOCK PREDICTION LOGIC ---
-        const predictedPrice = lastClosePrice * (1 + (Math.random() - 0.5) * 0.05); // +/- 2.5%
+        const predictedPrice = lastClosePrice * (1 + (Math.random() - 0.5) * 0.05);
         const predictedDirection = predictedPrice > lastClosePrice ? 'Up' : 'Down';
         const confidence = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
         const predictionMessage = `Based on recent crypto trends, the model predicts a ${predictedDirection} movement for ${symbol.toUpperCase()}.`;
@@ -162,6 +162,8 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
             errorMsg = `CoinGecko 404: Crypto symbol "${symbol}" not found.`;
         } else if (error.response?.data?.error) {
             errorMsg = `CoinGecko API Error: ${error.response.data.error}`;
+        } else if (error.response?.status === 429) {
+            errorMsg = `CoinGecko Rate Limit Exceeded. Please try again in 5-10 seconds.`; // More user-friendly message
         }
         res.status(error.response?.status || 500).json({
             msg: errorMsg,
