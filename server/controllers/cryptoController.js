@@ -92,6 +92,10 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
     try {
         console.log(`[CryptoController] Fetching data for ${symbol}, Range: ${range}, Interval: ${interval}`);
 
+
+        // Introduce a small delay before the first CoinGecko API call
+        await delay(500); // Wait 500ms before hitting CoinGecko for coin list
+        
         // Step 1: Search for the coin ID by symbol (e.g., BTC -> bitcoin)
         const coinListResponse = await axios.get(`${COINGECKO_API_BASE}/coins/list`);
         const coin = coinListResponse.data.find(c =>
