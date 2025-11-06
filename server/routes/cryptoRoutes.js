@@ -1,13 +1,23 @@
 // server/routes/cryptoRoutes.js
-
 const express = require('express');
-const { protect } = require('../middleware/authMiddleware'); // Ensure this path is correct
-const { getCryptoHistoricalData } = require('../controllers/cryptoController'); // Ensure this path is correct AND function is exported
-
 const router = express.Router();
+const auth = require('../middleware/authMiddleware'); // Assuming this path is correct
 
-// Route to get historical crypto data
-// Protected, so only logged-in users can access
-router.get('/historical/:symbol', protect, getCryptoHistoricalData); // This line is causing the error
+// CRITICAL FIX: Import the controller object and access the function by name
+const cryptoController = require('../controllers/cryptoController'); 
+
+// NEW: Debugging middleware specific to the stockRoutes router
+router.use((req, res, next) => {
+    console.log(`[STOCKROUTES DEBUG] Stock Router activated. Base URL: ${req.baseUrl}, Path: ${req.path}`);
+    next();
+});
+
+
+// @route   GET /api/crypto/historical/:symbol
+// @desc    Get historical crypto data
+// @access  Private
+// Ensure you use the imported controller object and the function name:
+router.get('/historical/:symbol', auth, cryptoController.getCryptoHistoricalData); 
+
 
 module.exports = router;
