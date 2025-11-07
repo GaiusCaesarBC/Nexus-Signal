@@ -99,13 +99,17 @@ router.post(
                         console.error('[Auth Route /register] JWT signing error:', err.message);
                         throw err;
                     }
-                    // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE FOR REGISTRATION
-                    res.cookie('token', token, {
-                        httpOnly: true,
-                        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-                        sameSite: 'Lax', // Protects against CSRF in modern browsers
-                        maxAge: 3600000 // 1 hour expiration in milliseconds
-                    });
+                  // Inside the jwt.sign callback for /login and /register
+
+             res.cookie('token', token, {
+               httpOnly: true,
+               secure: true, // <<< CRITICAL: Set to TRUE explicitly for production and SameSite=None
+               sameSite: 'None', // <<< CRITICAL: Set to 'None' for cross-domain usage (Vercel -> Render)
+               maxAge: 3600000 // 1 hour expiration in milliseconds
+  });
+// NOTE: If you are testing locally (http://localhost), setting 'secure: true' will prevent the cookie from being set.
+// For local testing, you must comment out 'secure: true' in app.js and auth.js. 
+// For the live site (https://www.nexussignal.ai), it MUST be set to true.
                     // Send success response (without the token in the body)
                     res.json({ success: true, msg: "Registration successful" });
                     console.log(`[Auth Route /register] Registration successful for ${email}. HttpOnly cookie issued.`);
@@ -195,11 +199,12 @@ router.post(
 // @desc    Logout user by clearing HttpOnly cookie
 // @access  Private
 router.post('/logout', auth, (req, res) => {
-    res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Lax'
-    });
+   // Inside router.post('/logout', auth, ...)
+      res.clearCookie('token', {
+    httpOnly: true,
+    secure: true, // <<< Must be true for sameSite: 'None'
+    sameSite: 'None'
+});
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
 });
