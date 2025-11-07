@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { Chart } from 'react-chartjs-2';
 import {
@@ -252,7 +252,7 @@ const PredictPage = () => {
     const [error, setError] = useState(null);
     const [chartData, setChartData] = useState(null);
     const [currentPrice, setCurrentPrice] = useState(null); // To store the last known historical price
-    const [fullHistoricalData, setFullHistoricalData] = useState(null); // NEW STATE FOR FULL OHLC DATA
+   
 
     // Redirect if not authenticated after loading
     useEffect(() => {
@@ -312,8 +312,7 @@ const PredictPage = () => {
                 return;
             }
 
-            setFullHistoricalData(historicalData); // Store full OHLC for stocks, or close prices for crypto
-
+        
             // ... (inside handleSubmit, after setCurrentPrice)
 
             const lastHistoricalClose = historicalData[historicalData.length - 1].close;
