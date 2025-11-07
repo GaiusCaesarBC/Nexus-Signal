@@ -1,4 +1,4 @@
-// server/app.js - CONSOLIDATED APP LOGIC (REFINED)
+// server/app.js - CONSOLIDATED APP LOGIC (REFINED for HttpOnly Cookies)
 
 const express = require('express');
 const cors = require('cors'); // Handles Cross-Origin Resource Sharing
@@ -6,7 +6,9 @@ const helmet = require('helmet'); // Helps secure your app by setting various HT
 const mongoSanitize = require('express-mongo-sanitize'); // Sanitizes user-supplied data to prevent MongoDB Operator Injection
 const xss = require('xss-clean'); // Sanitizes user input to prevent Cross-site Scripting (XSS) attacks
 const hpp = require('hpp'); // Protects against HTTP Parameter Pollution attacks
-const rateLimit = require('express-rate-limit'); // Limits repeated requests to public APIs and/or endpoints - Corrected package name
+const rateLimit = require('express-rate-limit'); // Limits repeated requests to public APIs and/or endpoints
+const cookieParser = require('cookie-parser'); // <<< NEW: For parsing HttpOnly cookies
+
 const app = express();
 
 // Rate limiting to prevent abuse
@@ -17,27 +19,31 @@ const limiter = rateLimit({
 });
 
 
-// === CORE MIDDLEWARE ===
 const corsOptions = {
-    origin: '*',
+    origin: 'http://localhost:3000', // <<< CHANGE THIS TEMPORARILY FOR LOCAL DEV
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['*'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight (OPTIONS) requests which are common for CORS
 
-app.use(helmet());
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: false })); // ADDED: You usually need this for form data
-app.use(mongoSanitize());
-app.use(xss());
-app.use(hpp());
-// app.use(limiter);
+app.use(helmet()); // Basic security headers
+app.use(express.json({ limit: '10kb' })); // Body parser for JSON data, with a size limit
+app.use(express.urlencoded({ extended: false })); // Body parser for URL-encoded data (e.g., form submissions)
+
+// IMPORTANT: `cookieParser()` must be used before any routes that need to access `req.cookies`
+app.use(cookieParser()); // <<< NEW: Enable cookie parsing
+
+app.use(mongoSanitize()); // Prevent MongoDB injection attacks
+app.use(xss()); // Prevent Cross-Site Scripting (XSS) attacks
+app.use(hpp()); // Prevent HTTP Parameter Pollution attacks
+// app.use(limiter); // Uncomment to enable rate limiting when ready
 
 
 // === ROUTE IMPORTS ===
+// (Ensure these paths are correct relative to your server/ directory)
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/userRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
@@ -50,16 +56,11 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const subscriberRoutes = require('./routes/subscriberRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
 const stockRoutes = require('./routes/stockRoutes');
-const cryptoRoutes = require('./routes/cryptoRoutes'); // <--- CRITICAL: ENSURE THIS IS PRESENT
+const cryptoRoutes = require('./routes/cryptoRoutes');
 
-
-// NEW: Debugging middleware to see every request - Keep this for now!
-app.use((req, res, next) => {
-    console.log(`[APP.JS DEBUG] Incoming Request: ${req.method} ${req.url}`);
-    next();
-});
 
 // === ROUTE DEFINITIONS ===
+// (These map your API endpoints to their respective route files)
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/market-data', marketDataRoutes);
@@ -72,13 +73,14 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/subscribers', subscriberRoutes);
 app.use('/api/predict', predictionRoutes);
 app.use('/api/stocks', stockRoutes);
-app.use('/api/crypto', cryptoRoutes); // <--- CRITICAL: ENSURE THIS IS PRESENT AND CORRECT
+app.use('/api/crypto', cryptoRoutes);
 
 
 // === GLOBAL ERROR HANDLING MIDDLEWARE ===
+// This catches any errors that occur in your routes or middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(err.statusCode || 500).send(err.message || 'Something broke!');
+    console.error(err.stack); // Log the full error stack to the console (important for debugging)
+    res.status(err.statusCode || 500).send(err.message || 'Something broke!'); // Send a generic error response
 });
 
 

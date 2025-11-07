@@ -1,147 +1,122 @@
-// client/src/context/AuthContext.js - REVISED FOR ROBUST STATE MANAGEMENT
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+// client/src/context/AuthContext.js - REVISED FOR HTTPONLY COOKIES
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import API from '../api/axios'; // Import your new API instance from axios.js
 
 const AuthContext = createContext(null);
-
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
-console.log('AuthContext: Using API_BASE_URL:', API_BASE_URL); 
-
-
-const authAxios = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-});
 
 export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true); // Default to true while checking auth status
-    const [token, setToken] = useState(null);
+    const [loading, setLoading] = useState(true); // True by default while we check auth status
+    const navigate = useNavigate();
 
-    const clearAuthData = useCallback(() => {
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-        setUser(null);
-        setToken(null);
-        if (authAxios.defaults.headers.common['x-auth-token']) {
-            delete authAxios.defaults.headers.common['x-auth-token'];
-        }
-        console.log('AuthContext: All authentication data cleared.');
-    }, []);
-
-    const logout = useCallback(() => {
-        clearAuthData();
-        console.log('AuthContext: User logged out.');
-    }, [clearAuthData]);
-
-    // Axios Interceptors setup for token attachment and 401 handling
-    useEffect(() => {
-        const requestInterceptor = authAxios.interceptors.request.use(
-            (config) => {
-                const currentToken = localStorage.getItem('token');
-                if (currentToken && !config.headers['x-auth-token']) {
-                    config.headers['x-auth-token'] = currentToken;
-                    console.log('AuthContext: Request interceptor adding x-auth-token.');
-                }
-                return config;
-            },
-            (error) => Promise.reject(error)
-        );
-
-        const responseInterceptor = authAxios.interceptors.response.use(
-            (response) => response,
-            (error) => {
-                if (error.response && error.response.status === 401) {
-                    console.error('AuthContext: 401 Unauthorized response received. Clearing auth data.');
-                    clearAuthData(); // Force logout on 401
-                }
-                return Promise.reject(error);
-            }
-        );
-
-        return () => {
-            authAxios.interceptors.request.eject(requestInterceptor);
-            authAxios.interceptors.response.eject(responseInterceptor);
-            console.log('AuthContext: Axios interceptors ejected.');
-        };
-    }, [clearAuthData]); // Depend on clearAuthData to ensure it's up-to-date
-
-    // The login function
-    const login = useCallback(async (email, password) => {
-        setLoading(true); // Indicate loading for the login process
+    // Function to fetch user data if authenticated (cookie present)
+    const loadUser = useCallback(async () => {
         try {
-            console.log('AuthContext: Attempting login for', email);
-            const res = await authAxios.post('/auth/login', { email, password });
-            const newToken = res.data.token;
-
-            localStorage.setItem('token', newToken); // Store token
-            setToken(newToken); // Update state
-            authAxios.defaults.headers.common['x-auth-token'] = newToken; // Set for current session immediately
-
-            // Fetch user profile
-            const userRes = await authAxios.get('/auth/me');
-            setUser(userRes.data); // Update user state
-            setIsAuthenticated(true); // Set authenticated state
-
-            console.log('AuthContext: Login successful. User:', userRes.data);
-            return true; // Indicate success
+            setLoading(true);
+            // This GET request will automatically send the HttpOnly cookie set by the backend
+            const res = await API.get('/auth/me');
+            setUser(res.data);
+            setIsAuthenticated(true);
+            console.log("[AuthContext] User loaded successfully via /api/auth/me. User:", res.data.email);
         } catch (err) {
-            console.error('AuthContext: Login failed:', err.response?.data?.msg || err.message, 'Status:', err.response?.status);
-            clearAuthData(); // Clear all auth data on failure
-            return false; // Indicate failure
+            // If /me fails (e.g., 401 Unauthorized, token expired, no cookie),
+            // then the user is not authenticated.
+            console.error("[AuthContext] Failed to load user via /api/auth/me. User is not authenticated or session expired.", err.response?.data?.msg || err.message);
+            setIsAuthenticated(false);
+            setUser(null);
+            // No need to clear localStorage token as we're not using it.
+            // Backend's logout route will clear the cookie when explicitly called.
         } finally {
-            setLoading(false); // Login process finished
-            console.log('AuthContext: Login process finished. IsAuthenticated:', isAuthenticated); // Note: isAuthenticated might not be updated yet here
+            setLoading(false); // Authentication check is complete
         }
-    }, [clearAuthData, isAuthenticated]); // Add isAuthenticated to deps for console log accuracy
+    }, []); // No dependencies as it uses stable API instance
 
     // Effect to check authentication status on initial load/mount
     useEffect(() => {
-        const checkAuth = async () => {
-            console.log('AuthContext: Initial checkAuth started.');
-            setLoading(true); // Ensure loading is true while this check runs
+        console.log('AuthContext: Initial authentication check initiated.');
+        loadUser(); // Attempt to load user from cookie
+    }, [loadUser]); // Dependency on loadUser (stable via useCallback)
 
-            const storedToken = localStorage.getItem('token');
-            console.log('AuthContext: Stored token:', storedToken ? 'found' : 'not found');
+    // The login function
+    const login = useCallback(async (email, password) => {
+        setLoading(true);
+        try {
+            console.log('AuthContext: Attempting login for', email);
+            // When this POST request succeeds, the backend will set the HttpOnly cookie.
+            // The response data will NOT contain the token directly.
+           const res = await API.post('/auth/login', { email, password });
+            console.log("[AuthContext] Login successful. Backend responded:", res.data.msg);
 
-            if (storedToken) {
-                setToken(storedToken);
-                authAxios.defaults.headers.common['x-auth-token'] = storedToken; // Set for initial validation
+            // After successful login (and cookie set by backend),
+            // immediately call loadUser to fetch the user's data from /me
+            await loadUser();
 
-                try {
-                    console.log('AuthContext: Attempting /auth/me to validate stored token.');
-                    const res = await authAxios.get('/auth/me');
-                    setUser(res.data);
-                    setIsAuthenticated(true); // User is authenticated
-                    console.log('AuthContext: Token validated, user is authenticated.', res.data);
-                } catch (err) {
-                    console.error('AuthContext: Token validation failed on startup:', err.response?.data?.msg || err.message, 'Status:', err.response?.status);
-                    clearAuthData(); // Invalid token, clear all data
-                }
-            } else {
-                setIsAuthenticated(false); // No token, not authenticated
-                console.log('AuthContext: No stored token, user not authenticated.');
-            }
-            setLoading(false); // Auth check is complete
-            console.log('AuthContext: checkAuth finished. Final isAuthenticated:', isAuthenticated); // Note: isAuthenticated might not be updated yet here
-        };
+            navigate('/dashboard'); // Navigate to dashboard after successful login and user load
+            return { success: true, message: res.data.msg || 'Login successful' };
+        } catch (err) {
+            setLoading(false);
+            const errorMessage = err.response?.data?.msg || err.message;
+            console.error("[AuthContext] Login failed:", errorMessage, 'Status:', err.response?.status);
+            // On login failure, ensure auth status is false
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, message: errorMessage };
+        }
+    }, [loadUser, navigate]);
 
-        checkAuth();
+    // The register function (similar to login)
+    const register = useCallback(async (userData) => {
+        setLoading(true);
+        try {
+            console.log('AuthContext: Attempting registration for', userData.email);
+            const res = await API.post('/api/auth/register', userData);
+            console.log("[AuthContext] Registration successful. Backend responded:", res.data.msg);
 
-        // No specific cleanup needed for this checkAuth effect as it's a one-time run on mount.
-    }, [clearAuthData, isAuthenticated]); // Depend on clearAuthData and isAuthenticated
+            await loadUser(); // Load user after successful registration (cookie set by backend)
+
+            navigate('/dashboard');
+            return { success: true, message: res.data.msg || 'Registration successful' };
+        } catch (err) {
+            setLoading(false);
+            const errorMessage = err.response?.data?.msg || err.message;
+            console.error("[AuthContext] Registration failed:", errorMessage, 'Status:', err.response?.status);
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, message: errorMessage };
+        }
+    }, [loadUser, navigate]);
+
+    // The logout function
+    const logout = useCallback(async () => {
+        setLoading(true);
+        try {
+            // This POST request tells the backend to clear the HttpOnly cookie
+            await API.post('/api/auth/logout');
+            console.log("[AuthContext] Logout initiated. Backend instructed to clear cookie.");
+            setIsAuthenticated(false);
+            setUser(null);
+            navigate('/login'); // Redirect to login page
+        } catch (err) {
+            console.error("[AuthContext] Logout failed:", err.response?.data?.msg || err.message);
+            // Even if logout request fails, assume frontend is logged out
+            setIsAuthenticated(false);
+            setUser(null);
+            navigate('/login');
+        } finally {
+            setLoading(false);
+        }
+    }, [navigate]);
 
     const value = {
         isAuthenticated,
         user,
         loading,
-        token,
         login,
+        register,
         logout,
-        api: authAxios,
+        api: API
     };
 
     return (

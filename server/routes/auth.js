@@ -11,7 +11,7 @@ const User = require('../models/User'); // User model
 const auth = require('../middleware/authMiddleware'); // <--- IMPORT YOUR EXISTING AUTH MIDDLEWARE
 
 // @route   GET api/auth/me
-// @desc    Get logged in user data (requires token)
+// @desc    Get logged in user data (requires token from HttpOnly cookie)
 // @access  Private
 // This route uses the 'auth' middleware to verify the token before proceeding.
 router.get('/me', auth, async (req, res) => {
@@ -35,16 +35,14 @@ router.get('/me', auth, async (req, res) => {
 });
 
 // @route   POST api/auth/register
-// @desc    Register user
+// @desc    Register user and issue HttpOnly cookie
 // @access  Public
-// server/routes/auth.js (excerpt for /register route)
-
 router.post(
     '/register',
     [ // Middleware array for input validation
         body('email', 'Please include a valid email').isEmail(),
         body('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 }),
-        body('username', 'Username is required').notEmpty().isLength({ min: 3 }) // <-- ADD USERNAME VALIDATION
+        body('username', 'Username is required').notEmpty().isLength({ min: 3 })
     ],
     async (req, res) => { // The actual route handler function
         const errors = validationResult(req);
@@ -53,7 +51,7 @@ router.post(
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { email, password, username } = req.body; // <-- EXTRACT USERNAME HERE
+        const { email, password, username } = req.body;
 
         try {
             // See if user exists by email
@@ -71,12 +69,11 @@ router.post(
                 return res.status(400).json({ msg: 'Username already taken' });
             }
 
-
             // Create new user instance
             user = new User({
                 email,
                 password,
-                username // <-- INCLUDE USERNAME HERE
+                username
             });
 
             // Hash password
@@ -84,7 +81,7 @@ router.post(
             user.password = await bcrypt.hash(password, salt);
 
             await user.save(); // Save user to database
-            console.log(`[Auth Route /register] New user created: ${user.email} (Username: ${user.username})`); // Log username too
+            console.log(`[Auth Route /register] New user created: ${user.email} (Username: ${user.username})`);
 
             // Return jsonwebtoken
             const payload = {
@@ -102,8 +99,16 @@ router.post(
                         console.error('[Auth Route /register] JWT signing error:', err.message);
                         throw err;
                     }
-                    res.json({ token });
-                    console.log(`[Auth Route /register] Registration successful for ${email}. Token issued.`);
+                    // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE FOR REGISTRATION
+                    res.cookie('token', token, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+                        sameSite: 'Lax', // Protects against CSRF in modern browsers
+                        maxAge: 3600000 // 1 hour expiration in milliseconds
+                    });
+                    // Send success response (without the token in the body)
+                    res.json({ success: true, msg: "Registration successful" });
+                    console.log(`[Auth Route /register] Registration successful for ${email}. HttpOnly cookie issued.`);
                 }
             );
 
@@ -115,7 +120,7 @@ router.post(
 );
 
 // @route   POST api/auth/login
-// @desc    Authenticate user & get token
+// @desc    Authenticate user & issue HttpOnly cookie
 // @access  Public
 router.post(
     '/login',
@@ -132,12 +137,6 @@ router.post(
 
         const { email, password } = req.body;
 
-        // --- DEBUGGING LOGS START ---
-        console.log('--- LOGIN ATTEMPT ---');
-        console.log('Received Email:', email);
-        // console.log('Received Password (WARNING: Do NOT log in production):', password); // Be cautious logging raw passwords in prod
-        // --- DEBUGGING LOGS END ---
-
         try {
             let user = await User.findOne({ email });
 
@@ -146,7 +145,6 @@ router.post(
                 return res.status(400).json({ msg: 'Invalid Credentials' });
             }
             console.log('[Auth Route /login] User found. Email:', user.email);
-            // console.log('Stored hashed password in DB:', user.password); // Again, avoid logging this in production
 
             // Check if password matches
             const isMatch = await bcrypt.compare(password, user.password);
@@ -156,7 +154,6 @@ router.post(
                 return res.status(400).json({ msg: 'Invalid Credentials' });
             }
             console.log('[Auth Route /login] Password matched for user:', user.email);
-
 
             // Return jsonwebtoken
             const payload = {
@@ -174,8 +171,16 @@ router.post(
                         console.error('[Auth Route /login] JWT signing error:', err.message);
                         throw err;
                     }
-                    res.json({ token });
-                    console.log(`[Auth Route /login] Login successful for ${email}. Token issued.`);
+                    // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE
+                    res.cookie('token', token, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+                        sameSite: 'Lax', // Protects against CSRF in modern browsers
+                        maxAge: 3600000 // 1 hour expiration in milliseconds
+                    });
+                    // Send success response (without the token in the body)
+                    res.json({ success: true, msg: "Logged in successfully" });
+                    console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued.`);
                 }
             );
 
@@ -185,6 +190,20 @@ router.post(
         }
     }
 );
+
+// @route   POST api/auth/logout
+// @desc    Logout user by clearing HttpOnly cookie
+// @access  Private
+router.post('/logout', auth, (req, res) => {
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'Lax'
+    });
+    res.json({ msg: 'Logged out successfully' });
+    console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
+});
+
 
 // @route   PUT api/auth/update-profile
 // @desc    Update logged in user's profile and settings

@@ -7,10 +7,6 @@
       "config": {
         "distDir": "build"
       }
-    },
-    {
-      "src": "../server/index.js",
-      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -37,10 +33,6 @@
     {
       "src": "/logo512.png",
       "dest": "/build/logo512.png"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "https://YOUR_RENDER_BACKEND_URL.onrender.com/api/$1"
     },
     {
       "src": "/(.*)",
