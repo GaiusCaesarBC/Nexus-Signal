@@ -177,11 +177,11 @@ router.post(
                     }
                     // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE
                     res.cookie('token', token, {
-                        httpOnly: true,
-                        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-                        sameSite: 'Lax', // Protects against CSRF in modern browsers
-                        maxAge: 3600000 // 1 hour expiration in milliseconds
-                    });
+    httpOnly: true,                 // CRITICAL: Makes cookie inaccessible to client-side JS
+    secure: process.env.NODE_ENV === 'production', // CRITICAL: ONLY send over HTTPS in production
+    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax', // CRITICAL: 'None' for cross-site in production, 'Lax' for local
+    maxAge: 3600000 // 1 hour (in milliseconds)
+});
                     // Send success response (without the token in the body)
                     res.json({ success: true, msg: "Logged in successfully" });
                     console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued.`);
@@ -200,10 +200,11 @@ router.post(
 // @access  Private
 router.post('/logout', auth, (req, res) => {
    // Inside router.post('/logout', auth, ...)
-      res.clearCookie('token', {
+ // Inside router.post('/logout', auth, ...)
+res.clearCookie('token', {
     httpOnly: true,
-    secure: true, // <<< Must be true for sameSite: 'None'
-    sameSite: 'None'
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
 });
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
