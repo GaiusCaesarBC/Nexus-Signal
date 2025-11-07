@@ -267,7 +267,7 @@ const PredictPage = () => {
         setPrediction(null);
         setChartData(null);
         setCurrentPrice(null);
-        setFullHistoricalData(null);
+        
 
         if (!symbol) {
             setError(`Please enter a ${predictionType} symbol.`);
