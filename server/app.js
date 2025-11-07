@@ -20,7 +20,7 @@ const limiter = rateLimit({
 
 
 const corsOptions = {
-    origin: 'http://localhost:3000', // <<< CHANGE THIS TEMPORARILY FOR LOCAL DEV
+    origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000', // Fallback for local dev
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
