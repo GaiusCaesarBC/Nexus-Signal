@@ -69,8 +69,8 @@ app.use('/api', limiter); // Apply to all API routes
 
 // === ROUTE DEFINITIONS ===
 const authRoutes = require('./routes/auth');
-const cryptoRoutes = require('./routes/crypto');     // Assuming client/src/pages/PredictPage.js uses this
-const stockRoutes = require('./routes/stock');       // If you have stock data routes
+const cryptoRoutes = require('./routes/cryptoRoutes');     // Assuming client/src/pages/PredictPage.js uses this
+const stockRoutes = require('./routes/stockRoutes');       // If you have stock data routes
 const dashboardRoutes = require('./routes/dashboard'); // Assuming client/src/pages/DashboardPage.js uses this
 const predictionRoutes = require('./routes/prediction'); // If you have specific prediction routes
 
