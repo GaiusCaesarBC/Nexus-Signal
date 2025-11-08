@@ -82,31 +82,7 @@ export const AuthProvider = ({ children }) => {
         }
     }, [loadUser, navigate]);
 
-    const register = useCallback(async (userData) => {
-        setLoading(true);
-        setError(null);
-        try {
-            await API.post('/auth/register', userData);
-            const userLoadedSuccessfully = await loadUser(); 
-
-            if (userLoadedSuccessfully) {
-                navigate('/dashboard');
-                return { success: true };
-            } else {
-                setError("Registration failed: Could not establish secure session.");
-                setIsAuthenticated(false);
-                setUser(null);
-                return { success: false, error: "Registration failed: could not establish session." };
-            }
-        } catch (err) {
-            setLoading(false);
-            const errorMessage = err.response?.data?.msg || err.message;
-            setError(errorMessage);
-            setIsAuthenticated(false);
-            setUser(null);
-            return { success: false, error: errorMessage };
-        }
-    }, [loadUser, navigate]);
+    await API.post('/auth/register', userData); // FIX: Remove 'const res ='
 
     const logout = useCallback(async () => {
         try {
