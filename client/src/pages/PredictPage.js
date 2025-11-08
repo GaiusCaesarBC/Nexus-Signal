@@ -7,35 +7,22 @@ import {
     LinearScale,
     PointElement,
     LineElement,
+    LineController, // CRITICAL FIX: Add LineController
     Title,
     Tooltip,
     Legend,
     TimeScale, // Crucial for time-series data
-    Filler, // Required for filling areas under line charts
+    Filler,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns'; // Adapter for date handling
+
 import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial'; // For candlestick charts
 
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 
-// Register Chart.js components
-import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,    // Should only be listed once here
-    LineController, // ADD THIS LINE if it's not there, but ensure LineElement is not duplicated
-    Title,
-    Tooltip,
-    Legend,
-    TimeScale,
-    Filler,
-} from 'chart.js';
-
-// Register Chart.js components
+// Register ALL Chart.js components
 ChartJS.register(
     CategoryScale,
     LinearScale,
@@ -45,11 +32,12 @@ ChartJS.register(
     Title,
     Tooltip,
     Legend,
-    TimeScale,
+    TimeScale, // Ensure TimeScale is registered
     Filler,
     CandlestickController,
-    CandlestickElement
+    CandlestickElement // Register financial chart elements
 );
+// --- Styled Components and Component Definition will follow ---
 
 // --- Styled Components --- (Continues in Part 2)
 
