@@ -176,11 +176,13 @@ router.post(
                         throw err;
                     }
                     // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE
-                    res.cookie('token', token, {
-    httpOnly: true,                 // CRITICAL: Makes cookie inaccessible to client-side JS
-    secure: process.env.NODE_ENV === 'production', // CRITICAL: ONLY send over HTTPS in production
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax', // CRITICAL: 'None' for cross-site in production, 'Lax' for local
-    maxAge: 3600000 // 1 hour (in milliseconds)
+                 // Inside the jwt.sign callback for /login and /register
+
+res.cookie('token', token, {
+    httpOnly: true,
+    secure: true, // <<< CRITICAL: MUST BE TRUE for HTTPS (Vercel/Render)
+    sameSite: 'None', // <<< CRITICAL: MUST BE 'None' for cross-domain cookie sending
+    maxAge: 3600000 // 1 hour expiration in ms
 });
                     // Send success response (without the token in the body)
                     res.json({ success: true, msg: "Logged in successfully" });
