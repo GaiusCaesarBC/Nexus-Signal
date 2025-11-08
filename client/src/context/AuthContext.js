@@ -1,144 +1,143 @@
+// client/src/context/AuthContext.js - FINAL FIX FOR RACE CONDITION & LOADING STUCK
+
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios'; // We will use plain axios here
+import API from '../api/axios'; // IMPORTANT: Use your configured API instance for general calls
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true); // Start as true
-    const [api, setApi] = useState(null); // Axios instance
-    const [token, setToken] = useState(localStorage.getItem('token')); // Load token from localStorage initially
-    const [error, setError] = useState(null); // State for errors in AuthContext
+    const [loading, setLoading] = useState(true); 
+    const [error, setError] = useState(null); // State for errors
+    const navigate = useNavigate();
+    
+    // NOTE: We don't define authAxios here anymore. We use the imported API instance directly.
 
-    // --- MOVE LOGOUT DEFINITION UP HERE ---
-    // Logout function (defined explicitly to be used by interceptor or directly)
-    const logout = useCallback(() => {
-        console.log("[AuthContext] Performing logout.");
-        localStorage.removeItem('token');
-        setToken(null);
-        setIsAuthenticated(false);
-        setUser(null);
-        // Do NOT call setupApi here if it depends on logout, it will create a circular dependency
-        // Instead, setupApi(null) should be called in checkAuth for clean unauthenticated state
-        // and after setupApi itself is defined if needed.
-        setApi(axios.create({ // Directly set to unauthenticated API
-            baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
-        }));
-        setError(null); // Clear errors on logout
-        setLoading(false); // Not loading after logout
-    }, []); // This logout function itself has no external dependencies now
-
-
-    // Function to initialize axios instance with token
-    const setupApi = useCallback((authToken) => {
-        if (!authToken) {
-            console.log("[AuthContext] setupApi: No auth token provided, creating unauthenticated API.");
-            setApi(axios.create({
-                baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
-            }));
-            return;
-        }
-
-        console.log("[AuthContext] setupApi: Setting up authenticated API with token.");
-        const instance = axios.create({
-            baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
-
-        // Add an interceptor for token expiration or unauthorized responses
-        instance.interceptors.response.use(
-            response => response,
-            async error => {
-                if (error.response && error.response.status === 401) {
-                    console.warn("[AuthContext] API Interceptor: 401 Unauthorized. Logging out user.");
-                    // Token expired or invalid, log out
-                    logout(); // <-- logout is now defined
-                }
-                return Promise.reject(error);
-            }
-        );
-        setApi(instance);
-    }, [logout]); // <-- ADD logout to dependencies
-
-
-    // Function to check authentication status (e.g., on app load)
-    const checkAuth = useCallback(async () => {
-        console.log("AuthContext: checkAuth initiated. Current token:", token ? "Exists" : "None");
-        setLoading(true); // Ensure loading is true while checking
-        setError(null); // Clear any previous errors
-
-        if (!token) {
-            console.log("[AuthContext] checkAuth: No token found. User is not authenticated.");
+    // ----------------------------------------------------
+    // Function to check user data if authenticated (cookie present)
+    // ----------------------------------------------------
+    const loadUser = useCallback(async () => {
+        try {
+            // Use the imported API instance which is already configured for cookies (withCredentials: true)
+            const res = await API.get('/api/auth/me'); 
+            setUser(res.data);
+            setIsAuthenticated(true);
+            return true; // Indicate success
+        } catch (err) {
+            // console.warn("[AuthContext] Failed to load user via /me (Expected for unauthenticated).");
             setIsAuthenticated(false);
             setUser(null);
-            setupApi(null); // Setup unauthenticated API
-            setLoading(false); // Finished loading
-            return;
+            return false; // Indicate failure
         }
+    }, []);
 
-        try {
-            // Validate token with backend
-            // Use plain axios here, not the 'api' instance, to avoid circular dependencies
-            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/auth/me`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            console.log("[AuthContext] checkAuth: /auth/me response:", response.data);
-
-            if (response.data.success) {
-                console.log(`[AuthContext] User loaded successfully. User: ${response.data.user.email}`);
-                setIsAuthenticated(true);
-                setUser(response.data.user);
-                setupApi(token); // Setup authenticated API
-            } else {
-                console.log("[AuthContext] checkAuth: /auth/me reported non-success. Logging out.");
-                logout(); // Log out if backend says token is invalid
-            }
-        } catch (error) {
-            console.error("[AuthContext] checkAuth: Error validating token:", error.response?.data?.msg || error.message);
-            // If token validation fails, likely expired or invalid
-            logout(); // Perform logout to clear invalid token
-            setError(error.response?.data?.msg || 'Failed to validate session. Please log in again.');
-        } finally {
-            console.log(`AuthContext: checkAuth finished. Loading set to false. IsAuthenticated: ${isAuthenticated}`);
-            setLoading(false);
-        }
-    }, [token, isAuthenticated, setupApi, logout]); // Added logout to dependencies
-
-    // Effect to run checkAuth on component mount and when token changes
+    // ----------------------------------------------------
+    // Initial Auth Check (Runs once on mount)
+    // ----------------------------------------------------
     useEffect(() => {
-        console.log("AuthContext: Initial authentication check initiated.");
-        checkAuth();
-    }, [checkAuth]);
+        const checkAuth = async () => {
+            console.log('AuthContext: Initial checkAuth started.');
+            setLoading(true);
 
-    // Login function
+            await loadUser(); // Attempt to load user from cookie
+
+            setLoading(false); // Auth check is complete
+            console.log('AuthContext: checkAuth finished. Loading set to false.');
+        };
+
+        checkAuth();
+    }, [loadUser]); 
+
+    // ----------------------------------------------------
+    // Login and Register Logic
+    // ----------------------------------------------------
     const login = useCallback(async (email, password) => {
         setLoading(true);
-        setError(null); // Clear errors before attempting login
+        setError(null);
         try {
-            const res = await api.post('/auth/login', { email, password });
-            console.log("[AuthContext] Login successful:", res.data);
-            localStorage.setItem('token', res.data.token);
-            setToken(res.data.token); // Update token state, which will trigger checkAuth via useEffect below
-            return { success: true };
+            await API.post('/api/auth/login', { email, password }); // Backend sets cookie
+
+            const userLoadedSuccessfully = await loadUser(); // CRITICAL: Validate the new cookie
+
+            if (userLoadedSuccessfully) {
+                navigate('/dashboard'); // Navigate ONLY if user successfully loaded
+                return { success: true };
+            } else {
+                setError("Login failed: Could not establish secure session.");
+                // If the POST succeeded but /me failed, clear state
+                setIsAuthenticated(false);
+                setUser(null);
+                return { success: false, error: "Login failed: could not establish session." };
+            }
         } catch (err) {
-            console.error("[AuthContext] Login failed:", err.response?.data?.msg || err.message);
-            setError(err.response?.data?.msg || 'Login failed'); // Set error
-            return { success: false, error: err.response?.data?.msg || 'Login failed' };
+            setLoading(false);
+            const errorMessage = err.response?.data?.msg || err.message;
+            setError(errorMessage);
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, error: errorMessage };
         } finally {
-            // No setLoading(false) here, as checkAuth will handle the final loading state
-            // after the token is set and validated.
+            setLoading(false);
         }
-    }, [api, setToken, setError]);
+    }, [loadUser, navigate]);
 
+    const register = useCallback(async (userData) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await API.post('/api/auth/register', userData);
+            const userLoadedSuccessfully = await loadUser(); 
 
-    // Provide the context values
+            if (userLoadedSuccessfully) {
+                navigate('/dashboard');
+                return { success: true };
+            } else {
+                setError("Registration failed: Could not establish secure session.");
+                setIsAuthenticated(false);
+                setUser(null);
+                return { success: false, error: "Registration failed: could not establish session." };
+            }
+        } catch (err) {
+            setLoading(false);
+            const errorMessage = err.response?.data?.msg || err.message;
+            setError(errorMessage);
+            setIsAuthenticated(false);
+            setUser(null);
+            return { success: false, error: errorMessage };
+        }
+    }, [loadUser, navigate]);
+
+    const logout = useCallback(async () => {
+        try {
+            setLoading(true);
+            // Call backend to clear the cookie
+            await API.post('/api/auth/logout'); 
+        } catch (err) {
+            console.error('AuthContext: Logout request failed:', err.response?.data?.msg || err.message);
+        } finally {
+            setIsAuthenticated(false);
+            setUser(null);
+            setLoading(false);
+            navigate('/login');
+        }
+    }, [navigate]);
+
+    const value = {
+        isAuthenticated,
+        user,
+        loading,
+        error, // Provide error state
+        login,
+        register,
+        logout,
+        api: API, // Provide the primary API instance for other components
+    };
+
     return (
-        <AuthContext.Provider value={{ isAuthenticated, user, loading, api, login, logout, error }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );
