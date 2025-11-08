@@ -33,7 +33,8 @@ function getPeriod1Date(range) {
 
 // === MAIN ROUTE HANDLER: GET HISTORICAL DATA & PREDICTION ===
 router.get('/historical/:symbol', isAuthenticated, async (req, res) => {
-    const { symbol, range, interval } = req.query;
+    const { symbol } = req.params;
+const { range, interval } = req.query;
 
     if (!symbol || !range || !interval) {
         return res.status(400).json({ msg: 'Missing symbol, range, or interval parameters.' });
