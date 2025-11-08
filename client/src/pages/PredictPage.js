@@ -365,13 +365,28 @@ const chartPoints = chartDataForLastDay.map(d => {
 const predictionPointTimeMs = new Date(chartPoints[chartPoints.length - 1].x).getTime();
 let predictedDateTime = new Date(predictionPointTimeMs);
 
-// ... (Rest of prediction date adjustment logic: switch(selectedInterval) block) ...
-const mockPredictionPrice = response.predictedPrice || (chartPoints[chartPoints.length - 1]?.y * (1 + (Math.random() - 0.5) * 0.05));
-// Set predicted point data
-const predictionPointData = [{
-    x: predictedDateTime.getTime(), // CRITICAL: Use milliseconds
-    y: mockPredictionPrice
-}];
+// ... inside the onSubmit function, after the mock prediction logic ...
+
+// --- REFINED MOCK PREDICTION LOGIC ---
+// Ensure mockPredictionPrice is calculated from the last known close price
+const mockPredictionPrice = lastHistoricalClose * (1 + (Math.random() - 0.5) * 0.05);
+
+// Now calculate percentage change using the correctly defined mockPredictionPrice
+const percentageChange = ((mockPredictionPrice - lastHistoricalClose) / lastHistoricalClose) * 100;
+
+const mockPredictedDirection = mockPredictionPrice > lastHistoricalClose ? 'Up' : 'Down';
+const mockConfidence = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
+const mockPredictionMessage = `Based on historical data for the last ${selectedRange}, the model predicts a ${mockPredictedDirection} movement.`;
+
+setPrediction({
+    symbol: symbol,
+    predictedPrice: mockPredictionPrice,
+    predictedDirection: mockPredictedDirection,
+    confidence: mockConfidence,
+    message: mockPredictionMessage,
+    percentageChange: percentageChange, // Ensure this is stored
+});
+// ... rest of your code ...
 
 
 setChartData({
