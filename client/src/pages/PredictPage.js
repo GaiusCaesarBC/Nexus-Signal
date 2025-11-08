@@ -22,18 +22,26 @@ import Loader from '../components/Loader';
 
 // Register Chart.js components
 import {
-    // ... other imports
-    LineController, // <-- ADD THIS IMPORT
-    LineElement,
-    // ... other imports
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,    // Should only be listed once here
+    LineController, // ADD THIS LINE if it's not there, but ensure LineElement is not duplicated
+    Title,
+    Tooltip,
+    Legend,
+    TimeScale,
+    Filler,
 } from 'chart.js';
 
+// Register Chart.js components
 ChartJS.register(
     CategoryScale,
     LinearScale,
     PointElement,
     LineElement,
-    LineController, // <-- ADD THIS REGISTRATION
+    LineController, // Ensure this is present
     Title,
     Tooltip,
     Legend,
