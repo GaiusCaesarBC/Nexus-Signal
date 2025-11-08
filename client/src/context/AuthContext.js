@@ -1,128 +1,135 @@
-// client/src/context/AuthContext.js - FINAL FIX FOR COOKIE PERSISTENCE
+// client/src/context/AuthContext.js
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import API from '../api/axios'; // Import your new API instance from axios.js
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import axios from 'axios';
 
 const AuthContext = createContext(null);
-
-// Define the base API URL (Assuming it includes /api)
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
-
-// Create the configured Axios instance
-const authAxios = API.create({
-    baseURL: API_BASE_URL,
-    withCredentials: true,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-});
 
 export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const navigate = useNavigate();
+    const [loading, setLoading] = useState(true); // Start as true
+    const [api, setApi] = useState(null); // Axios instance
+    const [token, setToken] = useState(localStorage.getItem('token')); // Load token from localStorage initially
 
-    // Function to fetch user data if authenticated (cookie present)
-    const loadUser = useCallback(async () => {
-        let success = false;
-        try {
-            // Note: We avoid setting setLoading(true) here, as it's done once in the useEffect block below.
-            const res = await authAxios.get('/auth/me'); // Hits protected /me endpoint
-            setUser(res.data);
-            setIsAuthenticated(true);
-            success = true;
-            console.log("[AuthContext] User loaded successfully. User:", res.data.email);
-        } catch (err) {
-            // If /me fails (e.g., 401 Unauthorized, token expired, no cookie)
-            // This is the expected failure for an unauthenticated user, do not log loudly.
-            setIsAuthenticated(false);
-            setUser(null);
+    // Function to initialize axios instance with token
+    const setupApi = useCallback((authToken) => {
+        if (!authToken) {
+            console.log("[AuthContext] setupApi: No auth token provided, creating unauthenticated API.");
+            setApi(axios.create({
+                baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
+            }));
+            return;
         }
-        return success; // Return status for login/register functions
+
+        console.log("[AuthContext] setupApi: Setting up authenticated API with token.");
+        const instance = axios.create({
+            baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        // Add an interceptor for token expiration or unauthorized responses
+        instance.interceptors.response.use(
+            response => response,
+            async error => {
+                if (error.response && error.response.status === 401) {
+                    console.warn("[AuthContext] API Interceptor: 401 Unauthorized. Logging out user.");
+                    // Token expired or invalid, log out
+                    logout();
+                }
+                return Promise.reject(error);
+            }
+        );
+        setApi(instance);
     }, []);
 
-    // Effect to check authentication status on initial load/mount
+    // Function to check authentication status (e.g., on app load)
+    const checkAuth = useCallback(async () => {
+        console.log("AuthContext: checkAuth initiated. Current token:", token ? "Exists" : "None");
+        setLoading(true); // Ensure loading is true while checking
+
+        if (!token) {
+            console.log("[AuthContext] checkAuth: No token found. User is not authenticated.");
+            setIsAuthenticated(false);
+            setUser(null);
+            setupApi(null); // Setup unauthenticated API
+            setLoading(false); // Finished loading
+            return;
+        }
+
+        try {
+            // Validate token with backend
+            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/auth/me`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            console.log("[AuthContext] checkAuth: /auth/me response:", response.data);
+
+            if (response.data.success) {
+                console.log(`[AuthContext] User loaded successfully. User: ${response.data.user.email}`);
+                setIsAuthenticated(true);
+                setUser(response.data.user);
+                setupApi(token); // Setup authenticated API
+            } else {
+                console.log("[AuthContext] checkAuth: /auth/me reported non-success. Logging out.");
+                logout(); // Log out if backend says token is invalid
+            }
+        } catch (error) {
+            console.error("[AuthContext] checkAuth: Error validating token:", error.response?.data?.msg || error.message);
+            // If token validation fails, likely expired or invalid
+            logout(); // Perform logout to clear invalid token
+        } finally {
+            console.log(`AuthContext: checkAuth finished. Loading set to false. IsAuthenticated: ${isAuthenticated}`); // Note: isAuthenticated here might be stale
+            setLoading(false);
+        }
+    }, [token, isAuthenticated, setupApi]); // Added isAuthenticated to dependencies for logging accuracy
+
+    // Effect to run checkAuth on component mount
     useEffect(() => {
-        const checkAuth = async () => {
-            console.log('AuthContext: Initial authentication check initiated.');
-            setLoading(true); // CRITICAL: Ensure loading starts as true
-
-            await loadUser(); // Attempt to load user from cookie
-
-            setLoading(false); // CRITICAL: Authentication check is complete ONLY here
-            console.log('AuthContext: Initial checkAuth finished. Loading set to false.');
-        };
-
+        console.log("AuthContext: Initial authentication check initiated.");
         checkAuth();
-    }, [loadUser]);
+    }, [checkAuth]); // Dependency: checkAuth to rerun if its definition changes
 
-    // The login function
+    // Login function
     const login = useCallback(async (email, password) => {
         setLoading(true);
+        setError(null); // Assuming you have an error state, add it if not
         try {
-            console.log('AuthContext: Attempting login for', email);
-            await authAxios.post('/auth/login', { email, password }); // Backend sets cookie
-
-            // SUCCESS PATH: Call loadUser to fetch data and update isAuthenticated
-            await loadUser(); // This must succeed for the login process to be validated
-
-            return { success: true }; // Indicate success to LoginPage
-        } catch (err) {
-            setLoading(false);
-            const errorMessage = err.response?.data?.msg || err.message;
-            console.error('AuthContext: Login failed:', errorMessage, 'Status:', err.response?.status);
-            setIsAuthenticated(false); // Ensure auth is false on failure
-            setUser(null);
-            return { success: false, message: errorMessage }; // Indicate failure
-        }
-    }, [loadUser]);
-
-    // The register function (simplified)
-    const register = useCallback(async (userData) => {
-        setLoading(true);
-        try {
-            await authAxios.post('/api/auth/register', userData);
-            await loadUser(); // Validate and load user after registration (cookie set)
+            const res = await api.post('/auth/login', { email, password });
+            console.log("[AuthContext] Login successful:", res.data);
+            localStorage.setItem('token', res.data.token);
+            setToken(res.data.token); // Update token state, which should trigger checkAuth via useEffect below
+            setIsAuthenticated(true);
+            setUser(res.data.user);
+            setupApi(res.data.token);
             return { success: true };
         } catch (err) {
-            setLoading(false);
-            const errorMessage = err.response?.data?.msg || err.message;
-            console.error('AuthContext: Registration failed:', errorMessage, 'Status:', err.response?.status);
-            setIsAuthenticated(false);
-            setUser(null);
-            return { success: false, message: errorMessage };
-        }
-    }, [loadUser]);
-
-    // The logout function
-    const logout = useCallback(async () => {
-        setLoading(true);
-        try {
-            await authAxios.post('/api/auth/logout'); // Clear cookie on backend
-        } catch (err) {
-            console.error('AuthContext: Logout request failed:', err.response?.data?.msg || err.message);
+            console.error("[AuthContext] Login failed:", err.response?.data?.msg || err.message);
+            setError(err.response?.data?.msg || 'Login failed'); // Set error
+            return { success: false, error: err.response?.data?.msg || 'Login failed' };
         } finally {
-            setIsAuthenticated(false);
-            setUser(null);
-            setLoading(false);
-            navigate('/login'); // Redirect to login page
+            setLoading(false); // Only set loading to false here if checkAuth is not re-triggered
         }
-    }, [navigate]);
+    }, [api, setupApi]); // Dependencies for useCallback
 
-    const value = {
-        isAuthenticated,
-        user,
-        loading,
-        login,
-        register,
-        logout,
-        api: authAxios,
-    };
+    // Logout function
+    const logout = useCallback(() => {
+        console.log("[AuthContext] Performing logout.");
+        localStorage.removeItem('token');
+        setToken(null);
+        setIsAuthenticated(false);
+        setUser(null);
+        setupApi(null); // Revert to unauthenticated API
+        setLoading(false); // Not loading after logout
+    }, [setupApi]);
 
+
+    // Provide the context values
     return (
-        <AuthContext.Provider value={value}>
+        <AuthContext.Provider value={{ isAuthenticated, user, loading, api, login, logout }}>
             {children}
         </AuthContext.Provider>
     );
