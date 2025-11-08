@@ -77,7 +77,7 @@ const predictionRoutes = require('./routes/predictionRoutes'); // If you have sp
 // Mount the routes
 app.use('/api/auth', authRoutes);
 app.use('/api/crypto', cryptoRoutes);
-app.use('/api/stocks', stockRoutes);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+app.use('/api/stocks', stockRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/prediction', predictionRoutes);
 
