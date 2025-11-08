@@ -1,8 +1,8 @@
-// client/src/context/AuthContext.js - FINAL FIX FOR RACE CONDITION & LOADING STUCK
+// client/src/context/AuthContext.js - FINAL FIX FOR UNUSED AXIOS IMPORT
 
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // We will use plain axios here
+// import axios from 'axios'; // <-- REMOVE THIS LINE
 import API from '../api/axios'; // IMPORTANT: Use your configured API instance for general calls
 
 const AuthContext = createContext(null);
@@ -14,8 +14,6 @@ export const AuthProvider = ({ children }) => {
     const [error, setError] = useState(null); // State for errors
     const navigate = useNavigate();
     
-    // NOTE: We don't define authAxios here anymore. We use the imported API instance directly.
-
     // ----------------------------------------------------
     // Function to check user data if authenticated (cookie present)
     // ----------------------------------------------------
