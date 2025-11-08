@@ -170,17 +170,18 @@ const LoginPage = () => {
     const [password, setPassword] = useState('');
     const [localLoading, setLocalLoading] = useState(false);
     const [localError, setLocalError] = useState('');
-    const navigate = useNavigate();
+ 
 
     const { login, isAuthenticated, loading: authLoading } = useAuth();
 
     const isLoading = localLoading || authLoading;
 
     useEffect(() => {
-        console.log('LoginPage useEffect: isAuthenticated =', isAuthenticated, 'authLoading =', authLoading);
-        // Removed the navigate call here to prevent premature redirects
-    }, []);
-    
+        // console.log('LoginPage useEffect: isAuthenticated =', isAuthenticated, 'authLoading =', authLoading); // Removed
+        // If there's no logic here that needs `isAuthenticated` or `authLoading`,
+        // then no dependencies are needed.
+    }, []);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLocalLoading(true);
