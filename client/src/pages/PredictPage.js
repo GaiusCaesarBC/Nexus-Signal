@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { Chart } from 'react-chartjs-2';
+import { Chart } from 'react-chartjs-2'; // This imports the React wrapper Chart component
 import {
-    Chart as ChartJS,
+    // These are the core Chart.js components and controllers
+    Chart as ChartJS, // Renames the core Chart object from chart.js to ChartJS
     CategoryScale,
     LinearScale,
     PointElement,
     LineElement,
-    LineController, // CRITICAL FIX: Add LineController
+    LineController, // CRITICAL: This was missing or duplicated, now correctly included
     Title,
     Tooltip,
     Legend,
-    TimeScale, // Crucial for time-series data
-    Filler,
+    TimeScale, // Crucial for time-series data on the X-axis
+    Filler, // Required for filling areas under line charts (e.g., background color)
 } from 'chart.js';
-import 'chartjs-adapter-date-fns'; // Adapter for date handling
+import 'chartjs-adapter-date-fns'; // Adapter for date handling with TimeScale
 
 import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial'; // For candlestick charts
 
@@ -22,24 +23,23 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 
-// Register ALL Chart.js components
+// Register ALL Chart.js components and controllers required for your charts
 ChartJS.register(
     CategoryScale,
     LinearScale,
     PointElement,
     LineElement,
-    LineController, // Ensure this is present
+    LineController, // Explicitly register LineController
     Title,
     Tooltip,
     Legend,
-    TimeScale, // Ensure TimeScale is registered
+    TimeScale, // Explicitly register TimeScale
     Filler,
     CandlestickController,
     CandlestickElement // Register financial chart elements
 );
-// --- Styled Components and Component Definition will follow ---
 
-// --- Styled Components --- (Continues in Part 2)
+// --- Styled Components will follow in Part 2 ---
 
 // --- Styled Components ---
 const PredictPageContainer = styled.div`
@@ -316,6 +316,18 @@ const PredictPage = () => {
             const backendConfidence = res.data.confidence;
             const backendPredictionMessage = res.data.predictionMessage;
 
+            // --- DEBUG LOGS FOR DATA VALIDATION ---
+            console.log('--- Debugging Historical Data ---');
+            console.log('Raw historicalData from backend:', historicalData);
+            if (historicalData && historicalData.length > 0) {
+                console.log('First historical data point (raw):', historicalData[0]);
+                console.log('Last historical data point (raw):', historicalData[historicalData.length - 1]);
+                console.log('Last historical close price (raw):', historicalData[historicalData.length - 1]?.close); // Use optional chaining
+            } else {
+                console.log('No historical data or empty array received.');
+            }
+            // --- END DEBUG LOGS ---
+
 
             if (!historicalData || historicalData.length === 0) {
                 setError(`No historical data found for ${symbol} with the selected range and interval.`);
@@ -357,18 +369,29 @@ const PredictPage = () => {
                 // CRITICAL FIX: Convert time to Unix Milliseconds for Chart.js Time Scale
                 const timeInMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
 
+                // Ensure price values are numbers and exist
                 return {
                     x: timeInMs, // <-- MUST BE MILLISECONDS (Unix time)
-                    y: d.close,
-                    o: d.open,
-                    h: d.high,
-                    l: d.low,
-                    c: d.close
+                    y: d.close || 0, // Fallback to 0 if close is undefined/null
+                    o: d.open || 0,
+                    h: d.high || 0,
+                    l: d.low || 0,
+                    c: d.close || 0
                 };
             });
 
+            // --- DEBUG LOGS FOR CHART POINTS ---
+            console.log('Generated chartPoints (processed for chart):', chartPoints);
+            if (chartPoints && chartPoints.length > 0) {
+                console.log('First chartPoint y value:', chartPoints[0]?.y);
+                console.log('Last chartPoint y value:', chartPoints[chartPoints.length - 1]?.y);
+            }
+            // --- END DEBUG LOGS ---
+
+
             // --- PREDICTION LOGIC AND CHART POINT GENERATION ---
             // Use the predictedPrice from the backend, or fall back to mock if not provided
+            // NOTE: If backendPredictedPrice is always 0 or very small, the chart will reflect that.
             const finalPredictedPrice = backendPredictedPrice || (lastHistoricalClose * (1 + (Math.random() - 0.5) * 0.05));
             const finalPredictedDirection = backendPredictedDirection || (finalPredictedPrice > lastHistoricalClose ? 'Up' : 'Down');
             const finalConfidence = backendConfidence || (Math.floor(Math.random() * (95 - 60 + 1)) + 60);
@@ -386,8 +409,14 @@ const PredictPage = () => {
 
             const predictionPointData = [{
                 x: predictedDateTime.getTime(), // CRITICAL: Use milliseconds for prediction point
-                y: finalPredictedPrice
+                y: finalPredictedPrice // Use the final calculated prediction price
             }];
+
+            // --- DEBUG LOGS FOR PREDICTION POINTS ---
+            console.log('Final Predicted Price:', finalPredictedPrice);
+            console.log('Prediction Point Data (for chart):', predictionPointData);
+            // --- END DEBUG LOGS ---
+
 
             // Set the prediction state for display
             setPrediction({
@@ -402,8 +431,8 @@ const PredictPage = () => {
             // --- CHART DATA SETUP ---
             setChartData({
                 datasets: [
-                    // Candlestick data for stocks if available
-                    ...(predictionType === 'stock' && chartPoints[0]?.o !== undefined ? [{
+                    // Candlestick data for stocks if available and if prices are valid
+                    ...(predictionType === 'stock' && chartPoints[0]?.o !== undefined && chartPoints[0]?.o > 0 ? [{
                         label: `${symbol} (OHLC)`,
                         data: chartPoints.map(p => ({ x: p.x, o: p.o, h: p.h, l: p.l, c: p.c })),
                         type: 'candlestick',
@@ -426,8 +455,9 @@ const PredictPage = () => {
                     // Prediction line, connected from the last historical close
                     {
                         label: 'Predicted Price',
+                        // Connect the last historical point to the predicted point
                         data: [
-                            { x: chartPoints[chartPoints.length - 1].x, y: chartPoints[chartPoints.length - 1].y },
+                            ...(chartPoints.length > 0 ? [{ x: chartPoints[chartPoints.length - 1].x, y: chartPoints[chartPoints.length - 1].y }] : []),
                             ...predictionPointData
                         ],
                         borderColor: '#FFC107',
@@ -452,7 +482,7 @@ const PredictPage = () => {
     }, [api, isAuthenticated, predictionType, symbol, selectedRange, selectedInterval]); // Dependencies for useCallback
 
     // getChartOptions starts in Part 4
-    const getChartOptions = useCallback((currentPredictionType, currentSymbol) => {
+const getChartOptions = useCallback((currentPredictionType, currentSymbol) => {
         return {
             responsive: true,
             maintainAspectRatio: false,
@@ -543,7 +573,7 @@ const PredictPage = () => {
                 },
             },
         };
-    }, []); // No dependencies for options that depend on data dynamically within the callback
+    }, []);
 
     return (
         <PredictPageContainer>
