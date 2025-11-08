@@ -179,8 +179,8 @@ const LoginPage = () => {
     useEffect(() => {
         console.log('LoginPage useEffect: isAuthenticated =', isAuthenticated, 'authLoading =', authLoading);
         // Removed the navigate call here to prevent premature redirects
-    }, [isAuthenticated, authLoading]); // Removed navigate from dependencies for now
-
+    }, []);
+    
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLocalLoading(true);
@@ -190,20 +190,10 @@ const LoginPage = () => {
 
         const success = await login(email, password); // Corrected this line
 
-        if (success) {
-            console.log('LoginPage handleSubmit: Login successful via AuthContext. isAuthenticated (from useAuth):', isAuthenticated);
-            alert('Login successful! Welcome back.');
-
-            // Navigate after a short delay to ensure AuthContext state is fully updated
-            setTimeout(() => {
-                console.log('LoginPage handleSubmit: Navigating to /dashboard after delay.');
-                navigate('/dashboard', { replace: true });
-            }, 100);
-
-        } else {
-            setLocalError('Login failed. Please check your credentials.');
-            console.error('LoginPage handleSubmit: Login failed via AuthContext: Check network tab for server response details.');
-        }
+       if (!success) { // ONLY handle failure here, AuthContext handles success navigation
+       setLocalError('Login failed. Please check your credentials.');
+     console.error('LoginPage handleSubmit: Login failed via AuthContext: Check network tab for server response details.');
+      }
 
         setLocalLoading(false);
     };
