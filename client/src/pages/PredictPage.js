@@ -21,18 +21,26 @@ import { useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 
 // Register Chart.js components
+import {
+    // ... other imports
+    LineController, // <-- ADD THIS IMPORT
+    LineElement,
+    // ... other imports
+} from 'chart.js';
+
 ChartJS.register(
     CategoryScale,
     LinearScale,
     PointElement,
     LineElement,
+    LineController, // <-- ADD THIS REGISTRATION
     Title,
     Tooltip,
     Legend,
     TimeScale,
     Filler,
     CandlestickController,
-    CandlestickElement // Registering the candlestick elements
+    CandlestickElement
 );
 
 // --- Styled Components --- (Continues in Part 2)
