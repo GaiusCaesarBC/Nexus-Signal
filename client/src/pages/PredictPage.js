@@ -366,7 +366,7 @@ const predictionPointTimeMs = new Date(chartPoints[chartPoints.length - 1].x).ge
 let predictedDateTime = new Date(predictionPointTimeMs);
 
 // ... (Rest of prediction date adjustment logic: switch(selectedInterval) block) ...
-
+const mockPredictionPrice = response.predictedPrice || (chartPoints[chartPoints.length - 1]?.y * (1 + (Math.random() - 0.5) * 0.05));
 // Set predicted point data
 const predictionPointData = [{
     x: predictedDateTime.getTime(), // CRITICAL: Use milliseconds
