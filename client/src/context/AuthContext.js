@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
     const loadUser = useCallback(async () => {
         try {
             // Use the imported API instance which is already configured for cookies (withCredentials: true)
-            const res = await API.get('/api/auth/me'); 
+           const res = await API.get('/auth/me');
             setUser(res.data);
             setIsAuthenticated(true);
             return true; // Indicate success
@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
-            await API.post('/api/auth/login', { email, password }); // Backend sets cookie
+            const res = await API.post('/auth/login', { email, password });
 
             const userLoadedSuccessfully = await loadUser(); // CRITICAL: Validate the new cookie
 
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
-            await API.post('/api/auth/register', userData);
+            await API.post('/auth/register', userData);
             const userLoadedSuccessfully = await loadUser(); 
 
             if (userLoadedSuccessfully) {
