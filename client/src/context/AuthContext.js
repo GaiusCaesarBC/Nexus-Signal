@@ -9,7 +9,26 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true); // Start as true
     const [api, setApi] = useState(null); // Axios instance
     const [token, setToken] = useState(localStorage.getItem('token')); // Load token from localStorage initially
-    const [error, setError] = useState(null); // <-- ADDED: State for errors in AuthContext
+    const [error, setError] = useState(null); // State for errors in AuthContext
+
+    // --- MOVE LOGOUT DEFINITION UP HERE ---
+    // Logout function (defined explicitly to be used by interceptor or directly)
+    const logout = useCallback(() => {
+        console.log("[AuthContext] Performing logout.");
+        localStorage.removeItem('token');
+        setToken(null);
+        setIsAuthenticated(false);
+        setUser(null);
+        // Do NOT call setupApi here if it depends on logout, it will create a circular dependency
+        // Instead, setupApi(null) should be called in checkAuth for clean unauthenticated state
+        // and after setupApi itself is defined if needed.
+        setApi(axios.create({ // Directly set to unauthenticated API
+            baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
+        }));
+        setError(null); // Clear errors on logout
+        setLoading(false); // Not loading after logout
+    }, []); // This logout function itself has no external dependencies now
+
 
     // Function to initialize axios instance with token
     const setupApi = useCallback((authToken) => {
@@ -36,13 +55,14 @@ export const AuthProvider = ({ children }) => {
                 if (error.response && error.response.status === 401) {
                     console.warn("[AuthContext] API Interceptor: 401 Unauthorized. Logging out user.");
                     // Token expired or invalid, log out
-                    logout(); // Trigger logout action
+                    logout(); // <-- logout is now defined
                 }
                 return Promise.reject(error);
             }
         );
         setApi(instance);
-    }, []); // No need for logout in dependencies as it's defined within this same context
+    }, [logout]); // <-- ADD logout to dependencies
+
 
     // Function to check authentication status (e.g., on app load)
     const checkAuth = useCallback(async () => {
@@ -104,9 +124,6 @@ export const AuthProvider = ({ children }) => {
             console.log("[AuthContext] Login successful:", res.data);
             localStorage.setItem('token', res.data.token);
             setToken(res.data.token); // Update token state, which will trigger checkAuth via useEffect below
-            // setIsAuthenticated(true); // checkAuth will handle this after validating the new token
-            // setUser(res.data.user);   // checkAuth will handle this
-            // setupApi(res.data.token); // checkAuth will handle this
             return { success: true };
         } catch (err) {
             console.error("[AuthContext] Login failed:", err.response?.data?.msg || err.message);
@@ -117,18 +134,6 @@ export const AuthProvider = ({ children }) => {
             // after the token is set and validated.
         }
     }, [api, setToken, setError]);
-
-    // Logout function (defined explicitly to be used by interceptor or directly)
-    const logout = useCallback(() => {
-        console.log("[AuthContext] Performing logout.");
-        localStorage.removeItem('token');
-        setToken(null);
-        setIsAuthenticated(false);
-        setUser(null);
-        setupApi(null); // Revert to unauthenticated API
-        setError(null); // Clear errors on logout
-        setLoading(false); // Not loading after logout
-    }, [setupApi]);
 
 
     // Provide the context values
