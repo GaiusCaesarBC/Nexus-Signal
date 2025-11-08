@@ -72,7 +72,7 @@ const authRoutes = require('./routes/auth');
 const cryptoRoutes = require('./routes/cryptoRoutes');     // Assuming client/src/pages/PredictPage.js uses this
 const stockRoutes = require('./routes/stockRoutes');       // If you have stock data routes
 const dashboardRoutes = require('./routes/dashboard'); // Assuming client/src/pages/DashboardPage.js uses this
-const predictionRoutes = require('./routes/prediction'); // If you have specific prediction routes
+const predictionRoutes = require('./routes/predictionRoutes'); // If you have specific prediction routes
 
 // Mount the routes
 app.use('/api/auth', authRoutes);
