@@ -10,11 +10,11 @@ import {
     Title,
     Tooltip,
     Legend,
-    TimeScale,
+    TimeScale, // Crucial for time-series data
     Filler, // Required for filling areas under line charts
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial';
+import 'chartjs-adapter-date-fns'; // Adapter for date handling
+import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial'; // For candlestick charts
 
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -32,8 +32,10 @@ ChartJS.register(
     TimeScale,
     Filler,
     CandlestickController,
-    CandlestickElement
+    CandlestickElement // Registering the candlestick elements
 );
+
+// --- Styled Components --- (Continues in Part 2)
 
 // --- Styled Components ---
 const PredictPageContainer = styled.div`
@@ -240,6 +242,8 @@ const InitialMessage = styled.p`
     margin-top: 1rem;
 `;
 
+// PredictPage Component starts in Part 3
+
 const PredictPage = () => {
     const { api, isAuthenticated, loading: authLoading } = useAuth();
     const navigate = useNavigate();
@@ -252,7 +256,6 @@ const PredictPage = () => {
     const [error, setError] = useState(null);
     const [chartData, setChartData] = useState(null);
     const [currentPrice, setCurrentPrice] = useState(null); // To store the last known historical price
-   
 
     // Redirect if not authenticated after loading
     useEffect(() => {
@@ -267,7 +270,6 @@ const PredictPage = () => {
         setPrediction(null);
         setChartData(null);
         setCurrentPrice(null);
-        
 
         if (!symbol) {
             setError(`Please enter a ${predictionType} symbol.`);
@@ -305,6 +307,11 @@ const PredictPage = () => {
             console.log(`${predictionType} Historical Data API response:`, res.data);
 
             const historicalData = res.data.historicalData; // Assuming backend sends { historicalData: [...] }
+            const backendPredictedPrice = res.data.predictedPrice; // Get predictedPrice from backend response
+            const backendPredictedDirection = res.data.predictedDirection;
+            const backendConfidence = res.data.confidence;
+            const backendPredictionMessage = res.data.predictionMessage;
+
 
             if (!historicalData || historicalData.length === 0) {
                 setError(`No historical data found for ${symbol} with the selected range and interval.`);
@@ -312,136 +319,135 @@ const PredictPage = () => {
                 return;
             }
 
-        
-            // ... (inside handleSubmit, after setCurrentPrice)
-
             const lastHistoricalClose = historicalData[historicalData.length - 1].close;
             setCurrentPrice(lastHistoricalClose);
 
-            // ... (inside the onSubmit function, after the temporary mock prediction block)
+            // --- Filter historical data for the "last day" chart ---
+            let chartDataForLastDay = [];
+            if (historicalData.length > 0) {
+                // Determine the last timestamp available (in milliseconds)
+                const lastDataPointTimeMs = typeof historicalData[historicalData.length - 1].time === 'number'
+                    ? historicalData[historicalData.length - 1].time * 1000
+                    : new Date(historicalData[historicalData.length - 1].time).getTime();
 
-// --- Filter historical data for the "last day" chart ---
-let chartDataForLastDay = [];
-if (historicalData.length > 0) {
-    // Determine the last timestamp available (in milliseconds)
-    const lastDataPointTimeMs = typeof historicalData[historicalData.length - 1].time === 'number'
-        ? historicalData[historicalData.length - 1].time * 1000
-        : new Date(historicalData[historicalData.length - 1].time).getTime();
+                // Calculate 24 hours ago
+                const oneDayAgo = new Date(lastDataPointTimeMs - 24 * 60 * 60 * 1000).getTime();
 
-    // Calculate 24 hours ago
-    const oneDayAgo = new Date(lastDataPointTimeMs - 24 * 60 * 60 * 1000).getTime();
+                chartDataForLastDay = historicalData.filter(d => {
+                    const dataDateMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
+                    return dataDateMs >= oneDayAgo;
+                });
 
-    chartDataForLastDay = historicalData.filter(d => {
-        const dataDateMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
-        return dataDateMs >= oneDayAgo;
-    });
+                // Fallback logic (unchanged)
+                if (chartDataForLastDay.length === 0 && selectedRange === '1D') {
+                    chartDataForLastDay = historicalData;
+                } else if (chartDataForLastDay.length === 0) {
+                    chartDataForLastDay = [historicalData[historicalData.length - 1]];
+                } else if (chartDataForLastDay.length === 1 && historicalData.length > 1) {
+                    chartDataForLastDay.unshift(historicalData[historicalData.length - 2]);
+                }
+            }
 
-    // Fallback logic (unchanged)
-    if (chartDataForLastDay.length === 0 && selectedRange === '1D') {
-        chartDataForLastDay = historicalData;
-    } else if (chartDataForLastDay.length === 0) {
-        chartDataForLastDay = [historicalData[historicalData.length - 1]];
-    } else if (chartDataForLastDay.length === 1 && historicalData.length > 1) {
-        chartDataForLastDay.unshift(historicalData[historicalData.length - 2]);
-    }
-}
+            // Prepare chart data using the filtered `chartDataForLastDay`
+            const chartPoints = chartDataForLastDay.map(d => {
+                // CRITICAL FIX: Convert time to Unix Milliseconds for Chart.js Time Scale
+                const timeInMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
 
-// Prepare chart data using the filtered `chartDataForLastDay`
-const chartPoints = chartDataForLastDay.map(d => {
-    // CRITICAL FIX: Convert time to Unix Milliseconds for Chart.js Time Scale
-    const timeInMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
-    
-    return {
-        x: timeInMs, // <-- MUST BE MILLISECONDS (Unix time)
-        y: d.close,
-        o: d.open,
-        h: d.high,
-        l: d.low,
-        c: d.close
-    };
-});
+                return {
+                    x: timeInMs, // <-- MUST BE MILLISECONDS (Unix time)
+                    y: d.close,
+                    o: d.open,
+                    h: d.high,
+                    l: d.low,
+                    c: d.close
+                };
+            });
 
-// Prepare prediction point data (must also be in milliseconds)
-const predictionPointTimeMs = new Date(chartPoints[chartPoints.length - 1].x).getTime();
-let predictedDateTime = new Date(predictionPointTimeMs);
+            // --- PREDICTION LOGIC AND CHART POINT GENERATION ---
+            // Use the predictedPrice from the backend, or fall back to mock if not provided
+            const finalPredictedPrice = backendPredictedPrice || (lastHistoricalClose * (1 + (Math.random() - 0.5) * 0.05));
+            const finalPredictedDirection = backendPredictedDirection || (finalPredictedPrice > lastHistoricalClose ? 'Up' : 'Down');
+            const finalConfidence = backendConfidence || (Math.floor(Math.random() * (95 - 60 + 1)) + 60);
+            const finalPredictionMessage = backendPredictionMessage || `Based on historical data for the last ${selectedRange}, the model predicts a ${finalPredictedDirection} movement.`;
+            const percentageChange = ((finalPredictedPrice - lastHistoricalClose) / lastHistoricalClose) * 100;
 
-// ... inside the onSubmit function, after the mock prediction logic ...
+            // Prepare prediction point data (must also be in milliseconds)
+            // Start from the last historical point's time
+            const predictionPointTimeMsStart = chartPoints.length > 0 ? chartPoints[chartPoints.length - 1].x : Date.now();
+            let predictedDateTime = new Date(predictionPointTimeMsStart);
 
-// --- REFINED MOCK PREDICTION LOGIC ---
-// Ensure mockPredictionPrice is calculated from the last known close price
-const mockPredictionPrice = lastHistoricalClose * (1 + (Math.random() - 0.5) * 0.05);
+            // Advance time based on interval (this logic determines WHEN the prediction occurs)
+            // For simplicity, we'll just move it a bit into the future for visualization
+            predictedDateTime.setHours(predictedDateTime.getHours() + 24); // +24 hours from last data point
 
-// Now calculate percentage change using the correctly defined mockPredictionPrice
-const percentageChange = ((mockPredictionPrice - lastHistoricalClose) / lastHistoricalClose) * 100;
+            const predictionPointData = [{
+                x: predictedDateTime.getTime(), // CRITICAL: Use milliseconds for prediction point
+                y: finalPredictedPrice
+            }];
 
-const mockPredictedDirection = mockPredictionPrice > lastHistoricalClose ? 'Up' : 'Down';
-const mockConfidence = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
-const mockPredictionMessage = `Based on historical data for the last ${selectedRange}, the model predicts a ${mockPredictedDirection} movement.`;
+            // Set the prediction state for display
+            setPrediction({
+                symbol: symbol,
+                predictedPrice: finalPredictedPrice,
+                predictedDirection: finalPredictedDirection,
+                confidence: finalConfidence,
+                message: finalPredictionMessage,
+                percentageChange: percentageChange,
+            });
 
-setPrediction({
-    symbol: symbol,
-    predictedPrice: mockPredictionPrice,
-    predictedDirection: mockPredictedDirection,
-    confidence: mockConfidence,
-    message: mockPredictionMessage,
-    percentageChange: percentageChange, // Ensure this is stored
-});
-// ... rest of your code ...
+            // --- CHART DATA SETUP ---
+            setChartData({
+                datasets: [
+                    // Candlestick data for stocks if available
+                    ...(predictionType === 'stock' && chartPoints[0]?.o !== undefined ? [{
+                        label: `${symbol} (OHLC)`,
+                        data: chartPoints.map(p => ({ x: p.x, o: p.o, h: p.h, l: p.l, c: p.c })),
+                        type: 'candlestick',
+                        borderColor: 'transparent',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    }] : []),
+                    // Line data for historical close prices (or crypto)
+                    {
+                        label: `${symbol} Price`,
+                        data: chartPoints.map(p => ({ x: p.x, y: p.y })),
+                        borderColor: '#00adef',
+                        backgroundColor: 'rgba(0, 173, 239, 0.2)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y'
+                    },
+                    // Prediction line, connected from the last historical close
+                    {
+                        label: 'Predicted Price',
+                        data: [
+                            { x: chartPoints[chartPoints.length - 1].x, y: chartPoints[chartPoints.length - 1].y },
+                            ...predictionPointData
+                        ],
+                        borderColor: '#FFC107',
+                        backgroundColor: '#FFC107',
+                        borderWidth: 3,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#FFC107',
+                        pointBorderColor: '#fff',
+                        tension: 0,
+                        fill: false,
+                        yAxisID: 'y'
+                    }
+                ],
+            });
 
-
-setChartData({
-    datasets: [
-        // Candlestick data for stocks if available
-        ...(predictionType === 'stock' && chartPoints[0]?.o !== undefined ? [{
-            label: `${symbol} (OHLC)`,
-            data: chartPoints.map(p => ({ x: p.x, o: p.o, h: p.h, l: p.l, c: p.c })),
-            type: 'candlestick',
-            borderColor: 'transparent',
-            borderWidth: 1,
-            yAxisID: 'y'
-        }] : []),
-        // Line data for historical close prices (or crypto)
-        {
-            label: `${symbol} Price`,
-            data: chartPoints.map(p => ({ x: p.x, y: p.y })),
-            borderColor: '#00adef',
-            backgroundColor: 'rgba(0, 173, 239, 0.2)',
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false,
-            tension: 0.2,
-            yAxisID: 'y'
-        },
-        // Prediction point, connected from the last historical close
-        {
-            label: 'Predicted Price',
-            data: [
-                { x: chartPoints[chartPoints.length - 1].x, y: chartPoints[chartPoints.length - 1].y },
-                ...predictionPointData
-            ],
-            borderColor: '#FFC107',
-            backgroundColor: '#FFC107',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: '#FFC107',
-            pointBorderColor: '#fff',
-            tension: 0,
-            fill: false,
-            yAxisID: 'y'
-        }
-    ],
-});
-            // Temporary mock prediction logic (replace with real model call)
-           
         } catch (err) {
             console.error('Error fetching prediction or historical data:', err.response?.data?.msg || err.message);
             setError(err.response?.data?.msg || 'Failed to fetch prediction. Please check the symbol and try again.');
         } finally {
             setLoading(false);
         }
-    }, [api, isAuthenticated, predictionType, symbol, selectedRange, selectedInterval]);
+    }, [api, isAuthenticated, predictionType, symbol, selectedRange, selectedInterval]); // Dependencies for useCallback
 
-
+    // getChartOptions starts in Part 4
     const getChartOptions = useCallback((currentPredictionType, currentSymbol) => {
         return {
             responsive: true,
@@ -623,8 +629,6 @@ setChartData({
             </PredictBox>
 
             {prediction && (
-               // ... (inside the return statement, within PredictionResult)
-
                 <PredictionResult>
                     {currentPrice && (
                         <ResultDetail>
@@ -637,7 +641,6 @@ setChartData({
                             {prediction.predictedDirection === 'Up' ? '▲' : prediction.predictedDirection === 'Down' ? '▼' : ''}
                         </DirectionArrow>
                     </PredictionValue>
-                    {/* ADD THIS NEW LINE FOR PERCENTAGE CHANGE */}
                     {prediction.percentageChange !== undefined && (
                         <ResultDetail>
                             Change: {prediction.percentageChange.toFixed(2)}%
