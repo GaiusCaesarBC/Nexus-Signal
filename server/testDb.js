@@ -1,27 +1,32 @@
-// server/testDb.js
-require('dotenv').config();
+// server/db.js
 const mongoose = require('mongoose');
 
-const testConnection = async () => {
-  const uri = process.env.MONGO_URI;
+const connectDB = async () => {
+    try {
+        if (!process.env.MONGODB_URI) {
+            console.error('CRITICAL ERROR: MONGODB_URI is not defined in environment variables.');
+            // Exit the process if the DB URI is missing, as the app won't function
+            process.exit(1);
+        }
 
-  console.log('--- Database Connection Test ---');
-  if (!uri) {
-    console.error('ERROR: MONGO_URI not found in .env file.');
-    return;
-  }
+        const conn = await mongoose.connect(process.env.MONGODB_URI, {
+            // These options are often recommended for Mongoose 6+ but may vary by version
+            // Depending on your Mongoose version, some might be deprecated or default true.
+            // Check Mongoose docs for your version.
+            // useNewUrlParser: true,
+            // useUnifiedTopology: true,
+            // useCreateIndex: true, // Deprecated in Mongoose 6
+            // useFindAndModify: false, // Deprecated in Mongoose 6
+            serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+            socketTimeoutMS: 45000,       // Close sockets after 45 seconds of inactivity
+        });
 
-  console.log('Attempting to connect to MongoDB...');
-  console.log('Using URI:', uri); // This will show us the exact string being used
-
-  try {
-    await mongoose.connect(uri);
-    console.log('\nSUCCESS: MongoDB Connected successfully from test script!');
-  } catch (err) {
-    console.error('\nERROR: Connection failed.');
-    console.error('Full Error Message:', err.message);
-  }
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`MongoDB Connection Error: ${error.message}`);
+        // Exit process on connection failure
+        process.exit(1);
+    }
 };
 
-testConnection();
-
+module.exports = connectDB;

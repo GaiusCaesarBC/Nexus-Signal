@@ -39,7 +39,8 @@ connectDB();
 // Import your route files (ensure these paths are correct as per our last discussion)
 const authRoutes = require('./routes/auth');        // Confirmed 'auth.js'
 const stockRoutes = require('./routes/stockRoutes'); // Confirmed 'stockRoutes.js'
-const cryptoRoutes = require('./routes/cryptoRoutes'); // Confirmed 'cryptoRoutes.js'
+const cryptoRoutes = require('./routes/cryptoRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const authMiddleware = require('./middleware/authMiddleware'); // Confirmed
 
 // --- Middleware Setup ---
@@ -75,7 +76,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/stocks', authMiddleware, stockRoutes); // Use authMiddleware for stock routes
 app.use('/api/crypto', authMiddleware, cryptoRoutes); // Use authMiddleware for crypto routes
-
+app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 
 // --- Error Handling Middleware ---
 app.use((err, req, res, next) => {
