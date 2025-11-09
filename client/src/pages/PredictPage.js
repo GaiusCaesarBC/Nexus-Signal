@@ -221,14 +221,6 @@ const PredictPage = () => {
     }), []);
 
 
-// Inside your PredictPage component's render/return method
-return (
-  <div>
-    <h1>--- VERIFYING FRONTEND DEPLOYMENT ---</h1> {/* Add this line */}
-    {/* ... rest of your PredictPage content ... */}
-  </div>
-);
-
     return (
         <PredictPageContainer>
             <TitleStyled>AI-Powered Market Predictions</TitleStyled>
