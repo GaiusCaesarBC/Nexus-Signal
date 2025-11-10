@@ -65,7 +65,7 @@ app.use(xss());
 app.use(hpp());
 
 // --- ROUTE IMPORTS ---
-const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 // const marketDataRoutes = require('./routes/marketDataRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
