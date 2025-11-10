@@ -1,88 +1,99 @@
-require('dotenv').config(); // Load environment variables from .env file
+// server/app.js - FINAL VERSION WITH DB CONNECTION
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
+const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
-const mongoose = require('mongoose'); // Import Mongoose
-const app = express(); // This is your Express app instance
+const mongoose = require('mongoose'); // <--- CRITICAL NEW IMPORT
+const app = express();
 
-// --- Database Connection ---
+// --- Database Connection Setup ---
 const connectDB = async () => {
     try {
-        if (!process.env.MONGODB_URI) {
-            console.error('CRITICAL ERROR: MONGODB_URI is not defined in environment variables.');
-            // Exit the process if the DB URI is missing, as the app won't function
-            process.exit(1);
-        }
-
-        const conn = await mongoose.connect(process.env.MONGODB_URI, {
-            // These options are often recommended for Mongoose 6+ but may vary by version
-            // Depending on your Mongoose version, some might be deprecated or default true.
-            // Check Mongoose docs for your specific Mongoose version.
-            // useNewUrlParser: true,     // Often deprecated/default true in Mongoose 6+
-            // useUnifiedTopology: true,  // Often deprecated/default true in Mongoose 6+
-            serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-            socketTimeoutMS: 45000,       // Close sockets after 45 seconds of inactivity
-        });
-
+        const conn = await mongoose.connect(process.env.MONGODB_URI);
         console.log(`MongoDB Connected: ${conn.connection.host}`);
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
-        // Exit process on connection failure
-        process.exit(1);
+        // Don't exit process here in dev, might want to retry, but for now log it loudly.
+        // In production, Render will restart it if it crashes.
     }
 };
 
-// Call connectDB to establish connection when the app starts
+// Connect to Database immediately when app loads
 connectDB();
 
-// Import your route files (ensure these paths are correct as per our last discussion)
-const authRoutes = require('./routes/auth');        // Confirmed 'auth.js'
-const stockRoutes = require('./routes/stockRoutes'); // Confirmed 'stockRoutes.js'
-const cryptoRoutes = require('./routes/cryptoRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const authMiddleware = require('./middleware/authMiddleware'); // Confirmed
-
-// --- Middleware Setup ---
+// --- CORS Setup ---
 const allowedOrigins = [
-    'https://www.nexussignal.ai',
     'http://localhost:3000',
-    // Add any other specific Vercel deployment URLs if you have them, e.g.:
-    // 'https://nexus-signal-lgou13znm-cody-watkins-projects.vercel.app'
+    'http://localhost:5000',
+    'https://www.nexussignal.ai',
+    'https://nexussignal.ai',
+    // Add any other Vercel preview URLs if you need them later
 ];
+
 app.use(cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}.`;
-            console.warn(`CORS BLOCKED: Origin ${origin} not allowed by CORS.`); // Log the blocked origin
-            return callback(new Error(msg), false);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS Blocked: ${origin}`);
+            // Optionally allow it anyway for debugging if you are desperate, but better to block unexpected origins.
+            // For now, let's stick to the whitelist to be secure.
+            callback(new Error('Not allowed by CORS'), false);
         }
-        return callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
 }));
-app.use(express.json());
+app.options('*', cors()); // Handle preflight requests for all routes
+
+// --- Middleware ---
+app.use(helmet());
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 
-// Basic Root Route (Optional - just to confirm server is running)
-app.get('/', (req, res) => {
-    res.send('Nexus Signal API is running!');
-});
+// --- ROUTE IMPORTS ---
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/userRoutes');
+// const marketDataRoutes = require('./routes/marketDataRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+// const watchlistRoutes = require('./routes/watchlistRoutes');
+// const portfolioRoutes = require('./routes/portfolioRoutes');
+const stockRoutes = require('./routes/stockRoutes');
+const cryptoRoutes = require('./routes/cryptoRoutes');
 
-// --- Route Mounting ---
+// Basic root route for health check
+app.get('/', (req, res) => res.send('API is running...'));
+
+// --- ROUTE MOUNTING ---
 app.use('/api/auth', authRoutes);
-app.use('/api/stocks', authMiddleware, stockRoutes); // Use authMiddleware for stock routes
-app.use('/api/crypto', authMiddleware, cryptoRoutes); // Use authMiddleware for crypto routes
-app.use('/api/dashboard', authMiddleware, dashboardRoutes);
+app.use('/api/users', userRoutes);
+// app.use('/api/market-data', marketDataRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+// app.use('/api/watchlist', watchlistRoutes);
+// app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/stocks', stockRoutes);
+app.use('/api/crypto', cryptoRoutes);
 
-// --- Error Handling Middleware ---
+// --- Global Error Handler ---
 app.use((err, req, res, next) => {
-    console.error(`Unhandled Server Error: ${err.message}`, err.stack); // More detailed logging
-    res.status(500).send('Something broke on the server!');
+    console.error(err.stack);
+    res.status(err.statusCode || 500).json({
+        success: false,
+        error: err.message || 'Server Error'
+    });
 });
 
-// --- CRITICAL: EXPORT THE APP INSTANCE for index.js to listen ---
 module.exports = app;
