@@ -102,11 +102,11 @@ router.post(
                   // Inside the jwt.sign callback for /login and /register
 
              res.cookie('token', token, {
-               httpOnly: true,
-               secure: true, // <<< CRITICAL: Set to TRUE explicitly for production and SameSite=None
-               sameSite: 'None', // <<< CRITICAL: Set to 'None' for cross-domain usage (Vercel -> Render)
-               maxAge: 3600000 // 1 hour expiration in milliseconds
-  });
+    httpOnly: true,
+    secure: true, // <-- THIS MUST BE TRUE
+    sameSite: 'None', // <-- THIS MUST BE 'None'
+    maxAge: 3600000
+});
 // NOTE: If you are testing locally (http://localhost), setting 'secure: true' will prevent the cookie from being set.
 // For local testing, you must comment out 'secure: true' in app.js and auth.js. 
 // For the live site (https://www.nexussignal.ai), it MUST be set to true.
@@ -205,8 +205,8 @@ router.post('/logout', auth, (req, res) => {
  // Inside router.post('/logout', auth, ...)
 res.clearCookie('token', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
+    secure: true, // Set explicitly to true
+    sameSite: 'None' // Set explicitly to 'None'
 });
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
