@@ -181,7 +181,7 @@ router.post(
 res.cookie('token', token, {
     httpOnly: true,
     secure: true, // <<< CRITICAL: MUST BE TRUE for HTTPS (Vercel/Render)
-    sameSite: 'None', // <<< CRITICAL: MUST BE 'None' for cross-domain cookie sending
+    //sameSite: 'None', // <<< CRITICAL: MUST BE 'None' for cross-domain cookie sending
     maxAge: 3600000 // 1 hour expiration in ms
 });
                     // Send success response (without the token in the body)
@@ -206,7 +206,7 @@ router.post('/logout', auth, (req, res) => {
 res.clearCookie('token', {
     httpOnly: true,
     secure: true, // Set explicitly to true
-    sameSite: 'None' // Set explicitly to 'None'
+    //sameSite: 'None' // Set explicitly to 'None'
 });
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
