@@ -177,12 +177,13 @@ router.post(
                     }
                     // CRITICAL CHANGE: SET TOKEN AS HTTPONLY COOKIE
                  // Inside the jwt.sign callback for /login and /register
+const isProduction = process.env.NODE_ENV === 'production'; // This should be correct
 
 res.cookie('token', token, {
     httpOnly: true,
-    secure: true, // <<< CRITICAL: MUST BE TRUE for HTTPS (Vercel/Render)
-    //sameSite: 'None', // <<< CRITICAL: MUST BE 'None' for cross-domain cookie sending
-    maxAge: 3600000 // 1 hour expiration in ms
+    secure: isProduction, // MUST BE `true` for Render HTTPS deployment
+    sameSite: isProduction ? 'None' : 'Lax', // MUST BE `'None'` for cross-domain on Render
+    maxAge: 3600000
 });
                     // Send success response (without the token in the body)
                     res.json({ success: true, msg: "Logged in successfully" });
@@ -205,8 +206,8 @@ router.post('/logout', auth, (req, res) => {
  // Inside router.post('/logout', auth, ...)
 res.clearCookie('token', {
     httpOnly: true,
-    secure: true, // Set explicitly to true
-    //sameSite: 'None' // Set explicitly to 'None'
+    secure: isProduction, // MUST BE `true` for Render HTTPS deployment
+    sameSite: isProduction ? 'None' : 'Lax' // MUST BE `'None'` for cross-domain on Render
 });
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);
