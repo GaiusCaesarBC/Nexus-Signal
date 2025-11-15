@@ -101,11 +101,11 @@ router.post(
                     }
                   // Inside the jwt.sign callback for /login and /register
 
-             res.cookie('token', token, {
-    httpOnly: true,
-    secure: true, // <-- THIS MUST BE TRUE
-    sameSite: 'None', // <-- THIS MUST BE 'None'
-    maxAge: 3600000
+            res.cookie('token', token, {
+             httpOnly: true,
+             secure: true,
+             sameSite: 'None',
+             maxAge: 3600000
 });
 // NOTE: If you are testing locally (http://localhost), setting 'secure: true' will prevent the cookie from being set.
 // For local testing, you must comment out 'secure: true' in app.js and auth.js. 
@@ -206,8 +206,8 @@ router.post('/logout', auth, (req, res) => {
  // Inside router.post('/logout', auth, ...)
 res.clearCookie('token', {
     httpOnly: true,
-    secure: isProduction, // MUST BE `true` for Render HTTPS deployment
-    sameSite: isProduction ? 'None' : 'Lax' // MUST BE `'None'` for cross-domain on Render
+    secure: true,
+    sameSite: 'None'
 });
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user.id} logged out. HttpOnly cookie cleared.`);

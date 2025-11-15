@@ -36,6 +36,15 @@ const allowedOrigins = [
     // Add any other Vercel preview URLs if you need them later
 ];
 
+// Define Port - make sure process.env.PORT is accessible
+const PORT = process.env.PORT || 5000; 
+
+// Start Server
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Open your browser to http://localhost:${PORT}`); // Add this for clarity
+});
+
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl requests)
