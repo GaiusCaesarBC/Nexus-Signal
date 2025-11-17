@@ -4,7 +4,7 @@
   "description": "Backend server for Nexus Signal AI",
   "main": "index.js",
   "scripts": {
-    "start": " node index.js",
+    "start": "node index.js",
     "server": "nodemon app.js"
   },
   "keywords": [],
