@@ -1,10 +1,8 @@
-// server/routes/stockRoutes.js - COMPLETE FIXED VERSION
+// server/routes/stockRoutes.js - WITH CACHING TO FIX RATE LIMITS
 
 const express = require('express');
 const router = express.Router();
-const isAuthenticated = require('../middleware/authMiddleware');
 
-// ✅ CORRECT instantiation
 const YahooFinance = require('yahoo-finance2').default;
 const yahooFinance = new YahooFinance();
 
@@ -15,7 +13,10 @@ const {
     calculateBollingerBands,
 } = require('../utils/indicators');
 
-// Helper to determine the start date for historical data fetching
+// ✅ ADD CACHING
+const stockCache = {};
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 function getPeriod1Date(range) {
     const now = new Date();
     let period1Date;
@@ -33,11 +34,17 @@ function getPeriod1Date(range) {
     return period1Date;
 }
 
-// GET /api/stocks/historical/:symbol - Fetch historical stock data (NO AUTH REQUIRED)
 router.get('/historical/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
         const { range = '6M', interval = '1d' } = req.query;
+
+        // ✅ Check cache first
+        const cacheKey = `hist-${symbol}-${range}-${interval}`;
+        if (stockCache[cacheKey] && (Date.now() - stockCache[cacheKey].timestamp < CACHE_DURATION)) {
+            console.log(`[CACHE HIT] Historical data for ${symbol}`);
+            return res.json(stockCache[cacheKey].data);
+        }
 
         console.log(`Fetching historical data for ${symbol} - Range: ${range}, Interval: ${interval}`);
 
@@ -65,11 +72,19 @@ router.get('/historical/:symbol', async (req, res) => {
             volume: quote.volume,
         }));
 
-        res.json({
+        const responseData = {
             symbol,
             historicalData,
             meta: result.meta,
-        });
+        };
+
+        // ✅ Store in cache
+        stockCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: responseData
+        };
+
+        res.json(responseData);
 
     } catch (error) {
         console.error('Error fetching historical stock data:', error.message);
@@ -80,11 +95,17 @@ router.get('/historical/:symbol', async (req, res) => {
     }
 });
 
-// GET /api/stocks/prediction/:symbol - Get AI prediction
 router.get('/prediction/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
         const { range = '6M', interval = '1d' } = req.query;
+
+        // ✅ Check cache first
+        const cacheKey = `pred-${symbol}-${range}-${interval}`;
+        if (stockCache[cacheKey] && (Date.now() - stockCache[cacheKey].timestamp < CACHE_DURATION)) {
+            console.log(`[CACHE HIT] Prediction for ${symbol}`);
+            return res.json(stockCache[cacheKey].data);
+        }
 
         console.log(`Getting prediction for ${symbol} - Range: ${range}, Interval: ${interval}`);
 
@@ -113,16 +134,22 @@ router.get('/prediction/:symbol', async (req, res) => {
         }));
 
         const lastClosePrice = historicalData[historicalData.length - 1].close;
-        
-        // Calculate prediction
         const prediction = calculateStockPrediction(historicalData, lastClosePrice);
 
-        res.json({
+        const responseData = {
             symbol,
             currentPrice: lastClosePrice,
-            historicalData, // ✅ Include for chart
+            historicalData,
             ...prediction,
-        });
+        };
+
+        // ✅ Store in cache
+        stockCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: responseData
+        };
+
+        res.json(responseData);
 
     } catch (error) {
         console.error('Error generating prediction:', error.message);
@@ -133,7 +160,6 @@ router.get('/prediction/:symbol', async (req, res) => {
     }
 });
 
-// ✅ FIXED calculateStockPrediction function
 const calculateStockPrediction = (historicalData, lastClosePrice) => {
     console.log('=== PREDICTION DEBUG ===');
     console.log('Historical data points:', historicalData.length);
@@ -141,14 +167,13 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
     
     const sortedData = [...historicalData].sort((a, b) => a.time - b.time);
     const closes = sortedData.map(d => d.close);
-    const volumes = sortedData.map(d => d.volume || 0); // ✅ Fixed scope
+    const volumes = sortedData.map(d => d.volume || 0);
     
     console.log('Closes array length:', closes.length);
     console.log('Volumes array length:', volumes.length);
 
     const hasEnoughData = (minLen) => closes.length >= minLen;
 
-    // Calculate indicators
     const rsi = hasEnoughData(14) ? calculateRSI(closes) : null;
     const macdResult = hasEnoughData(26) ? calculateMACD(closes) : { macd: null, signal: null, histogram: null };
     const bbResult = hasEnoughData(20) ? calculateBollingerBands(closes) : { mid: lastClosePrice, upper: null, lower: null };
@@ -163,7 +188,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
     let bearishScore = 0;
     let signals = [];
 
-    // SMA Analysis
     if (sma50 !== null && sma200 !== null && hasEnoughData(200)) {
         if (sma50 > sma200 && lastClosePrice > sma50) {
             bullishScore += 4;
@@ -188,7 +212,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
-    // RSI Analysis
     if (rsi !== null) {
         if (rsi < 30) {
             bullishScore += 3;
@@ -205,7 +228,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
-    // MACD Analysis
     if (macdResult.macd !== null && macdResult.signal !== null && macdResult.histogram !== null) {
         if (macdResult.macd > macdResult.signal && macdResult.histogram > 0) {
             bullishScore += 3.5;
@@ -222,7 +244,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
-    // Bollinger Bands Analysis
     if (bbResult.upper !== null && bbResult.lower !== null && bbResult.mid !== null) {
         if (lastClosePrice >= bbResult.upper * 0.99) {
             bearishScore += 2;
@@ -239,7 +260,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
-    // Volume Analysis
     if (avgVolume !== null && volumes.length > 0) {
         const lastVolume = volumes[volumes.length - 1];
         if (lastVolume > avgVolume * 1.5) {
@@ -249,7 +269,6 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
 
     console.log('Scores:', { bullishScore, bearishScore });
 
-    // Calculate final prediction
     const totalScore = bullishScore + bearishScore;
     const confidence = totalScore > 0 
         ? Math.min(95, Math.round((Math.max(bullishScore, bearishScore) / totalScore) * 100)) 
