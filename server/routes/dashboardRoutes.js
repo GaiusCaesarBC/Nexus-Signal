@@ -1,9 +1,18 @@
-// server/routes/dashboardRoutes.js
+// server/routes/dashboardRoutes.js - WITH REAL NEWS FROM ALPHA VANTAGE
+
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/authMiddleware'); // Assuming this path is correct
+const axios = require('axios');
+const authMiddleware = require('../middleware/authMiddleware');
 
-// Dummy data for now - you'll replace this with actual data fetching logic later
+const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
+
+// Cache for news (refresh every 30 minutes)
+let newsCache = null;
+let newsCacheTimestamp = 0;
+const NEWS_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Dummy data for market overview (you can update this later with real API)
 const dummyMarketOverview = {
     totalMarketCap: '$120T',
     dailyVolume: '$500B',
@@ -22,12 +31,6 @@ const dummySummary = {
     totalReturn: '+12.3%',
 };
 
-const dummyNews = [
-    { id: 1, title: 'Tech Stocks Soar Ahead of Earnings', source: 'Reuters', date: '2025-11-08' },
-    { id: 2, title: 'Crypto Market Sees Bitcoin Rally', source: 'CoinDesk', date: '2025-11-08' },
-];
-
-// All dashboard routes should likely be protected
 router.get('/market-overview', authMiddleware, (req, res) => {
     console.log('[Dashboard Route] Fetching market overview');
     res.json(dummyMarketOverview);
@@ -43,9 +46,62 @@ router.get('/summary', authMiddleware, (req, res) => {
     res.json(dummySummary);
 });
 
-router.get('/news', authMiddleware, (req, res) => {
+// ✅ REAL NEWS FROM ALPHA VANTAGE
+router.get('/news', authMiddleware, async (req, res) => {
     console.log('[Dashboard Route] Fetching news');
-    res.json(dummyNews);
+    
+    try {
+        // Check cache first
+        if (newsCache && (Date.now() - newsCacheTimestamp < NEWS_CACHE_DURATION)) {
+            console.log('[NEWS CACHE HIT]');
+            return res.json(newsCache);
+        }
+
+        // Fetch from Alpha Vantage News API
+        const topics = 'technology,finance,earnings'; // You can customize topics
+        const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=${topics}&limit=10&apikey=${ALPHA_VANTAGE_API_KEY}`;
+        
+        console.log('[NEWS] Fetching from Alpha Vantage...');
+        const response = await axios.get(url);
+
+        if (response.data.feed && response.data.feed.length > 0) {
+            // Transform to match your frontend format
+            const newsArticles = response.data.feed.slice(0, 6).map((article, index) => ({
+                id: index + 1,
+                title: article.title,
+                source: article.source || 'Market News',
+                date: article.time_published ? new Date(article.time_published).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                url: article.url,
+                summary: article.summary,
+                sentiment: article.overall_sentiment_label, // POSITIVE, NEGATIVE, NEUTRAL
+            }));
+
+            // Update cache
+            newsCache = newsArticles;
+            newsCacheTimestamp = Date.now();
+
+            res.json(newsArticles);
+        } else {
+            // Fallback to dummy data if API fails
+            console.warn('[NEWS] No articles returned from API, using fallback');
+            res.json([
+                { id: 1, title: 'Market Update', source: 'Financial Times', date: new Date().toISOString().split('T')[0] }
+            ]);
+        }
+
+    } catch (error) {
+        console.error('[Dashboard Route] Error fetching news:', error.message);
+        
+        // Return cached data if available, otherwise fallback
+        if (newsCache) {
+            console.log('[NEWS] Using stale cache due to error');
+            return res.json(newsCache);
+        }
+        
+        res.json([
+            { id: 1, title: 'Unable to fetch news', source: 'System', date: new Date().toISOString().split('T')[0] }
+        ]);
+    }
 });
 
 module.exports = router;
