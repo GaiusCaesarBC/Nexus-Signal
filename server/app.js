@@ -1,15 +1,17 @@
-// server/app.js - FINAL VERSION WITH DB CONNECTION
+// server/app.js - FIXED VERSION (No duplicate app.listen)
 
 require('dotenv').config();
+require('dotenv').config();
+console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
+console.log('First 20 chars:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 20) : 'N/A');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
-const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
-const mongoose = require('mongoose'); // <--- CRITICAL NEW IMPORT
+const mongoose = require('mongoose');
 const app = express();
 
 // --- Database Connection Setup ---
@@ -19,8 +21,6 @@ const connectDB = async () => {
         console.log(`MongoDB Connected: ${conn.connection.host}`);
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
-        // Don't exit process here in dev, might want to retry, but for now log it loudly.
-        // In production, Render will restart it if it crashes.
     }
 };
 
@@ -33,28 +33,15 @@ const allowedOrigins = [
     'http://localhost:5000',
     'https://www.nexussignal.ai',
     'https://nexussignal.ai',
-    // Add any other Vercel preview URLs if you need them later
 ];
-
-// Define Port - make sure process.env.PORT is accessible
-const PORT = process.env.PORT || 5000; 
-
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Open your browser to http://localhost:${PORT}`); // Add this for clarity
-});
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
             console.warn(`CORS Blocked: ${origin}`);
-            // Optionally allow it anyway for debugging if you are desperate, but better to block unexpected origins.
-            // For now, let's stick to the whitelist to be secure.
             callback(new Error('Not allowed by CORS'), false);
         }
     },
@@ -62,7 +49,7 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
 }));
-app.options('*', cors()); // Handle preflight requests for all routes
+app.options('*', cors());
 
 // --- Middleware ---
 app.use(helmet());
@@ -76,10 +63,7 @@ app.use(hpp());
 // --- ROUTE IMPORTS ---
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-// const marketDataRoutes = require('./routes/marketDataRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
-// const watchlistRoutes = require('./routes/watchlistRoutes');
-// const portfolioRoutes = require('./routes/portfolioRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const cryptoRoutes = require('./routes/cryptoRoutes');
 
@@ -89,10 +73,7 @@ app.get('/', (req, res) => res.send('API is running...'));
 // --- ROUTE MOUNTING ---
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-// app.use('/api/market-data', marketDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-// app.use('/api/watchlist', watchlistRoutes);
-// app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/stocks', stockRoutes);
 app.use('/api/crypto', cryptoRoutes);
 
@@ -104,5 +85,7 @@ app.use((err, req, res, next) => {
         error: err.message || 'Server Error'
     });
 });
+
+// ✅ REMOVED app.listen() - index.js handles that!
 
 module.exports = app;

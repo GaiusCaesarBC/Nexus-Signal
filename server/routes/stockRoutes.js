@@ -1,11 +1,12 @@
-// server/routes/stockRoutes.js - FINAL ENHANCED PREDICTION VERSION WITH CHART FIX
+// server/routes/stockRoutes.js - COMPLETE FIXED VERSION
 
 const express = require('express');
 const router = express.Router();
 const isAuthenticated = require('../middleware/authMiddleware');
 
-const yf = require('yahoo-finance2');
-const yahooFinance = yf.default ? new yf.default() : new yf();
+// ✅ CORRECT instantiation
+const YahooFinance = require('yahoo-finance2').default;
+const yahooFinance = new YahooFinance();
 
 const {
     calculateSMA,
@@ -14,8 +15,8 @@ const {
     calculateBollingerBands,
 } = require('../utils/indicators');
 
-// Helper to get period1 (start date) and period2 (end date)
-function getPeriodDates(range) {
+// Helper to determine the start date for historical data fetching
+function getPeriod1Date(range) {
     const now = new Date();
     let period1Date;
     switch (range) {
@@ -29,169 +30,257 @@ function getPeriodDates(range) {
         case 'MAX': period1Date = new Date('1980-01-01'); break;
         default: period1Date = new Date(now.setMonth(now.getMonth() - 1)); break;
     }
-    return { period1: period1Date, period2: new Date() };
+    return period1Date;
 }
 
-// --- ENHANCED STOCK PREDICTION ENGINE (Matches Crypto Logic) ---
+// GET /api/stocks/historical/:symbol - Fetch historical stock data (NO AUTH REQUIRED)
+router.get('/historical/:symbol', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const { range = '6M', interval = '1d' } = req.query;
+
+        console.log(`Fetching historical data for ${symbol} - Range: ${range}, Interval: ${interval}`);
+
+        const period1 = getPeriod1Date(range);
+        const period2 = new Date();
+
+        const result = await yahooFinance.chart(symbol, {
+            period1,
+            period2,
+            interval,
+        });
+
+        if (!result || !result.quotes || result.quotes.length === 0) {
+            return res.status(404).json({ 
+                msg: `No historical data found for ${symbol}` 
+            });
+        }
+
+        const historicalData = result.quotes.map(quote => ({
+            time: new Date(quote.date).getTime(),
+            open: quote.open,
+            high: quote.high,
+            low: quote.low,
+            close: quote.close,
+            volume: quote.volume,
+        }));
+
+        res.json({
+            symbol,
+            historicalData,
+            meta: result.meta,
+        });
+
+    } catch (error) {
+        console.error('Error fetching historical stock data:', error.message);
+        res.status(500).json({ 
+            msg: 'Failed to fetch historical data', 
+            error: error.message 
+        });
+    }
+});
+
+// GET /api/stocks/prediction/:symbol - Get AI prediction
+router.get('/prediction/:symbol', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const { range = '6M', interval = '1d' } = req.query;
+
+        console.log(`Getting prediction for ${symbol} - Range: ${range}, Interval: ${interval}`);
+
+        const period1 = getPeriod1Date(range);
+        const period2 = new Date();
+
+        const result = await yahooFinance.chart(symbol, {
+            period1,
+            period2,
+            interval,
+        });
+
+        if (!result || !result.quotes || result.quotes.length === 0) {
+            return res.status(404).json({ 
+                msg: `No data available for ${symbol}` 
+            });
+        }
+
+        const historicalData = result.quotes.map(quote => ({
+            time: new Date(quote.date).getTime(),
+            open: quote.open,
+            high: quote.high,
+            low: quote.low,
+            close: quote.close,
+            volume: quote.volume,
+        }));
+
+        const lastClosePrice = historicalData[historicalData.length - 1].close;
+        
+        // Calculate prediction
+        const prediction = calculateStockPrediction(historicalData, lastClosePrice);
+
+        res.json({
+            symbol,
+            currentPrice: lastClosePrice,
+            historicalData, // ✅ Include for chart
+            ...prediction,
+        });
+
+    } catch (error) {
+        console.error('Error generating prediction:', error.message);
+        res.status(500).json({ 
+            msg: 'Failed to generate prediction', 
+            error: error.message 
+        });
+    }
+});
+
+// ✅ FIXED calculateStockPrediction function
 const calculateStockPrediction = (historicalData, lastClosePrice) => {
-    // 1. Calculate Indicators
-    const rsi = calculateRSI(historicalData) || 50;
-    const macd = calculateMACD(historicalData) || { macd: 0, signal: 0, histogram: 0 };
-    const bb = calculateBollingerBands(historicalData) || { upper: lastClosePrice, lower: lastClosePrice, mid: lastClosePrice };
-    const sma20 = calculateSMA(historicalData, 20) || lastClosePrice;
-    const sma50 = calculateSMA(historicalData, 50) || lastClosePrice;
-    const sma200 = calculateSMA(historicalData, 200) || lastClosePrice;
+    console.log('=== PREDICTION DEBUG ===');
+    console.log('Historical data points:', historicalData.length);
+    console.log('Last close price:', lastClosePrice);
+    
+    const sortedData = [...historicalData].sort((a, b) => a.time - b.time);
+    const closes = sortedData.map(d => d.close);
+    const volumes = sortedData.map(d => d.volume || 0); // ✅ Fixed scope
+    
+    console.log('Closes array length:', closes.length);
+    console.log('Volumes array length:', volumes.length);
+
+    const hasEnoughData = (minLen) => closes.length >= minLen;
+
+    // Calculate indicators
+    const rsi = hasEnoughData(14) ? calculateRSI(closes) : null;
+    const macdResult = hasEnoughData(26) ? calculateMACD(closes) : { macd: null, signal: null, histogram: null };
+    const bbResult = hasEnoughData(20) ? calculateBollingerBands(closes) : { mid: lastClosePrice, upper: null, lower: null };
+    const sma20 = hasEnoughData(20) ? calculateSMA(closes, 20) : null;
+    const sma50 = hasEnoughData(50) ? calculateSMA(closes, 50) : null;
+    const sma200 = hasEnoughData(200) ? calculateSMA(closes, 200) : null;
+    const avgVolume = volumes.length > 0 ? (volumes.reduce((a, b) => a + b, 0) / volumes.length) : null;
+
+    console.log('Indicators calculated:', { rsi, sma50, sma200, macd: macdResult.macd });
 
     let bullishScore = 0;
     let bearishScore = 0;
     let signals = [];
 
-    // --- RULE 1: MACD Momentum (Weight: 3) ---
-    if (macd.macd > macd.signal) {
-        bullishScore += 3;
-        signals.push("MACD bullish crossover");
-    } else if (macd.macd < macd.signal) {
-        bearishScore += 3;
-        signals.push("MACD bearish divergence");
+    // SMA Analysis
+    if (sma50 !== null && sma200 !== null && hasEnoughData(200)) {
+        if (sma50 > sma200 && lastClosePrice > sma50) {
+            bullishScore += 4;
+            signals.push("Strong long-term uptrend (Golden Cross)");
+        } else if (sma50 < sma200 && lastClosePrice < sma50) {
+            bearishScore += 4;
+            signals.push("Strong long-term downtrend (Death Cross)");
+        } else if (lastClosePrice > sma50) {
+            bullishScore += 2;
+            signals.push("Price above 50-period SMA");
+        } else if (lastClosePrice < sma50) {
+            bearishScore += 2;
+            signals.push("Price below 50-period SMA");
+        }
+    } else if (sma50 !== null && hasEnoughData(50)) {
+        if (lastClosePrice > sma50) {
+            bullishScore += 2.5;
+            signals.push("Price above 50-period SMA");
+        } else if (lastClosePrice < sma50) {
+            bearishScore += 2.5;
+            signals.push("Price below 50-period SMA");
+        }
     }
 
-    // --- RULE 2: RSI Strength (Weight: 2.5) ---
-    if (rsi < 30) {
-        bullishScore += 2.5;
-        signals.push(`RSI oversold (${rsi.toFixed(0)}) - potential rebound`);
-    } else if (rsi > 70) {
-        bearishScore += 2.5;
-        signals.push(`RSI overbought (${rsi.toFixed(0)}) - potential pullback`);
-    } else if (rsi > 50 && rsi <= 70) {
-        bullishScore += 0.5;
-    } else if (rsi < 50 && rsi >= 30) {
-        bearishScore += 0.5;
+    // RSI Analysis
+    if (rsi !== null) {
+        if (rsi < 30) {
+            bullishScore += 3;
+            signals.push(`RSI oversold (${rsi.toFixed(0)}) - potential bounce`);
+        } else if (rsi > 70) {
+            bearishScore += 3;
+            signals.push(`RSI overbought (${rsi.toFixed(0)}) - potential pullback`);
+        } else if (rsi > 50) {
+            bullishScore += 0.5;
+            signals.push(`RSI positive (${rsi.toFixed(0)})`);
+        } else if (rsi < 50) {
+            bearishScore += 0.5;
+            signals.push(`RSI negative (${rsi.toFixed(0)})`);
+        }
     }
 
-    // --- RULE 3: Moving Average Trends (Weight: 1, 2, 2.5) ---
-    if (lastClosePrice > sma20) { bullishScore += 1; signals.push("Price above 20-day SMA"); }
-    else { bearishScore += 1; signals.push("Price below 20-day SMA"); }
-
-    if (lastClosePrice > sma50) { bullishScore += 2; signals.push("Price above 50-day SMA"); }
-    else { bearishScore += 2; signals.push("Price below 50-day SMA"); }
-
-    if (lastClosePrice > sma200) {
-        bullishScore += 2.5;
-        if (sma200 > 0) signals.push("Long-term uptrend (above 200d SMA)");
-    } else if (sma200 > 0) {
-        bearishScore += 2.5;
-        signals.push("Long-term downtrend (below 200d SMA)");
+    // MACD Analysis
+    if (macdResult.macd !== null && macdResult.signal !== null && macdResult.histogram !== null) {
+        if (macdResult.macd > macdResult.signal && macdResult.histogram > 0) {
+            bullishScore += 3.5;
+            signals.push("MACD bullish crossover with positive momentum");
+        } else if (macdResult.macd < macdResult.signal && macdResult.histogram < 0) {
+            bearishScore += 3.5;
+            signals.push("MACD bearish crossover with negative momentum");
+        } else if (macdResult.macd > macdResult.signal) {
+            bullishScore += 1.5;
+            signals.push("MACD bullish crossover");
+        } else if (macdResult.macd < macdResult.signal) {
+            bearishScore += 1.5;
+            signals.push("MACD bearish crossover");
+        }
     }
 
-    // --- RULE 4: Bollinger Bands Volatility (Weight: 1.5) ---
-    if (lastClosePrice >= bb.upper) {
-        bearishScore += 1.5;
-        signals.push("Price hit upper Bollinger Band (potential resistance)");
-    } else if (lastClosePrice <= bb.lower) {
-        bullishScore += 1.5;
-        signals.push("Price hit lower Bollinger Band (potential support)");
+    // Bollinger Bands Analysis
+    if (bbResult.upper !== null && bbResult.lower !== null && bbResult.mid !== null) {
+        if (lastClosePrice >= bbResult.upper * 0.99) {
+            bearishScore += 2;
+            signals.push("Price near upper Bollinger Band (potential resistance)");
+        } else if (lastClosePrice <= bbResult.lower * 1.01) {
+            bullishScore += 2;
+            signals.push("Price near lower Bollinger Band (potential support)");
+        } else if (lastClosePrice > bbResult.mid) {
+            bullishScore += 0.75;
+            signals.push("Price above Bollinger Band middle line");
+        } else if (lastClosePrice < bbResult.mid) {
+            bearishScore += 0.75;
+            signals.push("Price below Bollinger Band middle line");
+        }
     }
 
-    // --- FINAL CALCULATION ---
+    // Volume Analysis
+    if (avgVolume !== null && volumes.length > 0) {
+        const lastVolume = volumes[volumes.length - 1];
+        if (lastVolume > avgVolume * 1.5) {
+            signals.push("High volume spike detected");
+        }
+    }
+
+    console.log('Scores:', { bullishScore, bearishScore });
+
+    // Calculate final prediction
     const totalScore = bullishScore + bearishScore;
-    const netScore = bullishScore - bearishScore;
-    const maxPossibleScore = 3 + 2.5 + 1 + 2 + 2.5 + 1.5; // 12.5
+    const confidence = totalScore > 0 
+        ? Math.min(95, Math.round((Math.max(bullishScore, bearishScore) / totalScore) * 100)) 
+        : 50;
+    
+    const predictedDirection = bullishScore > bearishScore ? 'Up' : 'Down';
+    const percentageChange = predictedDirection === 'Up' 
+        ? (bullishScore / 10) * 2 
+        : -(bearishScore / 10) * 2;
+    
+    const predictedPrice = lastClosePrice * (1 + percentageChange / 100);
 
-    // Dynamic Confidence
-    let confidence = 50 + (Math.abs(netScore) / maxPossibleScore) * 45;
-    confidence = Math.min(Math.round(confidence), 95);
-
-    let predictedDirection = 'Neutral';
-    let percentMove = 0;
-    const threshold = maxPossibleScore * 0.15; // 15% threshold for direction change
-
-    if (netScore > threshold) {
-        predictedDirection = 'Up';
-        percentMove = (netScore / maxPossibleScore) * 0.02; // Conservative 2% max move scaling for stocks
-    } else if (netScore < -threshold) {
-        predictedDirection = 'Down';
-        percentMove = (netScore / maxPossibleScore) * 0.02;
-    }
-
-    const predictedPrice = lastClosePrice * (1 + percentMove);
-    const percentageChange = ((predictedPrice - lastClosePrice) / lastClosePrice) * 100;
-
-    let predictionMessage = signals.length > 0 ? `Analysis based on active signals: ${signals.join(', ')}.` : "Market is consolidating with no clear signals.";
-    if (predictedDirection === 'Neutral' && signals.length > 0) {
-        predictionMessage = `Conflicting signals detected: ${signals.join(', ')}. Market is neutral.`;
-    }
+    console.log('Final prediction:', { predictedPrice, predictedDirection, percentageChange, confidence });
 
     return {
-        historicalData,
-        currentPrice: lastClosePrice,
         predictedPrice,
         predictedDirection,
-        confidence,
         percentageChange,
-        predictionMessage,
-        indicators: { rsi: rsi.toFixed(2), macd: macd.macd.toFixed(2), sma50: sma50.toFixed(2) }
+        confidence,
+        message: signals.length > 0 ? signals.join('. ') : 'Neutral market conditions',
+        indicators: {
+            rsi,
+            macd: macdResult,
+            bollingerBands: bbResult,
+            sma20,
+            sma50,
+            sma200,
+            avgVolume,
+            lastVolume: volumes[volumes.length - 1],
+        }
     };
 };
-// ---------------------------------------------------------
-
-router.get('/historical/:symbol', isAuthenticated, async (req, res) => {
-    const { symbol } = req.params;
-    const { range, interval: frontendInterval } = req.query;
-
-    if (!symbol) return res.status(400).json({ msg: 'Symbol required' });
-
-    try {
-        const { period1, period2 } = getPeriodDates(range || '1M');
-        let yahooInterval = frontendInterval;
-
-        // --- Yahoo Finance Interval Mapping & Fallbacks ---
-        switch (frontendInterval) {
-            case '1min': case '5min': case '15min': case '30min':
-                yahooInterval = (range === '1D' || range === '5D') ? frontendInterval.replace('min', 'm') : '60m';
-                break;
-            case '1h': case '60min': case '6h': case '12h':
-                 yahooInterval = (['1D', '5D', '1M', '3M'].includes(range)) ? '60m' : '1d';
-                 break;
-            case '1d': yahooInterval = '1d'; break;
-            case '1wk': yahooInterval = '1wk'; break;
-            case '1mo': yahooInterval = '1mo'; break;
-            default: yahooInterval = '1d';
-        }
-        // Strict fallbacks for long ranges to prevent 500 errors
-        if (['1Y', '5Y', 'MAX'].includes(range) && !['1d', '1wk', '1mo'].includes(yahooInterval)) {
-            yahooInterval = '1d';
-        }
-
-        const queryOptions = { period1, period2, interval: yahooInterval, events: 'history' };
-        // Removed includeAdjustedClose for chart() compatibility.
-
-        const result = await yahooFinance.chart(symbol, queryOptions);
-
-        if (!result || !result.quotes || result.quotes.length === 0) {
-            return res.status(404).json({ msg: `No data found for ${symbol} (${range}/${yahooInterval})` });
-        }
-
-        const historicalData = result.quotes.map(d => ({
-            time: d.date.getTime(), // THIS IS THE CRITICAL FIX: Date object to Unix milliseconds
-            open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume
-        })).filter(d => d.close !== undefined && d.close !== null); // Basic data integrity filter
-
-        if (historicalData.length < 30) {
-             return res.status(400).json({ msg: 'Not enough data points for reliable technical analysis. Please select a longer range.' });
-        }
-
-        const lastClosePrice = historicalData[historicalData.length - 1].close;
-        const predictionResult = calculateStockPrediction(historicalData, lastClosePrice);
-
-        res.json(predictionResult);
-
-    } catch (error) {
-        console.error('Stock API Error:', error.message);
-        if (error.message.includes('Invalid interval')) {
-            return res.status(400).json({ msg: `Invalid interval for this range. Try '1 Day'.` });
-        }
-        res.status(500).json({ msg: `Data fetch failed: ${error.message}` });
-    }
-});
 
 module.exports = router;
