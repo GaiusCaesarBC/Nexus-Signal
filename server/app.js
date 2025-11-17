@@ -63,7 +63,7 @@ app.use(hpp());
 // --- ROUTE IMPORTS ---
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
+const dashboardRoutes = require('./routes/dashboard');
 const stockRoutes = require('./routes/stockRoutes');
 const cryptoRoutes = require('./routes/cryptoRoutes');
 
