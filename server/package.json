@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "name": "server",
   "version": "1.0.0",
   "description": "Backend server for Nexus Signal AI",
@@ -18,12 +17,13 @@
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
+    "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "express-async-handler": "^1.2.0",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^5.5.1",
     "express-validator": "^7.3.0",
+    "groq-sdk": "^0.35.0",
     "helmet": "^8.1.0",
     "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.2",
@@ -44,11 +44,5 @@
   },
   "devDependencies": {
     "nodemon": "^2.0.12"
-=======
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.69.0",
-    "dotenv": "^17.2.3",
-    "groq-sdk": "^0.35.0"
->>>>>>> cea0a9441215efc22bd01da2441b45a9cd27d390
   }
 }
