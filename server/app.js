@@ -18,6 +18,7 @@ const app = express();
 const journalRoutes = require('./routes/journalRoutes');
 const screenerRoutes = require('./routes/screenerRoutes');
 const heatmapRoutes = require('./routes/heatmapRoutes');
+const feedRoutes = require('./routes/feedRoutes');
 
 // --- Environment Variables Check ---
 const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'STRIPE_SECRET_KEY'];
@@ -133,6 +134,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/calculators', calculatorRoutes);
 app.use('/api/sentiment', sentimentRoutes);
+app.use('/api/feed', feedRoutes);
 
 // --- 404 Handler ---
 app.use((req, res, next) => {
