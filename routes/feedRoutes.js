@@ -39,8 +39,8 @@ router.get('/', protect, async (req, res) => {
 
         // Fetch posts
         let posts = await Post.find(query)
-            .populate('user', 'name email profilePicture')
-            .populate('comments.user', 'name profilePicture')
+            .populate('user', 'username email profile stats')
+            .populate('comments.user', 'username profile')
             .sort(filter === 'trending' ? { likesCount: -1, createdAt: -1 } : { createdAt: -1 })
             .skip(skip)
             .limit(limitNum)
@@ -93,7 +93,7 @@ router.post('/post', protect, async (req, res) => {
         await post.save();
 
         // Populate user data before returning
-        await post.populate('user', 'name email profilePicture');
+        await post.populate('user', 'username email profile stats');
 
         res.status(201).json(post);
     } catch (error) {
@@ -173,7 +173,7 @@ router.post('/:postId/comment', protect, async (req, res) => {
         await post.save();
 
         // Populate the new comment's user data
-        await post.populate('comments.user', 'name profilePicture');
+        await post.populate('comments.user', 'username profile');
 
         // Get the newly added comment
         const newComment = post.comments[post.comments.length - 1];
@@ -239,8 +239,8 @@ router.get('/user/:userId', protect, async (req, res) => {
         const limitNum = parseInt(limit);
 
         let posts = await Post.find({ user: userId, ...visibilityQuery })
-            .populate('user', 'name email profilePicture')
-            .populate('comments.user', 'name profilePicture')
+            .populate('user', 'username email profile stats')
+            .populate('comments.user', 'username profile')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limitNum)
