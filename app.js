@@ -77,6 +77,7 @@ const predictionsRoutes = require('./routes/predictionsRoutes');
 const chatRoutes = require('./routes/chatRoutes'); // ✅ ADDED
 const newsRoutes = require('./routes/newsRoutes');
 const socialRoutes = require('./routes/socialRoutes');
+const feedRoutes = require('./routes/feedRoutes');
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -97,6 +98,7 @@ app.use('/api/screener', screenerRoutes);
 app.use('/api/heatmap', heatmapRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/feed', feedRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
