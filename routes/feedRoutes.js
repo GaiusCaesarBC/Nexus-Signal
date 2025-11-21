@@ -6,6 +6,28 @@ const Post = require('../models/Post');
 const User = require('../models/User');
 const protect = require('../middleware/authMiddleware');
 
+// Helper function to calculate "time ago"
+const getTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    
+    let interval = Math.floor(seconds / 31536000);
+    if (interval >= 1) return interval + (interval === 1 ? ' year ago' : ' years ago');
+    
+    interval = Math.floor(seconds / 2592000);
+    if (interval >= 1) return interval + (interval === 1 ? ' month ago' : ' months ago');
+    
+    interval = Math.floor(seconds / 86400);
+    if (interval >= 1) return interval + (interval === 1 ? ' day ago' : ' days ago');
+    
+    interval = Math.floor(seconds / 3600);
+    if (interval >= 1) return interval + (interval === 1 ? ' hour ago' : ' hours ago');
+    
+    interval = Math.floor(seconds / 60);
+    if (interval >= 1) return interval + (interval === 1 ? ' minute ago' : ' minutes ago');
+    
+    return 'just now';
+};
+
 // @route   GET /api/feed
 // @desc    Get feed posts (with filters and pagination)
 // @access  Private
@@ -49,7 +71,8 @@ router.get('/', protect, async (req, res) => {
         // Add isLiked flag for each post
         posts = posts.map(post => ({
             ...post,
-            isLiked: post.likes.some(likeId => likeId.toString() === userId)
+            isLiked: post.likes.some(likeId => likeId.toString() === userId),
+            timeAgo: getTimeAgo(post.createdAt)
         }));
 
         // Check if there are more posts
@@ -95,7 +118,11 @@ router.post('/post', protect, async (req, res) => {
         // Populate user data before returning
         await post.populate('user', 'username email profile stats');
 
-        res.status(201).json(post);
+        // Add timeAgo
+        const postObj = post.toObject();
+        postObj.timeAgo = getTimeAgo(post.createdAt);
+
+        res.status(201).json(postObj);
     } catch (error) {
         console.error('Error creating post:', error);
         res.status(500).json({ msg: 'Server error creating post' });
@@ -249,7 +276,8 @@ router.get('/user/:userId', protect, async (req, res) => {
         // Add isLiked flag
         posts = posts.map(post => ({
             ...post,
-            isLiked: post.likes.some(likeId => likeId.toString() === currentUserId)
+            isLiked: post.likes.some(likeId => likeId.toString() === currentUserId),
+            timeAgo: getTimeAgo(post.createdAt)
         }));
 
         const total = await Post.countDocuments({ user: userId, ...visibilityQuery });
