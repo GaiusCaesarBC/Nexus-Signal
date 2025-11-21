@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
+    "dotenv": "^17.2.3",
+    "groq-sdk": "^0.35.0"
+  }
+}
