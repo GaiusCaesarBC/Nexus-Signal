@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const Post = require('../models/Post');
 const User = require('../models/User');
-const { protect } = require('../middleware/authMiddleware');
+const protect = require('../middleware/authMiddleware');
 
 // @route   GET /api/feed
 // @desc    Get feed posts (with filters and pagination)
