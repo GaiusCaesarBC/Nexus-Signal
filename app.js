@@ -84,7 +84,8 @@ const sentimentRoutes = require('./routes/sentimentRoutes');
 const portfolioHistoryRoutes = require('./routes/portfolioHistoryRoutes');
 const aiInsightsRoutes = require('./routes/aiInsightsRoutes')
 const chartRoutes = require('./routes/chartRoutes');
-const calculatorRoutes = require('./routes/calculatorRoutes'); // ← ADD THIS
+const calculatorRoutes = require('./routes/calculatorRoutes'); 
+const paperTradingRoutes = require('./routes/paperTradingRoutes');
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -110,7 +111,8 @@ app.use('/api/sentiment', sentimentRoutes);
 app.use('/api/portfolio', portfolioHistoryRoutes);
 app.use('/api/portfolio', aiInsightsRoutes);
 app.use('/api/chart', chartRoutes);
-app.use('/api/calculators', calculatorRoutes); // ← ADD THIS
+app.use('/api/calculators', calculatorRoutes); 
+app.use('/api/paper-trading', paperTradingRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
