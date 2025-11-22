@@ -1,29 +1,57 @@
 const express = require('express');
 const router = express.Router();
+const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 
+// ============ OPTIONAL AUTH MIDDLEWARE ============
+// Allows routes to work with or without authentication
+const optionalAuth = (req, res, next) => {
+    const token = req.cookies.token || req.header('x-auth-token');
+    
+    if (!token) {
+        return next(); // No token, continue without user
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded.user;
+        next();
+    } catch (err) {
+        next(); // Invalid token, continue without user
+    }
+};
+
+// ============ LEADERBOARD ============
 // @route   GET /api/social/leaderboard
 // @desc    Get top traders
 // @access  Public
 router.get('/leaderboard', async (req, res) => {
     try {
-        const { timeframe = 'all', limit = 100 } = req.query;
+        const { timeframe = 'all', limit = 100, sortBy = 'totalReturnPercent' } = req.query;
 
-        const users = await User.find({ 'profile.isPublic': true })
-            .select('profile.displayName profile.avatar profile.badges stats')
-            .sort({ 'stats.totalReturnPercent': -1 })
+        // Show public profiles OR profiles with no isPublic field (defaults to public)
+        const users = await User.find({
+            $or: [
+                { 'profile.isPublic': true },
+                { 'profile.isPublic': { $exists: false } }
+            ]
+        })
+            .select('username profile.displayName profile.avatar profile.badges stats social')
+            .sort({ [`stats.${sortBy}`]: -1 })
             .limit(parseInt(limit));
 
         const leaderboard = users.map((user, index) => ({
             rank: index + 1,
             userId: user._id,
-            displayName: user.profile.displayName || 'Anonymous Trader',
-            avatar: user.profile.avatar,
-            totalReturn: user.stats.totalReturnPercent || 0,
-            winRate: user.stats.winRate || 0,
-            totalTrades: user.stats.totalTrades || 0,
-            badges: user.profile.badges || []
+            username: user.username,
+            displayName: user.profile?.displayName || user.username || 'Anonymous Trader',
+            avatar: user.profile?.avatar || '',
+            totalReturn: user.stats?.totalReturnPercent || 0,
+            winRate: user.stats?.winRate || 0,
+            totalTrades: user.stats?.totalTrades || 0,
+            followersCount: user.social?.followersCount || 0,
+            badges: user.profile?.badges || []
         }));
 
         res.json(leaderboard);
@@ -33,26 +61,45 @@ router.get('/leaderboard', async (req, res) => {
     }
 });
 
+// ============ PROFILE ============
 // @route   GET /api/social/profile/:userId
 // @desc    Get user profile
-// @access  Public
-router.get('/profile/:userId', async (req, res) => {
+// @access  Public (but respects privacy settings)
+router.get('/profile/:userId', optionalAuth, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId)
-            .select('profile stats achievements social')
-            .populate('social.followers', 'profile.displayName profile.avatar')
-            .populate('social.following', 'profile.displayName profile.avatar');
+            .select('username profile stats achievements social')
+            .populate('social.followers', 'username profile.displayName profile.avatar')
+            .populate('social.following', 'username profile.displayName profile.avatar');
 
-        if (!user || !user.profile.isPublic) {
-            return res.status(404).json({ error: 'Profile not found or private' });
+        if (!user) {
+            return res.status(404).json({ error: 'Profile not found' });
+        }
+
+        // Check if this is the user's own profile
+        const isOwnProfile = req.user && req.user.id === req.params.userId;
+        const isPublic = user.profile?.isPublic ?? true; // Default to public if not set
+
+        // If profile is private and not own profile, deny access
+        if (!isPublic && !isOwnProfile) {
+            return res.status(403).json({ 
+                error: 'This profile is private',
+                isPrivate: true 
+            });
         }
 
         res.json({
+            username: user.username,
             profile: user.profile,
             stats: user.stats,
             achievements: user.achievements,
-            followersCount: user.social.followersCount,
-            followingCount: user.social.followingCount
+            social: {
+                followersCount: user.social?.followersCount || 0,
+                followingCount: user.social?.followingCount || 0,
+                followers: user.social?.followers || [],
+                following: user.social?.following || []
+            },
+            isOwnProfile: isOwnProfile
         });
     } catch (error) {
         console.error('[Social] Error fetching profile:', error);
@@ -60,6 +107,54 @@ router.get('/profile/:userId', async (req, res) => {
     }
 });
 
+// @route   GET /api/social/profile/username/:username
+// @desc    Get user profile by username
+// @access  Public (but respects privacy settings)
+router.get('/profile/username/:username', optionalAuth, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.params.username })
+            .select('username profile stats achievements social')
+            .populate('social.followers', 'username profile.displayName profile.avatar')
+            .populate('social.following', 'username profile.displayName profile.avatar');
+
+        if (!user) {
+            return res.status(404).json({ error: 'Profile not found' });
+        }
+
+        // Check if this is the user's own profile
+        const isOwnProfile = req.user && req.user.id === user._id.toString();
+        const isPublic = user.profile?.isPublic ?? true; // Default to public if not set
+
+        // If profile is private and not own profile, deny access
+        if (!isPublic && !isOwnProfile) {
+            return res.status(403).json({ 
+                error: 'This profile is private',
+                isPrivate: true 
+            });
+        }
+
+        res.json({
+            userId: user._id,
+            username: user.username,
+            profile: user.profile,
+            stats: user.stats,
+            achievements: user.achievements,
+            social: {
+                followersCount: user.social?.followersCount || 0,
+                followingCount: user.social?.followingCount || 0,
+                followers: user.social?.followers || [],
+                following: user.social?.following || []
+            },
+            isOwnProfile: isOwnProfile
+        });
+    } catch (error) {
+        console.error('[Social] Error fetching profile by username:', error);
+        res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+});
+
+
+// ============ FOLLOW/UNFOLLOW ============
 // @route   POST /api/social/follow/:userId
 // @desc    Follow a user
 // @access  Private
@@ -138,6 +233,7 @@ router.post('/unfollow/:userId', auth, async (req, res) => {
     }
 });
 
+// ============ PROFILE SETTINGS ============
 // @route   PUT /api/social/profile
 // @desc    Update user profile
 // @access  Private
@@ -146,6 +242,10 @@ router.put('/profile', auth, async (req, res) => {
         const { displayName, bio, isPublic, showPortfolio } = req.body;
 
         const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
         if (displayName !== undefined) user.profile.displayName = displayName;
         if (bio !== undefined) user.profile.bio = bio;
@@ -161,6 +261,7 @@ router.put('/profile', auth, async (req, res) => {
     }
 });
 
+// ============ SEARCH ============
 // @route   GET /api/social/search
 // @desc    Search for users
 // @access  Public
@@ -172,17 +273,65 @@ router.get('/search', async (req, res) => {
             return res.status(400).json({ error: 'Search query too short' });
         }
 
+        // Search by both displayName AND username
         const users = await User.find({
-            'profile.isPublic': true,
-            'profile.displayName': { $regex: q, $options: 'i' }
+            $or: [
+                { 'profile.displayName': { $regex: q, $options: 'i' } },
+                { username: { $regex: q, $options: 'i' } }
+            ]
         })
-        .select('profile.displayName profile.avatar stats')
+        .select('username profile.displayName profile.avatar profile.badges stats social')
         .limit(20);
 
-        res.json(users);
+        // Return data in the same format as leaderboard
+        const results = users.map(user => ({
+            userId: user._id,
+            username: user.username,
+            displayName: user.profile?.displayName || user.username,
+            avatar: user.profile?.avatar || '',
+            totalReturn: user.stats?.totalReturnPercent || 0,
+            winRate: user.stats?.winRate || 0,
+            totalTrades: user.stats?.totalTrades || 0,
+            followersCount: user.social?.followersCount || 0,
+            badges: user.profile?.badges || []
+        }));
+
+        res.json(results);
     } catch (error) {
         console.error('[Social] Error searching users:', error);
         res.status(500).json({ error: 'Failed to search users' });
+    }
+});
+
+// ============ MIGRATION (TEMPORARY) ============
+// ⚠️ REMOVE THIS AFTER RUNNING ONCE!
+// @route   POST /api/social/admin/migrate-public-profiles
+// @desc    Set all users to public by default
+// @access  Public (remove after migration)
+router.post('/admin/migrate-public-profiles', async (req, res) => {
+    try {
+        // Update all users to have public profiles
+        const result = await User.updateMany(
+            {},
+            { 
+                $set: { 
+                    'profile.isPublic': true,
+                    'profile.showPortfolio': true 
+                } 
+            }
+        );
+        
+        console.log('[Migration] Updated profiles:', result);
+        
+        res.json({ 
+            success: true, 
+            message: `Migration complete! Updated ${result.modifiedCount} profiles to public`,
+            matched: result.matchedCount,
+            modified: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('[Migration] Error:', error);
+        res.status(500).json({ error: 'Migration failed', details: error.message });
     }
 });
 

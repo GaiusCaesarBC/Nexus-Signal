@@ -36,8 +36,8 @@ const UserSchema = new mongoose.Schema({
         displayName: { type: String, default: function() { return this.username; } },
         bio: { type: String, maxlength: 500, default: '' },
         avatar: { type: String, default: '' },
-        isPublic: { type: Boolean, default: false },
-        showPortfolio: { type: Boolean, default: false },
+        isPublic: { type: Boolean, default: true }, // ✅ Changed from false to true
+    showPortfolio: { type: Boolean, default: true }, // ✅ Changed from false to true
         level: { type: Number, default: 1 },
         experience: { type: Number, default: 0 },
         badges: [{ type: String }]

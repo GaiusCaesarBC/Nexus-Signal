@@ -1,4 +1,4 @@
-// server/routes/authRoutes.js - FIXED for both localhost and production
+// server/routes/authRoutes.js - UPDATED WITH AVATAR UPLOAD
 
 const express = require('express');
 const router = express.Router();
@@ -7,17 +7,18 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const auth = require('../middleware/authMiddleware');
+const { upload, cloudinary } = require('../config/cloudinaryConfig');
 
-// ✅ FIXED: Cookie settings that work for BOTH localhost and production
+// ✅ Cookie settings that work for BOTH localhost and production
 const getCookieOptions = () => {
     const isProduction = process.env.NODE_ENV === 'production';
     
     return {
         httpOnly: true,
-        secure: isProduction,           // ✅ Only secure in production (HTTPS)
-        sameSite: isProduction ? 'None' : 'Lax', // ✅ 'Lax' for localhost, 'None' for production
-        maxAge: 3600000,                // 1 hour
-        path: '/'                       // ✅ Important: make sure path is set
+        secure: isProduction,
+        sameSite: isProduction ? 'None' : 'Lax',
+        maxAge: 3600000,
+        path: '/'
     };
 };
 
@@ -152,6 +153,101 @@ router.post('/logout', auth, (req, res) => {
     res.clearCookie('token', cookieOptions);
     res.json({ msg: 'Logged out successfully' });
     console.log(`[Auth Route /logout] User ${req.user?.id || 'unknown'} logged out. HttpOnly cookie cleared.`);
+});
+
+// 🆕 @route   POST api/auth/upload-avatar
+// 🆕 @desc    Upload profile picture
+// 🆕 @access  Private
+router.post('/upload-avatar', auth, upload.single('avatar'), async (req, res) => {
+    try {
+        console.log(`[Auth Route /upload-avatar] Upload request from user: ${req.user.id}`);
+        
+        if (!req.file) {
+            console.log('[Auth Route /upload-avatar] No file uploaded');
+            return res.status(400).json({ msg: 'No file uploaded' });
+        }
+
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            console.log(`[Auth Route /upload-avatar] User not found: ${req.user.id}`);
+            return res.status(404).json({ msg: 'User not found' });
+        }
+
+        // If user already has an avatar, delete the old one from Cloudinary
+        if (user.profile.avatar) {
+            try {
+                // Extract public_id from the Cloudinary URL
+                const urlParts = user.profile.avatar.split('/');
+                const publicIdWithExt = urlParts[urlParts.length - 1];
+                const publicId = 'nexussignal-avatars/' + publicIdWithExt.split('.')[0];
+                
+                await cloudinary.uploader.destroy(publicId);
+                console.log(`[Auth Route /upload-avatar] Deleted old avatar: ${publicId}`);
+            } catch (deleteError) {
+                console.error('[Auth Route /upload-avatar] Error deleting old avatar:', deleteError);
+                // Continue anyway - old image stays in Cloudinary but gets replaced
+            }
+        }
+
+        // Update user's avatar URL (Cloudinary returns the URL in req.file.path)
+        user.profile.avatar = req.file.path;
+        await user.save();
+
+        console.log(`[Auth Route /upload-avatar] Avatar uploaded successfully: ${req.file.path}`);
+
+        res.json({
+            success: true,
+            msg: 'Avatar uploaded successfully',
+            avatarUrl: req.file.path
+        });
+    } catch (error) {
+        console.error('[Auth Route /upload-avatar] Error uploading avatar:', error);
+        res.status(500).json({ msg: 'Server error uploading avatar' });
+    }
+});
+
+// 🆕 @route   DELETE api/auth/delete-avatar
+// 🆕 @desc    Delete profile picture
+// 🆕 @access  Private
+router.delete('/delete-avatar', auth, async (req, res) => {
+    try {
+        console.log(`[Auth Route /delete-avatar] Delete request from user: ${req.user.id}`);
+        
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ msg: 'User not found' });
+        }
+
+        if (!user.profile.avatar) {
+            return res.status(400).json({ msg: 'No avatar to delete' });
+        }
+
+        // Delete from Cloudinary
+        try {
+            const urlParts = user.profile.avatar.split('/');
+            const publicIdWithExt = urlParts[urlParts.length - 1];
+            const publicId = 'nexussignal-avatars/' + publicIdWithExt.split('.')[0];
+            
+            await cloudinary.uploader.destroy(publicId);
+            console.log(`[Auth Route /delete-avatar] Deleted avatar: ${publicId}`);
+        } catch (deleteError) {
+            console.error('[Auth Route /delete-avatar] Error deleting from Cloudinary:', deleteError);
+        }
+
+        // Remove avatar URL from user
+        user.profile.avatar = '';
+        await user.save();
+
+        res.json({
+            success: true,
+            msg: 'Avatar deleted successfully'
+        });
+    } catch (error) {
+        console.error('[Auth Route /delete-avatar] Error deleting avatar:', error);
+        res.status(500).json({ msg: 'Server error deleting avatar' });
+    }
 });
 
 // @route   PUT api/auth/update-profile
