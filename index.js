@@ -1,6 +1,7 @@
 require('dotenv').config(); // Load environment variables
 
 const app = require('./app'); // Import the Express app from app.js
+const { startPredictionChecker } = require('./services/predictionChecker'); // ✅ ADDED
 
 const MAX_RETRIES = 5;
 let attempts = 0;
@@ -15,6 +16,9 @@ function startServer() {
     const server = app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
         console.log(`Open your browser to http://localhost:${PORT}`);
+        
+        // ✅ START PREDICTION CHECKER AFTER SERVER STARTS
+        startPredictionChecker();
     });
 
     // Attach an error handler to the server instance

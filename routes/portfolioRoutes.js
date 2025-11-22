@@ -1,183 +1,261 @@
-// server/routes/portfolioRoutes.js - COMPLETE VERSION WITH ADD/DELETE
+// server/routes/portfolioRoutes.js - OPTIMIZED VERSION
+
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
-const Portfolio = require('../models/Portfolio'); // You'll need this model
+const Portfolio = require('../models/Portfolio');
 const axios = require('axios');
 
 /**
- * POST /api/portfolio/migrate
- * One-time migration to fix field names in existing portfolios
- */
-router.post('/migrate', authMiddleware, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        console.log('🔄 Migrating portfolio for user:', userId);
-
-        const portfolio = await Portfolio.findOne({ user: userId });
-
-        if (!portfolio) {
-            return res.json({ success: true, message: 'No portfolio to migrate' });
-        }
-
-        console.log('📁 Found portfolio with', portfolio.holdings.length, 'holdings');
-
-        // Fix each holding
-        portfolio.holdings.forEach((holding, index) => {
-            console.log(`Migrating holding ${index}:`, holding.symbol);
-            
-            // If it has old field names, migrate them
-            if (holding.shares !== undefined && holding.quantity === undefined) {
-                holding.quantity = holding.shares;
-                holding.shares = undefined;
-            }
-            if (holding.averagePrice !== undefined && holding.purchasePrice === undefined) {
-                holding.purchasePrice = holding.averagePrice;
-                holding.averagePrice = undefined;
-            }
-            // Set default currentPrice if missing
-            if (!holding.currentPrice) {
-                holding.currentPrice = holding.purchasePrice || 0;
-            }
-            // Set default assetType if missing
-            if (!holding.assetType) {
-                holding.assetType = 'stock';
-            }
-        });
-
-        // Save without validation to allow the migration
-        await portfolio.save({ validateBeforeSave: false });
-        
-        console.log('✅ Migration complete');
-
-        res.json({
-            success: true,
-            message: 'Portfolio migrated successfully',
-            holdings: portfolio.holdings.length
-        });
-
-    } catch (error) {
-        console.error('❌ Migration error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Migration failed',
-            details: error.message
-        });
-    }
-});
-
-/**
  * GET /api/portfolio
- * Get user's portfolio with current prices
+ * Get user's complete portfolio with current prices
  */
 router.get('/', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
         console.log('📊 GET Portfolio request for user:', userId);
         
-        // Find user's portfolio
-        let portfolio = await Portfolio.findOne({ user: userId });
-        console.log('📁 Portfolio lookup result:', portfolio ? `Found with ${portfolio.holdings?.length || 0} holdings` : 'Not found');
+        // Get or create portfolio
+        let portfolio = await Portfolio.getOrCreate(userId);
         
-        if (!portfolio) {
-            // Create empty portfolio if doesn't exist
-            portfolio = await Portfolio.create({
-                user: userId,
-                holdings: []
-            });
+        // Fetch current prices for all holdings
+        if (portfolio.holdings.length > 0) {
+            const priceUpdates = {};
+            
+            await Promise.all(
+                portfolio.holdings.map(async (holding) => {
+                    try {
+                        const priceData = await getCurrentPrice(holding.symbol, holding.assetType);
+                        priceUpdates[holding.symbol] = priceData.price;
+                    } catch (error) {
+                        console.warn(`Could not fetch price for ${holding.symbol}:`, error.message);
+                        // Keep existing price
+                        priceUpdates[holding.symbol] = holding.currentPrice || holding.purchasePrice;
+                    }
+                })
+            );
+            
+            // Update all prices at once
+            await portfolio.updatePrices(priceUpdates);
         }
 
-        // Fetch current prices for all holdings
-        const holdingsWithPrices = await Promise.all(
-            portfolio.holdings.map(async (holding) => {
-                try {
-                    // Fetch current price from your market data source
-                    const priceData = await getCurrentPrice(holding.symbol);
-                    
-                    // Update the holding's current price
-                    holding.currentPrice = priceData.price;
-                    
-                    return {
-                        _id: holding._id,
-                        symbol: holding.symbol,
-                        shares: holding.quantity, // Map to 'shares' for frontend
-                        quantity: holding.quantity,
-                        averagePrice: holding.purchasePrice, // Map to 'averagePrice' for frontend
-                        purchasePrice: holding.purchasePrice,
-                        currentPrice: priceData.price,
-                        dayChangePercent: priceData.changePercent,
-                        sector: priceData.sector
-                    };
-                } catch (error) {
-                    console.error(`Error fetching price for ${holding.symbol}:`, error.message);
-                    // Return holding with last known or purchase price
-                    return {
-                        _id: holding._id,
-                        symbol: holding.symbol,
-                        shares: holding.quantity,
-                        quantity: holding.quantity,
-                        averagePrice: holding.purchasePrice,
-                        purchasePrice: holding.purchasePrice,
-                        currentPrice: holding.currentPrice || holding.purchasePrice,
-                        dayChangePercent: 0,
-                        sector: null
-                    };
-                }
-            })
-        );
-
-        // Calculate metrics manually
-        let totalCurrentValue = 0;
-        let totalCostBasis = 0;
-        
-        holdingsWithPrices.forEach(holding => {
-            totalCurrentValue += (holding.currentPrice || 0) * (holding.quantity || 0);
-            totalCostBasis += (holding.purchasePrice || 0) * (holding.quantity || 0);
-        });
-
-        const totalChange = totalCurrentValue - totalCostBasis;
-        const totalChangePercent = totalCostBasis > 0 ? (totalChange / totalCostBasis) * 100 : 0;
-
-        // Update portfolio document
-        portfolio.totalValue = totalCurrentValue + (portfolio.cashBalance || 0);
-        portfolio.totalChange = totalChange;
-        portfolio.totalChangePercent = totalChangePercent;
-        portfolio.lastUpdatedAt = new Date();
-        
-        await portfolio.save();
+        // Get portfolio summary
+        const summary = portfolio.getSummary();
+        const topHoldings = portfolio.getTopHoldings(5);
+        const performers = portfolio.getPerformers();
 
         res.json({
             success: true,
-            holdings: holdingsWithPrices,
-            totalValue: portfolio.totalValue,
-            cashBalance: portfolio.cashBalance,
-            totalChange: portfolio.totalChange,
-            totalChangePercent: portfolio.totalChangePercent
+            portfolio: {
+                holdings: portfolio.holdings,
+                cashBalance: portfolio.cashBalance,
+                ...summary
+            },
+            analytics: {
+                topHoldings,
+                performers
+            }
         });
 
     } catch (error) {
         console.error('Error fetching portfolio:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch portfolio'
+            error: 'Failed to fetch portfolio',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/portfolio/summary
+ * Get quick portfolio summary without full holdings
+ */
+router.get('/summary', authMiddleware, async (req, res) => {
+    try {
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
+        const summary = portfolio.getSummary();
+        
+        res.json({
+            success: true,
+            ...summary
+        });
+    } catch (error) {
+        console.error('Error fetching portfolio summary:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch portfolio summary'
+        });
+    }
+});
+
+/**
+ * GET /api/portfolio/leaderboard
+ * Get top portfolios (public leaderboard)
+ */
+router.get('/leaderboard', async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+        const leaderboard = await Portfolio.getLeaderboard(parseInt(limit));
+        
+        res.json({
+            success: true,
+            leaderboard
+        });
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch leaderboard'
+        });
+    }
+});
+
+/**
+ * POST /api/portfolio/buy
+ * Buy an asset (stock or crypto)
+ */
+router.post('/buy', authMiddleware, async (req, res) => {
+    try {
+        const { symbol, quantity, price, assetType = 'stock' } = req.body;
+
+        // Validation
+        if (!symbol || !quantity || !price) {
+            return res.status(400).json({
+                success: false,
+                error: 'Symbol, quantity, and price are required'
+            });
+        }
+
+        if (quantity <= 0 || price <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Quantity and price must be positive numbers'
+            });
+        }
+
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
+        
+        // Use the buyAsset method from the model
+        await portfolio.buyAsset(symbol.toUpperCase(), parseFloat(quantity), parseFloat(price), assetType);
+        
+        // Update user stats
+        await updateUserStatsHelper(req.user.id);
+
+        res.json({
+            success: true,
+            message: `Bought ${quantity} ${symbol}`,
+            portfolio: {
+                holdings: portfolio.holdings,
+                cashBalance: portfolio.cashBalance,
+                totalValue: portfolio.totalValue
+            }
+        });
+
+    } catch (error) {
+        console.error('Error buying asset:', error);
+        
+        if (error.message === 'Insufficient cash balance') {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Failed to buy asset',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/portfolio/sell
+ * Sell an asset
+ */
+router.post('/sell', authMiddleware, async (req, res) => {
+    try {
+        const { symbol, quantity } = req.body;
+
+        // Validation
+        if (!symbol || !quantity) {
+            return res.status(400).json({
+                success: false,
+                error: 'Symbol and quantity are required'
+            });
+        }
+
+        if (quantity <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Quantity must be a positive number'
+            });
+        }
+
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
+        
+        // Get current price
+        const holding = portfolio.holdings.find(h => h.symbol === symbol.toUpperCase());
+        if (!holding) {
+            return res.status(404).json({
+                success: false,
+                error: `You don't own ${symbol}`
+            });
+        }
+
+        let currentPrice = holding.currentPrice;
+        try {
+            const priceData = await getCurrentPrice(symbol, holding.assetType);
+            currentPrice = priceData.price;
+        } catch (error) {
+            console.warn(`Could not fetch current price for ${symbol}, using last known price`);
+        }
+
+        // Use the sellAsset method from the model
+        await portfolio.sellAsset(symbol.toUpperCase(), parseFloat(quantity), currentPrice);
+        
+        // Update user stats
+        await updateUserStatsHelper(req.user.id);
+
+        res.json({
+            success: true,
+            message: `Sold ${quantity} ${symbol}`,
+            portfolio: {
+                holdings: portfolio.holdings,
+                cashBalance: portfolio.cashBalance,
+                totalValue: portfolio.totalValue
+            }
+        });
+
+    } catch (error) {
+        console.error('Error selling asset:', error);
+        
+        if (error.message.includes("don't own") || error.message.includes('Insufficient quantity')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Failed to sell asset',
+            message: error.message
         });
     }
 });
 
 /**
  * POST /api/portfolio/holdings
- * Add a new holding to portfolio
+ * Add a new holding (manual entry - for existing positions)
  */
 router.post('/holdings', authMiddleware, async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { symbol, shares, averagePrice } = req.body;
-
-        console.log('➕ Add holding request:', { userId, symbol, shares, averagePrice });
+        const { symbol, shares, averagePrice, assetType = 'stock' } = req.body;
 
         // Validation
         if (!symbol || !shares || !averagePrice) {
-            console.log('❌ Validation failed - missing fields');
             return res.status(400).json({
                 success: false,
                 error: 'Symbol, shares, and average price are required'
@@ -185,194 +263,80 @@ router.post('/holdings', authMiddleware, async (req, res) => {
         }
 
         if (shares <= 0 || averagePrice <= 0) {
-            console.log('❌ Validation failed - invalid values');
             return res.status(400).json({
                 success: false,
                 error: 'Shares and price must be positive numbers'
             });
         }
 
-        // Find or create portfolio
-        let portfolio = await Portfolio.findOne({ user: userId });
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
         
-        if (!portfolio) {
-            console.log('📁 Creating new portfolio for user:', userId);
-            portfolio = await Portfolio.create({
-                user: userId,
-                holdings: []
-            });
-        } else {
-            console.log('📁 Found existing portfolio with', portfolio.holdings.length, 'holdings');
-            console.log('Current holdings:', portfolio.holdings.map(h => h.symbol));
-        }
-
         // Check if symbol already exists
         const existingHolding = portfolio.holdings.find(
             h => h.symbol.toUpperCase() === symbol.toUpperCase()
         );
 
         if (existingHolding) {
-            console.log('❌ Symbol already exists:', symbol);
             return res.status(400).json({
                 success: false,
                 error: `You already have ${symbol} in your portfolio. Edit the existing holding instead.`
             });
         }
 
-        // Fetch current price for the stock
+        // Fetch current price
         let currentPrice = parseFloat(averagePrice);
         try {
-            const priceData = await getCurrentPrice(symbol.toUpperCase());
+            const priceData = await getCurrentPrice(symbol.toUpperCase(), assetType);
             currentPrice = priceData.price;
-            console.log('✅ Fetched current price for', symbol, ':', currentPrice);
-        } catch (priceError) {
-            console.warn(`⚠️ Could not fetch current price for ${symbol}, using purchase price:`, priceError.message);
+        } catch (error) {
+            console.warn(`Could not fetch current price for ${symbol}, using purchase price`);
         }
 
-        // Add new holding (using your model's field names)
-        const newHolding = {
+        // Add new holding manually
+        portfolio.holdings.push({
             symbol: symbol.toUpperCase(),
-            quantity: parseFloat(shares), // Your model uses 'quantity'
-            purchasePrice: parseFloat(averagePrice), // Your model uses 'purchasePrice'
+            quantity: parseFloat(shares),
+            purchasePrice: parseFloat(averagePrice),
             currentPrice: currentPrice,
             purchaseDate: new Date(),
-            assetType: 'stock'
-        };
-
-        console.log('➕ Adding new holding:', newHolding);
-        portfolio.holdings.push(newHolding);
-
-        // Calculate metrics manually instead of using method
-        let totalCurrentValue = 0;
-        let totalCostBasis = 0;
-        
-        portfolio.holdings.forEach(holding => {
-            totalCurrentValue += (holding.currentPrice || 0) * (holding.quantity || 0);
-            totalCostBasis += (holding.purchasePrice || 0) * (holding.quantity || 0);
+            assetType
         });
 
-        portfolio.totalValue = totalCurrentValue + (portfolio.cashBalance || 0);
-        portfolio.totalChange = totalCurrentValue - totalCostBasis;
-        portfolio.totalChangePercent = totalCostBasis > 0 ? (portfolio.totalChange / totalCostBasis) * 100 : 0;
-        portfolio.lastUpdatedAt = new Date();
-
+        portfolio.calculateTotals();
         await portfolio.save();
-
-        console.log('✅ Successfully added', symbol, 'to portfolio');
-        console.log('📊 Portfolio now has', portfolio.holdings.length, 'holdings');
+        
+        // Update user stats
+        await updateUserStatsHelper(req.user.id);
 
         res.json({
             success: true,
             message: `${symbol} added to portfolio`,
-            portfolio: portfolio.holdings
+            portfolio: {
+                holdings: portfolio.holdings,
+                totalValue: portfolio.totalValue
+            }
         });
 
     } catch (error) {
-        console.error('❌ Error adding holding:', error);
-        console.error('Stack trace:', error.stack);
+        console.error('Error adding holding:', error);
         res.status(500).json({
             success: false,
             error: 'Failed to add holding',
-            details: error.message
-        });
-    }
-});
-
-/**
- * DELETE /api/portfolio/holdings/:id
- * Delete a holding from portfolio
- */
-router.delete('/holdings/:id', authMiddleware, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const holdingId = req.params.id;
-
-        console.log('🗑️ Delete request - User:', userId, 'Holding ID:', holdingId);
-
-        const portfolio = await Portfolio.findOne({ user: userId });
-
-        if (!portfolio) {
-            console.log('❌ Portfolio not found for user:', userId);
-            return res.status(404).json({
-                success: false,
-                error: 'Portfolio not found'
-            });
-        }
-
-        console.log('📋 Portfolio found with', portfolio.holdings.length, 'holdings');
-        console.log('🔍 Looking for holding with ID:', holdingId);
-
-        // Find the holding
-        const holding = portfolio.holdings.id(holdingId);
-
-        if (!holding) {
-            console.log('❌ Holding not found with ID:', holdingId);
-            console.log('Available holding IDs:', portfolio.holdings.map(h => h._id.toString()));
-            return res.status(404).json({
-                success: false,
-                error: 'Holding not found'
-            });
-        }
-
-        const removedSymbol = holding.symbol;
-console.log('✅ Found holding:', removedSymbol);
-
-// Remove the holding using pull
-portfolio.holdings.pull(holdingId);
-        
-        // Calculate metrics manually instead of using method
-        let totalCurrentValue = 0;
-        let totalCostBasis = 0;
-        
-        portfolio.holdings.forEach(h => {
-            totalCurrentValue += (h.currentPrice || 0) * (h.quantity || 0);
-            totalCostBasis += (h.purchasePrice || 0) * (h.quantity || 0);
-        });
-
-        portfolio.totalValue = totalCurrentValue + (portfolio.cashBalance || 0);
-        portfolio.totalChange = totalCurrentValue - totalCostBasis;
-        portfolio.totalChangePercent = totalCostBasis > 0 ? (portfolio.totalChange / totalCostBasis) * 100 : 0;
-        portfolio.lastUpdatedAt = new Date();
-
-        await portfolio.save();
-
-        console.log('✅ Successfully deleted', removedSymbol);
-
-        res.json({
-            success: true,
-            message: `${removedSymbol} removed from portfolio`
-        });
-
-    } catch (error) {
-        console.error('❌ Error deleting holding:', error);
-        console.error('Stack trace:', error.stack);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete holding',
-            details: error.message
+            message: error.message
         });
     }
 });
 
 /**
  * PUT /api/portfolio/holdings/:id
- * Update a holding (edit shares or average price)
+ * Update a holding
  */
 router.put('/holdings/:id', authMiddleware, async (req, res) => {
     try {
-        const userId = req.user.id;
         const holdingId = req.params.id;
-        const { shares, averagePrice } = req.body;
+        const { quantity, purchasePrice } = req.body;
 
-        const portfolio = await Portfolio.findOne({ user: userId });
-
-        if (!portfolio) {
-            return res.status(404).json({
-                success: false,
-                error: 'Portfolio not found'
-            });
-        }
-
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
         const holding = portfolio.holdings.id(holdingId);
 
         if (!holding) {
@@ -382,25 +346,32 @@ router.put('/holdings/:id', authMiddleware, async (req, res) => {
             });
         }
 
-        // Update using your model's field names
-        if (shares !== undefined) holding.quantity = parseFloat(shares);
-        if (averagePrice !== undefined) holding.purchasePrice = parseFloat(averagePrice);
-
-        // Calculate metrics manually instead of using method
-        let totalCurrentValue = 0;
-        let totalCostBasis = 0;
+        // Update fields
+        if (quantity !== undefined) {
+            if (quantity <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Quantity must be positive'
+                });
+            }
+            holding.quantity = parseFloat(quantity);
+        }
         
-        portfolio.holdings.forEach(h => {
-            totalCurrentValue += (h.currentPrice || 0) * (h.quantity || 0);
-            totalCostBasis += (h.purchasePrice || 0) * (h.quantity || 0);
-        });
+        if (purchasePrice !== undefined) {
+            if (purchasePrice <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Purchase price must be positive'
+                });
+            }
+            holding.purchasePrice = parseFloat(purchasePrice);
+        }
 
-        portfolio.totalValue = totalCurrentValue + (portfolio.cashBalance || 0);
-        portfolio.totalChange = totalCurrentValue - totalCostBasis;
-        portfolio.totalChangePercent = totalCostBasis > 0 ? (portfolio.totalChange / totalCostBasis) * 100 : 0;
-        portfolio.lastUpdatedAt = new Date();
-
+        portfolio.calculateTotals();
         await portfolio.save();
+        
+        // Update user stats
+        await updateUserStatsHelper(req.user.id);
 
         res.json({
             success: true,
@@ -412,58 +383,222 @@ router.put('/holdings/:id', authMiddleware, async (req, res) => {
         console.error('Error updating holding:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to update holding'
+            error: 'Failed to update holding',
+            message: error.message
         });
     }
 });
 
 /**
- * Helper function to get current stock price
- * Replace with your actual market data source
+ * DELETE /api/portfolio/holdings/:id
+ * Delete a holding
  */
-async function getCurrentPrice(symbol) {
+router.delete('/holdings/:id', authMiddleware, async (req, res) => {
     try {
-        // Try Yahoo Finance first (free, no API key needed)
-        try {
-            const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d`;
-            const yahooResponse = await axios.get(yahooUrl, { timeout: 5000 });
-            const result = yahooResponse.data.chart.result[0];
-            const meta = result.meta;
-            
-            return {
-                price: meta.regularMarketPrice || meta.previousClose,
-                changePercent: meta.regularMarketPrice && meta.previousClose 
-                    ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100 
-                    : 0,
-                sector: null
-            };
-        } catch (yahooError) {
-            console.log(`Yahoo Finance failed for ${symbol}, trying Alpha Vantage...`);
+        const holdingId = req.params.id;
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
+
+        const holding = portfolio.holdings.id(holdingId);
+        if (!holding) {
+            return res.status(404).json({
+                success: false,
+                error: 'Holding not found'
+            });
         }
 
-        // Try Alpha Vantage as backup
-        const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
+        const removedSymbol = holding.symbol;
         
-        if (ALPHA_VANTAGE_KEY && ALPHA_VANTAGE_KEY !== 'demo') {
-            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`;
-            const response = await axios.get(url, { timeout: 5000 });
-            const quote = response.data['Global Quote'];
-            
-            if (quote && quote['05. price']) {
-                return {
-                    price: parseFloat(quote['05. price']),
-                    changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || 0),
-                    sector: null
-                };
-            }
-        }
+        // Remove holding
+        portfolio.holdings.pull(holdingId);
+        portfolio.calculateTotals();
+        await portfolio.save();
+        
+        // Update user stats
+        await updateUserStatsHelper(req.user.id);
 
-        // If both fail, throw error
-        throw new Error('Could not fetch price from any source');
+        res.json({
+            success: true,
+            message: `${removedSymbol} removed from portfolio`
+        });
 
     } catch (error) {
-        console.error(`❌ Error fetching price for ${symbol}:`, error.message);
-        throw error;
+        console.error('Error deleting holding:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete holding',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/portfolio/refresh-prices
+ * Manually refresh all prices
+ */
+router.post('/refresh-prices', authMiddleware, async (req, res) => {
+    try {
+        const portfolio = await Portfolio.getOrCreate(req.user.id);
+        
+        if (portfolio.holdings.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No holdings to refresh'
+            });
+        }
+
+        const priceUpdates = {};
+        const errors = [];
+        
+        await Promise.all(
+            portfolio.holdings.map(async (holding) => {
+                try {
+                    const priceData = await getCurrentPrice(holding.symbol, holding.assetType);
+                    priceUpdates[holding.symbol] = priceData.price;
+                } catch (error) {
+                    errors.push({ symbol: holding.symbol, error: error.message });
+                    priceUpdates[holding.symbol] = holding.currentPrice || holding.purchasePrice;
+                }
+            })
+        );
+        
+        await portfolio.updatePrices(priceUpdates);
+        
+        res.json({
+            success: true,
+            message: 'Prices refreshed',
+            updated: Object.keys(priceUpdates).length,
+            errors: errors.length > 0 ? errors : undefined,
+            portfolio: {
+                totalValue: portfolio.totalValue,
+                totalChange: portfolio.totalChange,
+                totalChangePercent: portfolio.totalChangePercent
+            }
+        });
+
+    } catch (error) {
+        console.error('Error refreshing prices:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to refresh prices',
+            message: error.message
+        });
+    }
+});
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Fetch current price for a stock or crypto
+ */
+async function getCurrentPrice(symbol, assetType = 'stock') {
+    try {
+        if (assetType === 'crypto') {
+            return await getCryptoPrice(symbol);
+        } else {
+            return await getStockPrice(symbol);
+        }
+    } catch (error) {
+        throw new Error(`Failed to fetch price for ${symbol}: ${error.message}`);
+    }
+}
+
+/**
+ * Get stock price from Yahoo Finance or Alpha Vantage
+ */
+async function getStockPrice(symbol) {
+    // Try Yahoo Finance first (free, no API key)
+    try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d`;
+        const response = await axios.get(url, { timeout: 5000 });
+        const result = response.data.chart.result[0];
+        const meta = result.meta;
+        
+        return {
+            price: meta.regularMarketPrice || meta.previousClose,
+            changePercent: meta.regularMarketPrice && meta.previousClose 
+                ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100 
+                : 0
+        };
+    } catch (yahooError) {
+        console.log(`Yahoo Finance failed for ${symbol}, trying Alpha Vantage...`);
+    }
+
+    // Try Alpha Vantage as backup
+    const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
+    
+    if (ALPHA_VANTAGE_KEY && ALPHA_VANTAGE_KEY !== 'demo') {
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`;
+        const response = await axios.get(url, { timeout: 5000 });
+        const quote = response.data['Global Quote'];
+        
+        if (quote && quote['05. price']) {
+            return {
+                price: parseFloat(quote['05. price']),
+                changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || 0)
+            };
+        }
+    }
+
+    throw new Error('Could not fetch stock price from any source');
+}
+
+/**
+ * Get crypto price from CoinGecko
+ */
+async function getCryptoPrice(symbol) {
+    const cryptoMap = {
+        BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin',
+        ADA: 'cardano', SOL: 'solana', DOGE: 'dogecoin', DOT: 'polkadot',
+        BNB: 'binancecoin', LINK: 'chainlink', UNI: 'uniswap',
+        MATIC: 'matic-network', SHIB: 'shiba-inu', TRX: 'tron',
+        AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero'
+    };
+
+    const coinId = cryptoMap[symbol.toUpperCase()] || symbol.toLowerCase();
+    const COINGECKO_KEY = process.env.COINGECKO_API_KEY;
+    const baseUrl = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
+    
+    const params = {
+        ids: coinId,
+        vs_currencies: 'usd',
+        include_24hr_change: true
+    };
+    
+    if (COINGECKO_KEY) {
+        params['x_cg_pro_api_key'] = COINGECKO_KEY;
+    }
+    
+    const url = `${baseUrl}/simple/price`;
+    const response = await axios.get(url, { params, timeout: 5000 });
+    const data = response.data;
+    
+    if (data[coinId] && data[coinId].usd) {
+        return {
+            price: data[coinId].usd,
+            changePercent: data[coinId].usd_24h_change || 0
+        };
+    }
+    
+    throw new Error(`Crypto price not found for ${symbol}`);
+}
+
+/**
+ * Update user stats (call your stats service if it exists)
+ */
+async function updateUserStatsHelper(userId) {
+    try {
+        // Check if statsService exists
+        const User = require('../models/User');
+        const user = await User.findById(userId);
+        
+        if (user && user.calculateStats) {
+            await user.calculateStats();
+        }
+    } catch (error) {
+        console.warn('Could not update user stats:', error.message);
+        // Don't fail the request if stats update fails
     }
 }
 

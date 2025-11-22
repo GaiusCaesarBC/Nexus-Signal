@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
+const { updateUserStats, updateAllUserStats } = require('../services/statsService'); // ✅ ADD THIS
 
 // ============ OPTIONAL AUTH MIDDLEWARE ============
 // Allows routes to work with or without authentication
@@ -303,35 +304,79 @@ router.get('/search', async (req, res) => {
     }
 });
 
-// ============ MIGRATION (TEMPORARY) ============
-// ⚠️ REMOVE THIS AFTER RUNNING ONCE!
-// @route   POST /api/social/admin/migrate-public-profiles
-// @desc    Set all users to public by default
-// @access  Public (remove after migration)
-router.post('/admin/migrate-public-profiles', async (req, res) => {
+// ============ ADMIN ENDPOINTS (TEMPORARY - REMOVE AFTER RUNNING) ============
+
+// ⚠️ MIGRATION: Set display names and public profiles
+router.post('/admin/migrate-profiles', async (req, res) => {
     try {
-        // Update all users to have public profiles
-        const result = await User.updateMany(
-            {},
-            { 
-                $set: { 
-                    'profile.isPublic': true,
-                    'profile.showPortfolio': true 
-                } 
-            }
-        );
+        const users = await User.find({});
+        let updated = 0;
         
-        console.log('[Migration] Updated profiles:', result);
+        for (const user of users) {
+            let needsUpdate = false;
+            
+            // Set displayName to username if not set
+            if (!user.profile.displayName) {
+                user.profile.displayName = user.username;
+                needsUpdate = true;
+            }
+            
+            // Set isPublic to true if not set
+            if (user.profile.isPublic === undefined) {
+                user.profile.isPublic = true;
+                needsUpdate = true;
+            }
+            
+            // Set showPortfolio to true if not set
+            if (user.profile.showPortfolio === undefined) {
+                user.profile.showPortfolio = true;
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+                await user.save();
+                updated++;
+            }
+        }
+        
+        console.log(`[Migration] Updated ${updated} user profiles`);
         
         res.json({ 
             success: true, 
-            message: `Migration complete! Updated ${result.modifiedCount} profiles to public`,
-            matched: result.matchedCount,
-            modified: result.modifiedCount
+            message: `Migration complete! Updated ${updated} profiles`,
+            total: users.length
         });
     } catch (error) {
         console.error('[Migration] Error:', error);
         res.status(500).json({ error: 'Migration failed', details: error.message });
+    }
+});
+
+// ⚠️ STATS: Update all user stats from portfolios
+router.post('/admin/update-stats', async (req, res) => {
+    try {
+        await updateAllUserStats();
+        res.json({ 
+            success: true, 
+            message: 'All user stats updated successfully from portfolio data' 
+        });
+    } catch (error) {
+        console.error('[Admin] Error updating stats:', error);
+        res.status(500).json({ error: 'Failed to update stats', details: error.message });
+    }
+});
+
+// ⚠️ STATS: Update single user's stats
+router.post('/admin/update-stats/:userId', async (req, res) => {
+    try {
+        await updateUserStats(req.params.userId);
+        res.json({ 
+            success: true, 
+            message: `User ${req.params.userId} stats updated successfully` 
+        });
+    } catch (error) {
+        console.error('[Admin] Error updating user stats:', error);
+        res.status(500).json({ error: 'Failed to update user stats', details: error.message });
     }
 });
 

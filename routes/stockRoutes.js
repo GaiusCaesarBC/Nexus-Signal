@@ -11,6 +11,8 @@ const {
     calculateBollingerBands,
 } = require('../utils/indicators');
 
+const { getSentimentSignal } = require('../services/sentimentService');
+
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const stockCache = {};
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
@@ -197,13 +199,24 @@ router.get('/prediction/:symbol', async (req, res) => {
         }
 
         const lastClosePrice = historicalData[historicalData.length - 1].close;
-        const prediction = calculateStockPrediction(historicalData, lastClosePrice);
+        
+        console.log(`[Sentiment] Analyzing news for ${symbol}...`);
+        const sentimentData = await getSentimentSignal(symbol);
+        console.log(`[Sentiment] Result: ${sentimentData.label} (${sentimentData.signal.toFixed(2)})`);
+        
+        const prediction = calculateStockPrediction(historicalData, lastClosePrice, sentimentData);
 
         const responseData = {
             symbol,
             currentPrice: lastClosePrice,
             historicalData,
             ...prediction,
+            sentiment: {
+                score: sentimentData.signal,
+                label: sentimentData.label,
+                confidence: sentimentData.confidence,
+                summary: sentimentData.summary
+            }
         };
 
         stockCache[cacheKey] = {
@@ -222,63 +235,73 @@ router.get('/prediction/:symbol', async (req, res) => {
     }
 });
 
-const calculateStockPrediction = (historicalData, lastClosePrice) => {
-    console.log('=== PREDICTION DEBUG ===');
+const calculateStockPrediction = (historicalData, lastClosePrice, sentimentData = null) => {
+    console.log('=== ENHANCED PREDICTION DEBUG ===');
     console.log('Historical data points:', historicalData.length);
     console.log('Last close price:', lastClosePrice);
+    console.log('Sentiment:', sentimentData ? `${sentimentData.label} (${sentimentData.signal.toFixed(2)})` : 'None');
     
     const sortedData = [...historicalData].sort((a, b) => a.time - b.time);
     const closes = sortedData.map(d => d.close);
     const volumes = sortedData.map(d => d.volume || 0);
     
-    console.log('Closes array length:', closes.length);
-
     const hasEnoughData = (minLen) => closes.length >= minLen;
 
+    // Calculate technical indicators
     const rsi = hasEnoughData(14) ? calculateRSI(closes) : null;
     const macdResult = hasEnoughData(26) ? calculateMACD(closes) : { macd: null, signal: null, histogram: null };
     const bbResult = hasEnoughData(20) ? calculateBollingerBands(closes) : { mid: lastClosePrice, upper: null, lower: null };
-    const sma20 = hasEnoughData(20) ? calculateSMA(closes, 20) : null;
-    const sma50 = hasEnoughData(50) ? calculateSMA(closes, 50) : null;
-    const sma200 = hasEnoughData(200) ? calculateSMA(closes, 200) : null;
+    
+    const sma20Array = hasEnoughData(20) ? calculateSMA(sortedData, 20) : [];
+    const sma50Array = hasEnoughData(50) ? calculateSMA(sortedData, 50) : [];
+    const sma200Array = hasEnoughData(200) ? calculateSMA(sortedData, 200) : [];
+    
+    const sma20 = sma20Array.length > 0 ? sma20Array[sma20Array.length - 1].value : null;
+    const sma50 = sma50Array.length > 0 ? sma50Array[sma50Array.length - 1].value : null;
+    const sma200 = sma200Array.length > 0 ? sma200Array[sma200Array.length - 1].value : null;
+    
     const avgVolume = volumes.length > 0 ? (volumes.reduce((a, b) => a + b, 0) / volumes.length) : null;
-
-    console.log('Indicators:', { rsi, sma50, sma200 });
 
     let bullishScore = 0;
     let bearishScore = 0;
     let signals = [];
 
+    // ============================================
+    // TECHNICAL ANALYSIS (Weight: 60%)
+    // ============================================
+    
+    // SMA Analysis (20% weight)
     if (sma50 !== null && sma200 !== null && hasEnoughData(200)) {
         if (sma50 > sma200 && lastClosePrice > sma50) {
-            bullishScore += 4;
-            signals.push("Strong long-term uptrend (Golden Cross)");
+            bullishScore += 3;
+            signals.push("Golden Cross detected");
         } else if (sma50 < sma200 && lastClosePrice < sma50) {
-            bearishScore += 4;
-            signals.push("Strong long-term downtrend (Death Cross)");
+            bearishScore += 3;
+            signals.push("Death Cross detected");
         } else if (lastClosePrice > sma50) {
+            bullishScore += 1.5;
+            signals.push("Price above 50-SMA");
+        } else {
+            bearishScore += 1.5;
+            signals.push("Price below 50-SMA");
+        }
+    } else if (sma50 !== null) {
+        if (lastClosePrice > sma50) {
             bullishScore += 2;
-            signals.push("Price above 50-period SMA");
+            signals.push("Price above 50-SMA");
         } else {
             bearishScore += 2;
-            signals.push("Price below 50-period SMA");
-        }
-    } else if (sma50 !== null && hasEnoughData(50)) {
-        if (lastClosePrice > sma50) {
-            bullishScore += 2.5;
-            signals.push("Price above 50-period SMA");
-        } else {
-            bearishScore += 2.5;
-            signals.push("Price below 50-period SMA");
+            signals.push("Price below 50-SMA");
         }
     }
 
+    // RSI Analysis (15% weight)
     if (rsi !== null) {
         if (rsi < 30) {
-            bullishScore += 3;
+            bullishScore += 2.5;
             signals.push(`RSI oversold (${rsi.toFixed(0)})`);
         } else if (rsi > 70) {
-            bearishScore += 3;
+            bearishScore += 2.5;
             signals.push(`RSI overbought (${rsi.toFixed(0)})`);
         } else if (rsi > 50) {
             bullishScore += 0.5;
@@ -287,39 +310,111 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
+    // MACD Analysis (15% weight)
     if (macdResult.macd !== null && macdResult.signal !== null) {
         if (macdResult.macd > macdResult.signal && macdResult.histogram > 0) {
-            bullishScore += 3.5;
+            bullishScore += 2.5;
             signals.push("MACD bullish crossover");
         } else if (macdResult.macd < macdResult.signal && macdResult.histogram < 0) {
-            bearishScore += 3.5;
+            bearishScore += 2.5;
             signals.push("MACD bearish crossover");
         }
     }
 
+    // Bollinger Bands (10% weight)
     if (bbResult.upper !== null && bbResult.lower !== null) {
         if (lastClosePrice >= bbResult.upper * 0.99) {
-            bearishScore += 2;
+            bearishScore += 1.5;
             signals.push("Near upper Bollinger Band");
         } else if (lastClosePrice <= bbResult.lower * 1.01) {
-            bullishScore += 2;
+            bullishScore += 1.5;
             signals.push("Near lower Bollinger Band");
         }
     }
 
-    console.log('Scores:', { bullishScore, bearishScore });
+    // ============================================
+    // SENTIMENT ANALYSIS (Weight: 40%)
+    // ============================================
+    
+    if (sentimentData && sentimentData.signal !== 0) {
+        const sentimentWeight = 6;
+        const sentimentScore = sentimentData.signal * sentimentWeight;
+        
+        if (sentimentScore > 0) {
+            bullishScore += sentimentScore;
+            signals.push(`${sentimentData.label} news sentiment (${sentimentData.confidence}% confidence)`);
+        } else {
+            bearishScore += Math.abs(sentimentScore);
+            signals.push(`${sentimentData.label} news sentiment (${sentimentData.confidence}% confidence)`);
+        }
+        
+        console.log(`[Sentiment Impact] Score: ${sentimentScore.toFixed(2)} (${sentimentData.label})`);
+    }
 
+    console.log('Final Scores:', { bullishScore: bullishScore.toFixed(2), bearishScore: bearishScore.toFixed(2) });
+
+    // ============================================
+    // CALCULATE PREDICTION
+    // ============================================
+    
     const totalScore = bullishScore + bearishScore;
     const confidence = totalScore > 0 
         ? Math.min(95, Math.round((Math.max(bullishScore, bearishScore) / totalScore) * 100)) 
         : 50;
     
     const predictedDirection = bullishScore > bearishScore ? 'Up' : 'Down';
-    const percentageChange = predictedDirection === 'Up' 
-        ? (bullishScore / 10) * 2 
-        : -(bearishScore / 10) * 2;
+    
+    let percentageChange = (Math.max(bullishScore, bearishScore) / 15) * 3;
+    
+    if (sentimentData) {
+        percentageChange += sentimentData.signal * 1;
+    }
+    
+    percentageChange = Math.max(-5, Math.min(5, percentageChange));
+    
+    if (predictedDirection === 'Down') {
+        percentageChange = -Math.abs(percentageChange);
+    }
     
     const predictedPrice = lastClosePrice * (1 + percentageChange / 100);
+
+    // ✅ NEW: Format indicators for frontend display
+    const formattedIndicators = {
+        RSI: {
+            value: rsi !== null ? rsi.toFixed(2) : 'N/A',
+            signal: rsi !== null ? (rsi < 30 ? 'BUY' : rsi > 70 ? 'SELL' : 'HOLD') : 'N/A'
+        },
+        MACD: {
+            value: macdResult.macd !== null 
+                ? `${macdResult.macd > macdResult.signal ? 'Bullish' : 'Bearish'}` 
+                : 'N/A',
+            signal: macdResult.macd !== null 
+                ? (macdResult.macd > macdResult.signal ? 'BUY' : 'SELL') 
+                : 'N/A'
+        },
+        'MA50': {
+            value: sma50 !== null ? `$${sma50.toFixed(2)}` : 'N/A',
+            signal: sma50 !== null ? (lastClosePrice > sma50 ? 'BUY' : 'SELL') : 'N/A'
+        },
+        'MA200': {
+            value: sma200 !== null ? `$${sma200.toFixed(2)}` : 'N/A',
+            signal: sma200 !== null ? (lastClosePrice > sma200 ? 'BUY' : 'SELL') : 'N/A'
+        },
+        Volume: {
+            value: avgVolume !== null ? `${(avgVolume / 1000000).toFixed(1)}M` : 'N/A',
+            signal: volumes[volumes.length - 1] > avgVolume ? 'BUY' : 'SELL'
+        },
+        Bollinger: {
+            value: bbResult.upper !== null 
+                ? (lastClosePrice >= bbResult.upper * 0.99 ? 'Upper' : 
+                   lastClosePrice <= bbResult.lower * 1.01 ? 'Lower' : 'Middle')
+                : 'N/A',
+            signal: bbResult.upper !== null 
+                ? (lastClosePrice <= bbResult.lower * 1.01 ? 'BUY' : 
+                   lastClosePrice >= bbResult.upper * 0.99 ? 'SELL' : 'HOLD')
+                : 'N/A'
+        }
+    };
 
     return {
         predictedPrice,
@@ -327,7 +422,8 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         percentageChange,
         confidence,
         message: signals.length > 0 ? signals.join('. ') : 'Neutral market conditions',
-        indicators: {
+        indicators: formattedIndicators,  // ✅ Return real formatted indicators
+        rawIndicators: {  // ✅ Also return raw values for debugging
             rsi,
             macd: macdResult,
             bollingerBands: bbResult,
@@ -339,5 +435,4 @@ const calculateStockPrediction = (historicalData, lastClosePrice) => {
         }
     };
 };
-
 module.exports = router;

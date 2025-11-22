@@ -56,21 +56,48 @@ function calculateRSI(closes, period = 14) {
 }
 
 function calculateMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
-    if (closes.length < slowPeriod) {
+    if (closes.length < slowPeriod + signalPeriod) {
         return { macd: null, signal: null, histogram: null };
     }
     
-    const emaFast = calculateEMA(closes, fastPeriod);
-    const emaSlow = calculateEMA(closes, slowPeriod);
+    // Calculate EMA arrays for the entire series
+    const emaFastArray = [];
+    const emaSlowArray = [];
     
-    if (!emaFast || !emaSlow) {
-        return { macd: null, signal: null, histogram: null };
+    let emaFast = closes[0];
+    let emaSlow = closes[0];
+    const fastMultiplier = 2 / (fastPeriod + 1);
+    const slowMultiplier = 2 / (slowPeriod + 1);
+    
+    for (let i = 0; i < closes.length; i++) {
+        if (i === 0) {
+            emaFast = closes[i];
+            emaSlow = closes[i];
+        } else {
+            emaFast = (closes[i] - emaFast) * fastMultiplier + emaFast;
+            emaSlow = (closes[i] - emaSlow) * slowMultiplier + emaSlow;
+        }
+        emaFastArray.push(emaFast);
+        emaSlowArray.push(emaSlow);
     }
     
-    const macd = emaFast - emaSlow;
-    const macdLine = [macd];
-    const signal = calculateEMA(macdLine, signalPeriod);
-    const histogram = signal ? macd - signal : null;
+    // Calculate MACD line
+    const macdLine = [];
+    for (let i = 0; i < closes.length; i++) {
+        macdLine.push(emaFastArray[i] - emaSlowArray[i]);
+    }
+    
+    // Calculate signal line (EMA of MACD line)
+    const signalMultiplier = 2 / (signalPeriod + 1);
+    let signalEma = macdLine[0];
+    
+    for (let i = 1; i < macdLine.length; i++) {
+        signalEma = (macdLine[i] - signalEma) * signalMultiplier + signalEma;
+    }
+    
+    const macd = macdLine[macdLine.length - 1];
+    const signal = signalEma;
+    const histogram = macd - signal;
     
     return { macd, signal, histogram };
 }
@@ -93,7 +120,15 @@ function calculateBollingerBands(data, period = 20, stdDev = 2) {
         return { upper: null, mid: null, lower: null };
     }
     
-    const closes = data.map(d => d.close);
+    // Handle both arrays of numbers and arrays of objects
+    const closes = Array.isArray(data) && typeof data[0] === 'number' 
+        ? data 
+        : data.map(d => d.close);
+    
+    if (closes.length < period) {
+        return { upper: null, mid: null, lower: null };
+    }
+    
     let sum = 0;
     
     for (let i = 0; i < period; i++) {
