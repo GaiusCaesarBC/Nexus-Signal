@@ -1,4 +1,4 @@
-// server/routes/authRoutes.js - UPDATED WITH AVATAR UPLOAD
+// server/routes/authRoutes.js - UPDATED WITH AVATAR UPLOAD AND TOKEN FIX
 
 const express = require('express');
 const router = express.Router();
@@ -84,7 +84,19 @@ router.post(
                     const cookieOptions = getCookieOptions();
                     res.cookie('token', token, cookieOptions);
                     console.log('[Auth Route /register] Cookie set with options:', cookieOptions);
-                    res.json({ success: true, msg: "Registration successful" });
+                    
+                    // ✅ FIXED: Return token in response body!
+                    res.json({ 
+                        success: true, 
+                        msg: "Registration successful",
+                        token: token,
+                        user: {
+                            id: user.id,
+                            email: user.email,
+                            username: user.username
+                        }
+                    });
+                    
                     console.log(`[Auth Route /register] Registration successful for ${email}. HttpOnly cookie issued.`);
                 }
             );
@@ -136,7 +148,19 @@ router.post(
                     const cookieOptions = getCookieOptions();
                     res.cookie('token', token, cookieOptions);
                     console.log('[Auth Route /login] Cookie set with options:', cookieOptions);
-                    res.json({ success: true, msg: "Logged in successfully" });
+                    
+                    // ✅ FIXED: Return token in response body!
+                    res.json({ 
+                        success: true, 
+                        msg: "Logged in successfully",
+                        token: token,
+                        user: {
+                            id: user.id,
+                            email: user.email,
+                            username: user.username
+                        }
+                    });
+                    
                     console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued.`);
                 }
             );

@@ -481,30 +481,29 @@ router.get('/health', auth, async (req, res) => {
 router.post('/test/expire-all', auth, async (req, res) => {
     try {
         const predictions = await Prediction.find({ 
-            userId: req.user.id, 
+            user: req.user.id,
             status: 'pending' 
         });
         
         console.log(`[TEST] Found ${predictions.length} pending predictions`);
         
-        // Expire them all
+        // ✅ ONLY update expiresAt, keep status as 'pending'
         const result = await Prediction.updateMany(
-            { userId: req.user.id, status: 'pending' },
+            { user: req.user.id, status: 'pending' },
             { 
                 $set: { 
-                    expiresAt: new Date(),
-                    status: 'expired'
+                    expiresAt: new Date()  // ← ONLY this, no status change!
                 } 
             }
         );
         
-        console.log(`[TEST] Expired ${result.modifiedCount} predictions`);
+        console.log(`[TEST] Set expiresAt to now for ${result.modifiedCount} predictions`);
         
         res.json({ 
             success: true, 
             found: predictions.length,
             expired: result.modifiedCount,
-            message: 'Predictions expired for testing'
+            message: 'Predictions set to expire now'
         });
     } catch (error) {
         console.error('[TEST] Error:', error);
