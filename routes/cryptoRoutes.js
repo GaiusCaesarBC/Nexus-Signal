@@ -11,7 +11,7 @@ const {
     calculateRSI,
     calculateMACD,
     calculateBollingerBands,
-} = require('../utils/indicators');
+} = require('../../../Nexus-Signal-Client/src/utils/indicators');
 
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';

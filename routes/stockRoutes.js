@@ -9,7 +9,7 @@ const {
     calculateRSI,
     calculateMACD,
     calculateBollingerBands,
-} = require('../utils/indicators');
+} = require('../../../Nexus-Signal-Client/src/utils/indicators');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const stockCache = {};

@@ -18,6 +18,8 @@ const screenerRoutes = require('./routes/screenerRoutes');
 const heatmapRoutes = require('./routes/heatmapRoutes');
 
 
+
+
 // --- Database Connection Setup ---
 const connectDB = async () => {
     try {
@@ -78,6 +80,11 @@ const chatRoutes = require('./routes/chatRoutes'); // ✅ ADDED
 const newsRoutes = require('./routes/newsRoutes');
 const socialRoutes = require('./routes/socialRoutes');
 const feedRoutes = require('./routes/feedRoutes');
+const sentimentRoutes = require('./routes/sentimentRoutes');
+const portfolioHistoryRoutes = require('./routes/portfolioHistoryRoutes');
+const aiInsightsRoutes = require('./routes/aiInsightsRoutes')
+const chartRoutes = require('./routes/chartRoutes');
+const calculatorRoutes = require('./routes/calculatorRoutes'); // ← ADD THIS
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -99,6 +106,11 @@ app.use('/api/heatmap', heatmapRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/feed', feedRoutes);
+app.use('/api/sentiment', sentimentRoutes);
+app.use('/api/portfolio', portfolioHistoryRoutes);
+app.use('/api/portfolio', aiInsightsRoutes);
+app.use('/api/chart', chartRoutes);
+app.use('/api/calculators', calculatorRoutes); // ← ADD THIS
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
