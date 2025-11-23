@@ -1,10 +1,11 @@
-// server/routes/predictionsRoutes.js - WITH DATABASE STORAGE
+// server/routes/predictionsRoutes.js - WITH GAMIFICATION INTEGRATION
 
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
 const Prediction = require('../models/Prediction');
+const GamificationService = require('../services/gamificationService');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
@@ -37,7 +38,6 @@ function generateMockPrediction(symbol, days) {
     };
 }
 
-
 // @route   POST /api/predictions/predict
 // @desc    Get prediction for a single stock and save it
 // @access  Private
@@ -53,13 +53,11 @@ router.post('/predict', auth, async (req, res) => {
         
         let predictionData;
         
-        // If mock mode is enabled, use mock data
         if (USE_MOCK_PREDICTIONS) {
             console.log(`[Predictions] Using mock data for ${symbol}`);
             predictionData = generateMockPrediction(symbol, days);
         } else {
             try {
-                // Try to call stock/crypto prediction endpoint
                 const baseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
                 const endpoint = assetType === 'crypto' 
                     ? `/api/crypto/prediction/${symbol}?range=6M`
@@ -68,7 +66,6 @@ router.post('/predict', auth, async (req, res) => {
                 console.log(`[Predictions] Calling: ${baseUrl}${endpoint}`);
                 const response = await axios.get(`${baseUrl}${endpoint}`);
                 
-                // Transform the response to match our expected format
                 predictionData = {
                     symbol: response.data.symbol,
                     current_price: response.data.currentPrice,
@@ -90,7 +87,6 @@ router.post('/predict', auth, async (req, res) => {
                 };
                 
             } catch (mlError) {
-                // If API fails, fall back to mock data
                 console.log(`[Predictions] API failed, using mock data:`, mlError.message);
                 predictionData = generateMockPrediction(symbol, days);
             }
@@ -107,7 +103,7 @@ router.post('/predict', auth, async (req, res) => {
             currentPrice: predictionData.current_price,
             targetPrice: predictionData.prediction.target_price,
             direction: predictionData.prediction.direction,
-            priceChange: predictionData.prediction.price_change, // ✅ FIXED - Now included
+            priceChange: predictionData.prediction.price_change,
             priceChangePercent: predictionData.prediction.price_change_percent,
             confidence: predictionData.prediction.confidence,
             timeframe: days,
@@ -125,6 +121,14 @@ router.post('/predict', auth, async (req, res) => {
         
         console.log(`[Predictions] Saved prediction ${prediction._id} for ${symbol}`);
         
+        // 🎮 GAMIFICATION: Track prediction creation
+        try {
+            await GamificationService.trackPrediction(req.user.id);
+            await GamificationService.awardXP(req.user.id, 15, `Prediction created for ${symbol}`);
+        } catch (error) {
+            console.warn('Failed to track prediction in gamification:', error.message);
+        }
+        
         res.json({
             ...predictionData,
             predictionId: prediction._id
@@ -138,7 +142,6 @@ router.post('/predict', auth, async (req, res) => {
         });
     }
 });
-
 
 // @route   GET /api/predictions/recent
 // @desc    Get recent predictions for user
@@ -189,13 +192,13 @@ router.get('/platform-stats', async (req, res) => {
         res.status(500).json({ 
             success: false,
             error: 'Failed to fetch platform stats',
-            // Return defaults on error
             accuracy: 0,
             totalPredictions: 0,
             correctPredictions: 0
         });
     }
 });
+
 // @route   GET /api/predictions/trending
 // @desc    Get trending predictions
 // @access  Public
@@ -207,84 +210,6 @@ router.get('/trending', async (req, res) => {
     } catch (error) {
         console.error('[Predictions] Error fetching trending:', error.message);
         res.status(500).json({ error: 'Failed to fetch trending predictions' });
-    }
-});
-
-// @route   POST /api/predictions/predict
-// @desc    Get prediction for a single stock and save it
-// @access  Private
-router.post('/predict', auth, async (req, res) => {
-    try {
-        const { symbol, days = 7, assetType = 'stock', indicators = {} } = req.body;
-        
-        if (!symbol) {
-            return res.status(400).json({ error: 'Symbol is required' });
-        }
-
-        console.log(`[Predictions] Getting prediction for ${symbol}`);
-        
-        let predictionData;
-        
-        // If mock mode is enabled, return mock data immediately
-        if (USE_MOCK_PREDICTIONS) {
-            console.log(`[Predictions] Using mock data for ${symbol}`);
-            predictionData = generateMockPrediction(symbol, days);
-        } else {
-            try {
-                // Try to call ML service
-                const response = await axios.post(`${ML_SERVICE_URL}/predict`, {
-                    symbol: symbol.toUpperCase(),
-                    days
-                }, {
-                    timeout: 30000 // 30 second timeout
-                });
-                
-                predictionData = response.data;
-                
-            } catch (mlError) {
-                // If ML service fails, fall back to mock data
-                console.log(`[Predictions] ML service failed for ${symbol}, using mock data`);
-                console.log(`[Predictions] ML Error: ${mlError.message}`);
-                
-                predictionData = generateMockPrediction(symbol, days);
-            }
-        }
-        
-        // Save prediction to database
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + days);
-        
-        const prediction = new Prediction({
-            user: req.user.id,
-            symbol: symbol.toUpperCase(),
-            assetType,
-            currentPrice: predictionData.current_price,
-            targetPrice: predictionData.prediction.target_price,
-            direction: predictionData.prediction.direction,
-            priceChange: predictionData.prediction.price_change,
-            priceChangePercent: predictionData.prediction.price_change_percent,
-            confidence: predictionData.prediction.confidence,
-            timeframe: days,
-            indicators: indicators,
-            analysis: predictionData.analysis,
-            expiresAt
-        });
-        
-        await prediction.save();
-        
-        console.log(`[Predictions] Saved prediction ${prediction._id} for ${symbol}`);
-        
-        res.json({
-            ...predictionData,
-            predictionId: prediction._id
-        });
-        
-    } catch (error) {
-        console.error('[Predictions] Error:', error.message);
-        return res.status(500).json({
-            error: 'Prediction service error',
-            message: error.message
-        });
     }
 });
 
@@ -303,7 +228,6 @@ router.post('/batch', auth, async (req, res) => {
         
         let predictionsData;
         
-        // If mock mode is enabled, return mock data immediately
         if (USE_MOCK_PREDICTIONS) {
             console.log(`[Predictions] Using mock data for batch`);
             predictionsData = {
@@ -311,18 +235,16 @@ router.post('/batch', auth, async (req, res) => {
             };
         } else {
             try {
-                // Try to call ML service batch endpoint
                 const response = await axios.post(`${ML_SERVICE_URL}/predict/batch`, {
                     symbols: symbols.map(s => s.toUpperCase()),
                     days
                 }, {
-                    timeout: 60000 // 60 second timeout for batch
+                    timeout: 60000
                 });
                 
                 predictionsData = response.data;
                 
             } catch (mlError) {
-                // If ML service fails, fall back to mock data
                 console.log(`[Predictions] ML service failed for batch, using mock data`);
                 
                 predictionsData = {
@@ -331,7 +253,6 @@ router.post('/batch', auth, async (req, res) => {
             }
         }
         
-        // Save all predictions to database
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + days);
         
@@ -359,6 +280,14 @@ router.post('/batch', auth, async (req, res) => {
         
         console.log(`[Predictions] Saved ${savedPredictions.length} batch predictions`);
         
+        // 🎮 GAMIFICATION: Award XP for batch prediction
+        try {
+            const xpAmount = symbols.length * 10;
+            await GamificationService.awardXP(req.user.id, xpAmount, `Batch prediction for ${symbols.length} symbols`);
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+        
         res.json({
             ...predictionsData,
             predictionIds: savedPredictions
@@ -373,9 +302,6 @@ router.post('/batch', auth, async (req, res) => {
     }
 });
 
-
-
-
 // @route   POST /api/predictions/:id/like
 // @desc    Like a prediction
 // @access  Private
@@ -387,19 +313,16 @@ router.post('/:id/like', auth, async (req, res) => {
             return res.status(404).json({ error: 'Prediction not found' });
         }
         
-        // Check if already liked
         const alreadyLiked = prediction.likes.some(
             like => like.toString() === req.user.id
         );
         
         if (alreadyLiked) {
-            // Unlike
             prediction.likes = prediction.likes.filter(
                 like => like.toString() !== req.user.id
             );
             prediction.likesCount = Math.max(0, prediction.likesCount - 1);
         } else {
-            // Like
             prediction.likes.push(req.user.id);
             prediction.likesCount += 1;
         }
@@ -476,7 +399,6 @@ router.get('/health', auth, async (req, res) => {
     }
 });
 
-
 // 🧪 TEST ENDPOINT - Expire all pending predictions
 router.post('/test/expire-all', auth, async (req, res) => {
     try {
@@ -487,12 +409,11 @@ router.post('/test/expire-all', auth, async (req, res) => {
         
         console.log(`[TEST] Found ${predictions.length} pending predictions`);
         
-        // ✅ ONLY update expiresAt, keep status as 'pending'
         const result = await Prediction.updateMany(
             { user: req.user.id, status: 'pending' },
             { 
                 $set: { 
-                    expiresAt: new Date()  // ← ONLY this, no status change!
+                    expiresAt: new Date()
                 } 
             }
         );
@@ -510,4 +431,5 @@ router.post('/test/expire-all', auth, async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 module.exports = router;

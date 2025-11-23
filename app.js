@@ -16,8 +16,8 @@ const app = express();
 const journalRoutes = require('./routes/journalRoutes');
 const screenerRoutes = require('./routes/screenerRoutes');
 const heatmapRoutes = require('./routes/heatmapRoutes');
-
-
+const gamificationRoutes = require('./routes/gamificationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 
 // --- Database Connection Setup ---
@@ -113,6 +113,8 @@ app.use('/api/portfolio', aiInsightsRoutes);
 app.use('/api/chart', chartRoutes);
 app.use('/api/calculators', calculatorRoutes); 
 app.use('/api/paper-trading', paperTradingRoutes);
+app.use('/api/gamification', gamificationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

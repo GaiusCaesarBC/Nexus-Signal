@@ -1,10 +1,11 @@
-// server/routes/portfolioRoutes.js - OPTIMIZED VERSION
+// server/routes/portfolioRoutes.js - WITH GAMIFICATION INTEGRATION
 
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const Portfolio = require('../models/Portfolio');
 const axios = require('axios');
+const GamificationService = require('../services/gamificationService');
 
 /**
  * GET /api/portfolio
@@ -29,13 +30,11 @@ router.get('/', authMiddleware, async (req, res) => {
                         priceUpdates[holding.symbol] = priceData.price;
                     } catch (error) {
                         console.warn(`Could not fetch price for ${holding.symbol}:`, error.message);
-                        // Keep existing price
                         priceUpdates[holding.symbol] = holding.currentPrice || holding.purchasePrice;
                     }
                 })
             );
             
-            // Update all prices at once
             await portfolio.updatePrices(priceUpdates);
         }
 
@@ -43,6 +42,17 @@ router.get('/', authMiddleware, async (req, res) => {
         const summary = portfolio.getSummary();
         const topHoldings = portfolio.getTopHoldings(5);
         const performers = portfolio.getPerformers();
+
+        // 🎮 Update gamification stats
+        try {
+            await GamificationService.updatePortfolioStats(
+                userId, 
+                summary.totalValue || 0, 
+                portfolio.holdings.length
+            );
+        } catch (error) {
+            console.warn('Failed to update gamification stats:', error.message);
+        }
 
         res.json({
             success: true,
@@ -119,7 +129,6 @@ router.post('/buy', authMiddleware, async (req, res) => {
     try {
         const { symbol, quantity, price, assetType = 'stock' } = req.body;
 
-        // Validation
         if (!symbol || !quantity || !price) {
             return res.status(400).json({
                 success: false,
@@ -139,8 +148,18 @@ router.post('/buy', authMiddleware, async (req, res) => {
         // Use the buyAsset method from the model
         await portfolio.buyAsset(symbol.toUpperCase(), parseFloat(quantity), parseFloat(price), assetType);
         
-        // Update user stats
-        await updateUserStatsHelper(req.user.id);
+        // 🎮 GAMIFICATION: Track trade (buying is always neutral at start)
+        try {
+            await GamificationService.trackTrade(req.user.id, null, 0); // neutral trade
+            await GamificationService.awardXP(req.user.id, 10, 'Stock purchase');
+            await GamificationService.updatePortfolioStats(
+                req.user.id, 
+                portfolio.totalValue, 
+                portfolio.holdings.length
+            );
+        } catch (error) {
+            console.warn('Failed to track trade in gamification:', error.message);
+        }
 
         res.json({
             success: true,
@@ -178,7 +197,6 @@ router.post('/sell', authMiddleware, async (req, res) => {
     try {
         const { symbol, quantity } = req.body;
 
-        // Validation
         if (!symbol || !quantity) {
             return res.status(400).json({
                 success: false,
@@ -195,7 +213,6 @@ router.post('/sell', authMiddleware, async (req, res) => {
 
         const portfolio = await Portfolio.getOrCreate(req.user.id);
         
-        // Get current price
         const holding = portfolio.holdings.find(h => h.symbol === symbol.toUpperCase());
         if (!holding) {
             return res.status(404).json({
@@ -212,15 +229,42 @@ router.post('/sell', authMiddleware, async (req, res) => {
             console.warn(`Could not fetch current price for ${symbol}, using last known price`);
         }
 
-        // Use the sellAsset method from the model
+        // Calculate profit BEFORE selling
+        const purchasePrice = holding.purchasePrice;
+        const profit = (currentPrice - purchasePrice) * parseFloat(quantity);
+        const profitable = profit > 0;
+
+        // Sell the asset
         await portfolio.sellAsset(symbol.toUpperCase(), parseFloat(quantity), currentPrice);
         
-        // Update user stats
-        await updateUserStatsHelper(req.user.id);
+        // 🎮 GAMIFICATION: Track profitable/unprofitable trade
+        try {
+            await GamificationService.trackTrade(req.user.id, profitable, profit);
+            
+            // Award extra XP for profitable trades
+            if (profitable) {
+                const xpBonus = Math.floor(profit / 10);
+                await GamificationService.awardXP(req.user.id, 20 + xpBonus, 'Profitable sale');
+            } else {
+                await GamificationService.awardXP(req.user.id, 5, 'Trade completed');
+            }
+            
+            await GamificationService.updatePortfolioStats(
+                req.user.id, 
+                portfolio.totalValue, 
+                portfolio.holdings.length
+            );
+        } catch (error) {
+            console.warn('Failed to track trade in gamification:', error.message);
+        }
 
         res.json({
             success: true,
             message: `Sold ${quantity} ${symbol}`,
+            profit: {
+                amount: profit,
+                profitable
+            },
             portfolio: {
                 holdings: portfolio.holdings,
                 cashBalance: portfolio.cashBalance,
@@ -254,7 +298,6 @@ router.post('/holdings', authMiddleware, async (req, res) => {
     try {
         const { symbol, shares, averagePrice, assetType = 'stock' } = req.body;
 
-        // Validation
         if (!symbol || !shares || !averagePrice) {
             return res.status(400).json({
                 success: false,
@@ -271,7 +314,6 @@ router.post('/holdings', authMiddleware, async (req, res) => {
 
         const portfolio = await Portfolio.getOrCreate(req.user.id);
         
-        // Check if symbol already exists
         const existingHolding = portfolio.holdings.find(
             h => h.symbol.toUpperCase() === symbol.toUpperCase()
         );
@@ -283,7 +325,6 @@ router.post('/holdings', authMiddleware, async (req, res) => {
             });
         }
 
-        // Fetch current price
         let currentPrice = parseFloat(averagePrice);
         try {
             const priceData = await getCurrentPrice(symbol.toUpperCase(), assetType);
@@ -305,8 +346,22 @@ router.post('/holdings', authMiddleware, async (req, res) => {
         portfolio.calculateTotals();
         await portfolio.save();
         
-        // Update user stats
-        await updateUserStatsHelper(req.user.id);
+        // 🎮 GAMIFICATION: Track adding holding
+        try {
+            await GamificationService.awardXP(req.user.id, 15, `Added ${symbol} to portfolio`);
+            await GamificationService.updatePortfolioStats(
+                req.user.id, 
+                portfolio.totalValue, 
+                portfolio.holdings.length
+            );
+            
+            // Check if this is their first holding
+            if (portfolio.holdings.length === 1) {
+                await GamificationService.awardXP(req.user.id, 50, 'First stock added!');
+            }
+        } catch (error) {
+            console.warn('Failed to update gamification:', error.message);
+        }
 
         res.json({
             success: true,
@@ -346,7 +401,6 @@ router.put('/holdings/:id', authMiddleware, async (req, res) => {
             });
         }
 
-        // Update fields
         if (quantity !== undefined) {
             if (quantity <= 0) {
                 return res.status(400).json({
@@ -370,8 +424,16 @@ router.put('/holdings/:id', authMiddleware, async (req, res) => {
         portfolio.calculateTotals();
         await portfolio.save();
         
-        // Update user stats
-        await updateUserStatsHelper(req.user.id);
+        // 🎮 GAMIFICATION: Update stats
+        try {
+            await GamificationService.updatePortfolioStats(
+                req.user.id, 
+                portfolio.totalValue, 
+                portfolio.holdings.length
+            );
+        } catch (error) {
+            console.warn('Failed to update gamification:', error.message);
+        }
 
         res.json({
             success: true,
@@ -408,13 +470,20 @@ router.delete('/holdings/:id', authMiddleware, async (req, res) => {
 
         const removedSymbol = holding.symbol;
         
-        // Remove holding
         portfolio.holdings.pull(holdingId);
         portfolio.calculateTotals();
         await portfolio.save();
         
-        // Update user stats
-        await updateUserStatsHelper(req.user.id);
+        // 🎮 GAMIFICATION: Update stats
+        try {
+            await GamificationService.updatePortfolioStats(
+                req.user.id, 
+                portfolio.totalValue, 
+                portfolio.holdings.length
+            );
+        } catch (error) {
+            console.warn('Failed to update gamification:', error.message);
+        }
 
         res.json({
             success: true,
@@ -463,6 +532,13 @@ router.post('/refresh-prices', authMiddleware, async (req, res) => {
         
         await portfolio.updatePrices(priceUpdates);
         
+        // 🎮 GAMIFICATION: Award XP for refreshing
+        try {
+            await GamificationService.awardXP(req.user.id, 5, 'Portfolio refresh');
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+        
         res.json({
             success: true,
             message: 'Prices refreshed',
@@ -489,9 +565,6 @@ router.post('/refresh-prices', authMiddleware, async (req, res) => {
 // HELPER FUNCTIONS
 // ============================================
 
-/**
- * Fetch current price for a stock or crypto
- */
 async function getCurrentPrice(symbol, assetType = 'stock') {
     try {
         if (assetType === 'crypto') {
@@ -504,11 +577,7 @@ async function getCurrentPrice(symbol, assetType = 'stock') {
     }
 }
 
-/**
- * Get stock price from Yahoo Finance or Alpha Vantage
- */
 async function getStockPrice(symbol) {
-    // Try Yahoo Finance first (free, no API key)
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d`;
         const response = await axios.get(url, { timeout: 5000 });
@@ -525,7 +594,6 @@ async function getStockPrice(symbol) {
         console.log(`Yahoo Finance failed for ${symbol}, trying Alpha Vantage...`);
     }
 
-    // Try Alpha Vantage as backup
     const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
     
     if (ALPHA_VANTAGE_KEY && ALPHA_VANTAGE_KEY !== 'demo') {
@@ -544,9 +612,6 @@ async function getStockPrice(symbol) {
     throw new Error('Could not fetch stock price from any source');
 }
 
-/**
- * Get crypto price from CoinGecko
- */
 async function getCryptoPrice(symbol) {
     const cryptoMap = {
         BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin',
@@ -582,24 +647,6 @@ async function getCryptoPrice(symbol) {
     }
     
     throw new Error(`Crypto price not found for ${symbol}`);
-}
-
-/**
- * Update user stats (call your stats service if it exists)
- */
-async function updateUserStatsHelper(userId) {
-    try {
-        // Check if statsService exists
-        const User = require('../models/User');
-        const user = await User.findById(userId);
-        
-        if (user && user.calculateStats) {
-            await user.calculateStats();
-        }
-    } catch (error) {
-        console.warn('Could not update user stats:', error.message);
-        // Don't fail the request if stats update fails
-    }
 }
 
 module.exports = router;
