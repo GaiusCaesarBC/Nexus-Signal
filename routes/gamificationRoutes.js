@@ -20,6 +20,11 @@ router.get('/stats', authMiddleware, async (req, res) => {
             gamification = await GamificationService.initializeUser(req.user.id);
         }
 
+        // Calculate XP bounds for current level
+        const xpForCurrentLevel = (gamification.level - 1) * 1000;
+        const xpForNextLevel = gamification.level * 1000;
+
+        // ✅ FIXED: Added equippedItems to response!
         res.json({
             success: true,
             data: {
@@ -35,9 +40,19 @@ router.get('/stats', authMiddleware, async (req, res) => {
                 achievements: gamification.achievements,
                 stats: gamification.stats,
                 dailyChallenge: gamification.dailyChallenge,
-                lastLoginDate: gamification.lastLoginDate
+                lastLoginDate: gamification.lastLoginDate,
+                xpForCurrentLevel: xpForCurrentLevel,
+                xpForNextLevel: xpForNextLevel,
+                equippedItems: gamification.equippedItems || {  // ✅ THIS WAS MISSING!
+                    avatarBorder: null,
+                    profileTheme: 'theme-default',
+                    activePerk: null,
+                    badges: []
+                }
             }
         });
+        
+        console.log('[Gamification] Returning equipped items:', gamification.equippedItems);
     } catch (error) {
         console.error('[Gamification] Error fetching stats:', error);
         res.status(500).json({

@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "server": "nodemon app.js"
+    "server": "nodemon app.js",
+    "seed-vault": "node scripts/seedVault.js"
   },
   "keywords": [],
   "author": "",

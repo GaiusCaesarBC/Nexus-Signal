@@ -18,7 +18,7 @@ const screenerRoutes = require('./routes/screenerRoutes');
 const heatmapRoutes = require('./routes/heatmapRoutes');
 const gamificationRoutes = require('./routes/gamificationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-
+const vaultRoutes = require('./routes/vaultRoutes');
 
 // --- Database Connection Setup ---
 const connectDB = async () => {
@@ -115,6 +115,7 @@ app.use('/api/calculators', calculatorRoutes);
 app.use('/api/paper-trading', paperTradingRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/vault', vaultRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

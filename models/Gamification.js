@@ -42,6 +42,24 @@ const gamificationSchema = new mongoose.Schema({
     // Achievements
     achievements: [achievementSchema],
     
+    // ✅ NEW: VAULT ITEMS
+    ownedItems: [{
+        itemId: String,
+        type: {
+            type: String,
+            enum: ['avatar-border', 'perk', 'profile-theme', 'badge']
+        },
+        purchasedAt: { type: Date, default: Date.now }
+    }],
+    
+    // ✅ NEW: EQUIPPED ITEMS
+    equippedItems: {
+        avatarBorder: { type: String, default: null },
+        profileTheme: { type: String, default: 'theme-default' },
+        activePerk: { type: String, default: null },
+        badges: [{ type: String, maxlength: 3 }] // Max 3 badges
+    },
+    
     // Stats for achievements
     stats: {
         totalTrades: { type: Number, default: 0 },
@@ -139,6 +157,23 @@ gamificationSchema.methods.addXP = async function(amount, reason = '') {
     
     await this.save();
     return { leveledUp: false };
+};
+
+// ✅ NEW: Get active perk bonuses
+gamificationSchema.methods.getActivePerkBonuses = function() {
+    if (!this.equippedItems.activePerk) {
+        return null;
+    }
+    
+    // This will be used to apply bonuses in trade/XP calculations
+    const perkEffects = {
+        'perk-lucky-trader': { xpBonus: 0.10 },
+        'perk-coin-magnet': { coinBonus: 0.05 },
+        'perk-streak-master': { streakProtection: true },
+        'perk-double-daily': { extraDaily: true }
+    };
+    
+    return perkEffects[this.equippedItems.activePerk] || null;
 };
 
 module.exports = mongoose.model('Gamification', gamificationSchema);

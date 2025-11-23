@@ -1,4 +1,4 @@
-// server/routes/predictionsRoutes.js - WITH GAMIFICATION INTEGRATION
+// server/routes/predictionsRoutes.js - WITH CRYPTO AUTO-DETECTION FIX
 
 const express = require('express');
 const router = express.Router();
@@ -9,6 +9,12 @@ const GamificationService = require('../services/gamificationService');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
+
+// ✅ List of known crypto symbols for auto-detection
+const CRYPTO_SYMBOLS = [
+    'BTC', 'ETH', 'XRP', 'LTC', 'ADA', 'SOL', 'DOGE', 'DOT',
+    'BNB', 'LINK', 'UNI', 'MATIC', 'SHIB', 'TRX', 'AVAX', 'ATOM', 'XMR'
+];
 
 // Mock prediction generator
 function generateMockPrediction(symbol, days) {
@@ -39,17 +45,24 @@ function generateMockPrediction(symbol, days) {
 }
 
 // @route   POST /api/predictions/predict
-// @desc    Get prediction for a single stock and save it
+// @desc    Get prediction for a single stock/crypto and save it
 // @access  Private
 router.post('/predict', auth, async (req, res) => {
     try {
-        const { symbol, days = 7, assetType = 'stock' } = req.body;
+        let { symbol, days = 7, assetType } = req.body;
         
         if (!symbol) {
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
-        console.log(`[Predictions] Getting prediction for ${symbol}`);
+        // ✅ AUTO-DETECT: If no assetType provided, detect based on symbol
+        if (!assetType) {
+            const upperSymbol = symbol.toUpperCase();
+            assetType = CRYPTO_SYMBOLS.includes(upperSymbol) ? 'crypto' : 'stock';
+            console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
+        }
+
+        console.log(`[Predictions] Getting prediction for ${symbol} (${assetType})`);
         
         let predictionData;
         
@@ -59,6 +72,8 @@ router.post('/predict', auth, async (req, res) => {
         } else {
             try {
                 const baseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
+                
+                // ✅ Use correct endpoint based on asset type
                 const endpoint = assetType === 'crypto' 
                     ? `/api/crypto/prediction/${symbol}?range=6M`
                     : `/api/stocks/prediction/${symbol}?range=6M`;
@@ -119,7 +134,7 @@ router.post('/predict', auth, async (req, res) => {
         
         await prediction.save();
         
-        console.log(`[Predictions] Saved prediction ${prediction._id} for ${symbol}`);
+        console.log(`[Predictions] Saved prediction ${prediction._id} for ${symbol} (${assetType})`);
         
         // 🎮 GAMIFICATION: Track prediction creation
         try {
@@ -218,13 +233,20 @@ router.get('/trending', async (req, res) => {
 // @access  Private
 router.post('/batch', auth, async (req, res) => {
     try {
-        const { symbols, days = 7, assetType = 'stock' } = req.body;
+        let { symbols, days = 7, assetType } = req.body;
         
         if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
             return res.status(400).json({ error: 'Symbols array is required' });
         }
 
-        console.log(`[Predictions] Batch prediction for ${symbols.length} symbols`);
+        // ✅ Auto-detect asset type for batch if not provided
+        if (!assetType) {
+            const firstSymbol = symbols[0].toUpperCase();
+            assetType = CRYPTO_SYMBOLS.includes(firstSymbol) ? 'crypto' : 'stock';
+            console.log(`[Predictions] Batch auto-detected as ${assetType}`);
+        }
+
+        console.log(`[Predictions] Batch prediction for ${symbols.length} symbols (${assetType})`);
         
         let predictionsData;
         

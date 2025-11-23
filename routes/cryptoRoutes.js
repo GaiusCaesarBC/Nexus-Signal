@@ -1,4 +1,4 @@
-// server/routes/cryptoRoutes.js - FIXED WITH PREDICTION ENDPOINT
+// server/routes/cryptoRoutes.js - PROPER PRO API CONFIGURATION
 
 const express = require('express');
 const router = express.Router();
@@ -40,7 +40,96 @@ function getCoinGeckoDays(range) {
     }
 }
 
-// Helper function to fetch crypto data from CoinGecko
+// ✅ TEST ENDPOINT - Verify Pro API is working correctly
+router.get('/test-api/:symbol?', async (req, res) => {
+    try {
+        const symbol = req.params.symbol || 'ethereum';
+        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
+
+        console.log('\n=== COINGECKO PRO API TEST ===');
+        console.log('API Key exists:', !!COINGECKO_API_KEY);
+        console.log('API Key (first 10 chars):', COINGECKO_API_KEY ? COINGECKO_API_KEY.substring(0, 10) + '...' : 'MISSING');
+        console.log('Base URL:', COINGECKO_BASE_URL);
+        console.log('Coin ID:', coinGeckoId);
+
+        // Test 1: Simple price check
+        const priceUrl = `${COINGECKO_BASE_URL}/simple/price`;
+        const priceParams = {
+            ids: coinGeckoId,
+            vs_currencies: 'usd',
+            x_cg_pro_api_key: COINGECKO_API_KEY
+        };
+
+        console.log('\n--- Test 1: Simple Price ---');
+        console.log('URL:', priceUrl);
+        console.log('Params:', JSON.stringify({ ...priceParams, x_cg_pro_api_key: '***' }, null, 2));
+
+        const priceResponse = await axios.get(priceUrl, { params: priceParams });
+        const currentPrice = priceResponse.data[coinGeckoId]?.usd;
+
+        console.log('✅ Current Price Response:', JSON.stringify(priceResponse.data, null, 2));
+        console.log('Current Price:', currentPrice);
+
+        // Test 2: Market chart data
+        const chartUrl = `${COINGECKO_BASE_URL}/coins/${coinGeckoId}/market_chart`;
+        const chartParams = {
+            vs_currency: 'usd',
+            days: 7,
+            x_cg_pro_api_key: COINGECKO_API_KEY
+        };
+
+        console.log('\n--- Test 2: Market Chart ---');
+        console.log('URL:', chartUrl);
+        console.log('Params:', JSON.stringify({ ...chartParams, x_cg_pro_api_key: '***' }, null, 2));
+
+        const chartResponse = await axios.get(chartUrl, { params: chartParams });
+        const prices = chartResponse.data.prices || [];
+
+        console.log('✅ Data Points:', prices.length);
+        if (prices.length > 0) {
+            console.log('First Price:', prices[0]);
+            console.log('Last Price:', prices[prices.length - 1]);
+            console.log('Last Price Value:', prices[prices.length - 1][1]);
+        }
+
+        res.json({
+            success: true,
+            apiConfig: {
+                hasApiKey: !!COINGECKO_API_KEY,
+                baseUrl: COINGECKO_BASE_URL,
+                coinId: coinGeckoId
+            },
+            simplePrice: {
+                url: priceUrl,
+                price: currentPrice,
+                rawResponse: priceResponse.data
+            },
+            marketChart: {
+                url: chartUrl,
+                dataPoints: prices.length,
+                firstPrice: prices[0],
+                lastPrice: prices[prices.length - 1],
+                lastPriceValue: prices.length > 0 ? prices[prices.length - 1][1] : null
+            }
+        });
+
+    } catch (error) {
+        console.error('\n❌ API TEST FAILED:', error.message);
+        if (error.response) {
+            console.error('Status:', error.response.status);
+            console.error('Data:', JSON.stringify(error.response.data, null, 2));
+        }
+
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            status: error.response?.status,
+            data: error.response?.data
+        });
+    }
+});
+
+// Helper function to fetch crypto data from CoinGecko PRO
 async function fetchCryptoData(symbol, range) {
     const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
     
@@ -51,101 +140,124 @@ async function fetchCryptoData(symbol, range) {
     }
 
     const days = getCoinGeckoDays(range || '6M');
+
+    // ✅ Pro API requires API key in URL parameter
     const params = {
         vs_currency: 'usd',
         days: days,
+        x_cg_pro_api_key: COINGECKO_API_KEY  // ✅ Correct parameter name for Pro API
     };
 
     if (days > 90) {
         params.interval = 'daily';
     }
 
-    if (COINGECKO_API_KEY) {
-        params['x_cg_pro_api_key'] = COINGECKO_API_KEY;
-    }
-
     const url = `${COINGECKO_BASE_URL}/coins/${coinGeckoId}/market_chart`;
-    console.log(`[Crypto] Fetching ${symbol} (${coinGeckoId}) for ${range}`);
+    console.log(`\n[Crypto] Fetching ${symbol} (${coinGeckoId}) for ${range}`);
+    console.log(`[Crypto] URL: ${url}`);
+    console.log(`[Crypto] Has API Key:`, !!COINGECKO_API_KEY);
 
-    const response = await axios.get(url, { params });
-    const prices = response.data.prices || [];
-    const volumes = response.data.total_volumes || [];
+    try {
+        const response = await axios.get(url, { params });
+        
+        console.log(`[Crypto] ✅ Response status: ${response.status}`);
+        
+        const prices = response.data.prices || [];
+        const volumes = response.data.total_volumes || [];
 
-    if (prices.length === 0) {
-        throw new Error(`No price data found for ${symbol}`);
-    }
-
-    // Build historical data
-    const historicalDataMap = new Map();
-    
-    prices.forEach(([timestamp, price]) => {
-        historicalDataMap.set(timestamp, {
-            time: timestamp,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: 0
-        });
-    });
-
-    volumes.forEach(([timestamp, volume]) => {
-        if (historicalDataMap.has(timestamp)) {
-            historicalDataMap.get(timestamp).volume = volume;
+        if (prices.length === 0) {
+            throw new Error(`No price data found for ${symbol}`);
         }
-    });
 
-    let historicalData = Array.from(historicalDataMap.values()).sort((a, b) => a.time - b.time);
+        // ✅ Log prices to verify correctness
+        const firstPrice = prices[0][1];
+        const lastPrice = prices[prices.length - 1][1];
+        console.log(`[Crypto] Price range: $${firstPrice.toFixed(2)} → $${lastPrice.toFixed(2)}`);
+        console.log(`[Crypto] Total data points: ${prices.length}`);
 
-    // Fill OHLC data with simulated variation for better candlestick visualization
-    for (let i = 1; i < historicalData.length; i++) {
-        const prevClose = historicalData[i-1].close;
-        const currentClose = historicalData[i].close;
+        // Build historical data
+        const historicalDataMap = new Map();
         
-        // Open is previous close
-        historicalData[i].open = prevClose;
-        
-        // Create realistic high/low based on price movement
-        const priceChange = Math.abs(currentClose - prevClose);
-        const volatility = priceChange * 0.5; // Add some volatility
-        
-        historicalData[i].high = Math.max(prevClose, currentClose) + volatility;
-        historicalData[i].low = Math.min(prevClose, currentClose) - volatility;
+        prices.forEach(([timestamp, price]) => {
+            historicalDataMap.set(timestamp, {
+                time: timestamp,
+                open: price,
+                high: price,
+                low: price,
+                close: price,
+                volume: 0
+            });
+        });
+
+        volumes.forEach(([timestamp, volume]) => {
+            if (historicalDataMap.has(timestamp)) {
+                historicalDataMap.get(timestamp).volume = volume;
+            }
+        });
+
+        let historicalData = Array.from(historicalDataMap.values()).sort((a, b) => a.time - b.time);
+
+        // Fill OHLC data with simulated variation
+        for (let i = 1; i < historicalData.length; i++) {
+            const prevClose = historicalData[i-1].close;
+            const currentClose = historicalData[i].close;
+            
+            historicalData[i].open = prevClose;
+            
+            const priceChange = Math.abs(currentClose - prevClose);
+            const volatility = priceChange * 0.5;
+            
+            historicalData[i].high = Math.max(prevClose, currentClose) + volatility;
+            historicalData[i].low = Math.min(prevClose, currentClose) - volatility;
+        }
+
+        if (historicalData.length > 0) {
+            historicalData[0].open = historicalData[0].close;
+            const initialVolatility = historicalData[0].close * 0.002;
+            historicalData[0].high = historicalData[0].close + initialVolatility;
+            historicalData[0].low = historicalData[0].close - initialVolatility;
+        }
+
+        const finalPrice = historicalData[historicalData.length - 1].close;
+        console.log(`[Crypto] ✅ Final current price for ${symbol}: $${finalPrice.toFixed(2)}`);
+
+        cryptoCache[cacheKey] = { timestamp: Date.now(), data: historicalData };
+        return historicalData;
+
+    } catch (error) {
+        console.error(`[Crypto] ❌ API Error:`, error.message);
+        if (error.response) {
+            console.error(`[Crypto] Status:`, error.response.status);
+            console.error(`[Crypto] Data:`, JSON.stringify(error.response.data, null, 2));
+        }
+        throw error;
     }
-
-    if (historicalData.length > 0) {
-        historicalData[0].open = historicalData[0].close;
-        const initialVolatility = historicalData[0].close * 0.002; // 0.2% variation
-        historicalData[0].high = historicalData[0].close + initialVolatility;
-        historicalData[0].low = historicalData[0].close - initialVolatility;
-    }
-
-    cryptoCache[cacheKey] = { timestamp: Date.now(), data: historicalData };
-    return historicalData;
 }
 
-// Prediction calculation (same as stocks)
+// Prediction calculation with FORMATTED INDICATORS
 const calculateCryptoPrediction = (historicalData, lastClosePrice) => {
-    console.log('=== CRYPTO PREDICTION DEBUG ===');
-    console.log('Historical data points:', historicalData.length);
-    console.log('Last close price:', lastClosePrice);
+    console.log('\n=== CRYPTO PREDICTION ===');
+    console.log('Data points:', historicalData.length);
+    console.log('Current price:', `$${lastClosePrice.toFixed(2)}`);
     
     const sortedData = [...historicalData].sort((a, b) => a.time - b.time);
     const closes = sortedData.map(d => d.close);
     const volumes = sortedData.map(d => d.volume || 0);
-    
-    console.log('Closes array length:', closes.length);
 
     const hasEnoughData = (minLen) => closes.length >= minLen;
 
     const rsi = hasEnoughData(14) ? calculateRSI(closes) : null;
     const macdResult = hasEnoughData(26) ? calculateMACD(closes) : { macd: null, signal: null, histogram: null };
     const bbResult = hasEnoughData(20) ? calculateBollingerBands(closes) : { mid: lastClosePrice, upper: null, lower: null };
-    const sma50 = hasEnoughData(50) ? calculateSMA(closes, 50) : null;
-    const sma200 = hasEnoughData(200) ? calculateSMA(closes, 200) : null;
+    
+    // ✅ FIX: calculateSMA returns an array, extract the last value
+    const sma50Array = hasEnoughData(50) ? calculateSMA(sortedData, 50) : [];
+    const sma200Array = hasEnoughData(200) ? calculateSMA(sortedData, 200) : [];
+    
+    const sma50 = sma50Array.length > 0 ? sma50Array[sma50Array.length - 1].value : null;
+    const sma200 = sma200Array.length > 0 ? sma200Array[sma200Array.length - 1].value : null;
+    
     const avgVolume = volumes.length > 0 ? (volumes.reduce((a, b) => a + b, 0) / volumes.length) : null;
-
-    console.log('Indicators:', { rsi, sma50, sma200 });
 
     let bullishScore = 0;
     let bearishScore = 0;
@@ -213,8 +325,6 @@ const calculateCryptoPrediction = (historicalData, lastClosePrice) => {
         }
     }
 
-    console.log('Scores:', { bullishScore, bearishScore });
-
     const totalScore = bullishScore + bearishScore;
     const confidence = totalScore > 0 
         ? Math.min(95, Math.round((Math.max(bullishScore, bearishScore) / totalScore) * 100)) 
@@ -227,7 +337,45 @@ const calculateCryptoPrediction = (historicalData, lastClosePrice) => {
     
     const predictedPrice = lastClosePrice * (1 + percentageChange / 100);
 
-    console.log('Final prediction:', { predictedPrice, predictedDirection, percentageChange, confidence });
+    console.log(`Prediction: ${predictedDirection} to $${predictedPrice.toFixed(2)} (${percentageChange.toFixed(2)}%)`);
+
+    // Format indicators for frontend
+    const formattedIndicators = {
+        RSI: {
+            value: rsi !== null ? rsi.toFixed(2) : 'N/A',
+            signal: rsi !== null ? (rsi < 30 ? 'BUY' : rsi > 70 ? 'SELL' : 'HOLD') : 'N/A'
+        },
+        MACD: {
+            value: macdResult.macd !== null 
+                ? `${macdResult.macd > macdResult.signal ? 'Bullish' : 'Bearish'}` 
+                : 'N/A',
+            signal: macdResult.macd !== null 
+                ? (macdResult.macd > macdResult.signal ? 'BUY' : 'SELL') 
+                : 'N/A'
+        },
+        'MA50': {
+            value: sma50 !== null ? `$${sma50.toFixed(2)}` : 'N/A',
+            signal: sma50 !== null ? (lastClosePrice > sma50 ? 'BUY' : 'SELL') : 'N/A'
+        },
+        'MA200': {
+            value: sma200 !== null ? `$${sma200.toFixed(2)}` : 'N/A',
+            signal: sma200 !== null ? (lastClosePrice > sma200 ? 'BUY' : 'SELL') : 'N/A'
+        },
+        Volume: {
+            value: avgVolume !== null ? `${(avgVolume / 1000000).toFixed(1)}M` : 'N/A',
+            signal: volumes[volumes.length - 1] > avgVolume ? 'HIGH' : 'LOW'
+        },
+        Bollinger: {
+            value: bbResult.upper !== null 
+                ? (lastClosePrice >= bbResult.upper * 0.99 ? 'Upper' : 
+                   lastClosePrice <= bbResult.lower * 1.01 ? 'Lower' : 'Middle')
+                : 'N/A',
+            signal: bbResult.upper !== null 
+                ? (lastClosePrice <= bbResult.lower * 1.01 ? 'BUY' : 
+                   lastClosePrice >= bbResult.upper * 0.99 ? 'SELL' : 'HOLD')
+                : 'N/A'
+        }
+    };
 
     return {
         predictedPrice,
@@ -235,7 +383,8 @@ const calculateCryptoPrediction = (historicalData, lastClosePrice) => {
         percentageChange,
         confidence,
         message: signals.length > 0 ? signals.join('. ') : 'Neutral market conditions',
-        indicators: {
+        indicators: formattedIndicators,
+        rawIndicators: {
             rsi,
             macd: macdResult,
             bollingerBands: bbResult,
@@ -247,13 +396,11 @@ const calculateCryptoPrediction = (historicalData, lastClosePrice) => {
     };
 };
 
-// GET /api/crypto/prediction/:symbol - Main prediction endpoint
+// GET /api/crypto/prediction/:symbol
 router.get('/prediction/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
-        const { range = '6M', interval = '1d' } = req.query;
-
-        console.log(`Getting crypto prediction for ${symbol} - Range: ${range}`);
+        const { range = '6M' } = req.query;
 
         const historicalData = await fetchCryptoData(symbol, range);
 
@@ -269,18 +416,18 @@ router.get('/prediction/:symbol', async (req, res) => {
         res.json({
             symbol: symbol.toUpperCase(),
             currentPrice: lastClosePrice,
-            historicalData, // Include for chart
+            historicalData,
             ...prediction,
         });
 
     } catch (error) {
-        console.error('Error generating crypto prediction:', error.message);
+        console.error('[Crypto] Prediction error:', error.message);
         
         if (error.response?.status === 429) {
             return res.status(429).json({ msg: 'Rate limit exceeded. Please wait.' });
         }
         if (error.response?.status === 404) {
-            return res.status(404).json({ msg: `Crypto symbol "${req.params.symbol}" not found.` });
+            return res.status(404).json({ msg: `Crypto "${req.params.symbol}" not found.` });
         }
         
         res.status(500).json({ 
@@ -290,13 +437,11 @@ router.get('/prediction/:symbol', async (req, res) => {
     }
 });
 
-// GET /api/crypto/historical/:symbol - Historical data only
+// GET /api/crypto/historical/:symbol
 router.get('/historical/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
         const { range = '6M' } = req.query;
-
-        console.log(`Fetching crypto historical data for ${symbol} - Range: ${range}`);
 
         const historicalData = await fetchCryptoData(symbol, range);
 
@@ -306,7 +451,7 @@ router.get('/historical/:symbol', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error fetching crypto data:', error.message);
+        console.error('[Crypto] Historical error:', error.message);
         res.status(500).json({ 
             msg: 'Failed to fetch crypto data', 
             error: error.message 
