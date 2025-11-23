@@ -1,244 +1,157 @@
-// server/models/Alert.js - Price Alert Model
+// server/services/alertChecker.js - UPDATED to work with YOUR Alert model
 
-const mongoose = require('mongoose');
+const cron = require('node-cron');
+const Alert = require('../models/Alert');
+const NotificationService = require('./notificationService');
+const axios = require('axios');
 
-const alertSchema = new mongoose.Schema({
-    user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-        index: true
-    },
-    
-    // Alert type
-    type: {
-        type: String,
-        enum: ['price_above', 'price_below', 'percent_change', 'prediction_expiry', 'portfolio_value'],
-        required: true
-    },
-    
-    // Asset information
-    symbol: {
-        type: String,
-        required: function() {
-            return ['price_above', 'price_below', 'percent_change'].includes(this.type);
-        },
-        uppercase: true
-    },
-    
-    assetType: {
-        type: String,
-        enum: ['stock', 'crypto'],
-        default: 'stock'
-    },
-    
-    // Alert conditions
-    targetPrice: {
-        type: Number,
-        required: function() {
-            return ['price_above', 'price_below'].includes(this.type);
-        }
-    },
-    
-    percentChange: {
-        type: Number,
-        required: function() {
-            return this.type === 'percent_change';
-        }
-    },
-    
-    timeframe: {
-        type: String,
-        enum: ['1h', '24h', '7d', '30d'],
-        default: '24h'
-    },
-    
-    // Portfolio alerts
-    portfolioThreshold: {
-        type: Number,
-        required: function() {
-            return this.type === 'portfolio_value';
-        }
-    },
-    
-    // Prediction reference
-    prediction: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Prediction',
-        required: function() {
-            return this.type === 'prediction_expiry';
-        }
-    },
-    
-    // Alert status
-    status: {
-        type: String,
-        enum: ['active', 'triggered', 'expired', 'cancelled'],
-        default: 'active',
-        index: true
-    },
-    
-    // Notification settings
-    notifyVia: {
-        inApp: { type: Boolean, default: true },
-        email: { type: Boolean, default: false },
-        push: { type: Boolean, default: false }
-    },
-    
-    // Alert metadata
-    currentPrice: {
-        type: Number
-    },
-    
-    triggeredAt: {
-        type: Date
-    },
-    
-    triggeredPrice: {
-        type: Number
-    },
-    
-    expiresAt: {
-        type: Date,
-        default: function() {
-            // Alerts expire after 30 days by default
-            const date = new Date();
-            date.setDate(date.getDate() + 30);
-            return date;
-        }
-    },
-    
-    // One-time or recurring
-    recurring: {
-        type: Boolean,
-        default: false
-    },
-    
-    // Message
-    customMessage: {
-        type: String,
-        maxlength: 200
-    },
-    
-    // Metadata
-    lastChecked: {
-        type: Date
-    },
-    
-    checkCount: {
-        type: Number,
-        default: 0
+let priceCheckJob = null;
+
+// Helper to get current price
+async function getCurrentPrice(symbol, assetType) {
+  try {
+    if (assetType === 'crypto') {
+      const coinGeckoIds = {
+        'BTC': 'bitcoin',
+        'ETH': 'ethereum',
+        'XRP': 'ripple',
+        'BNB': 'binancecoin',
+        'SOL': 'solana',
+        'ADA': 'cardano',
+        'DOGE': 'dogecoin'
+      };
+
+      const coinId = coinGeckoIds[symbol.toUpperCase()] || symbol.toLowerCase();
+      const response = await axios.get(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`
+      );
+
+      return response.data[coinId]?.usd || null;
+    } else {
+      // Stock price - use your existing API
+      const response = await axios.get(
+        `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${process.env.FMP_API_KEY}`
+      );
+      
+      return response.data[0]?.price || null;
     }
-    
-}, {
-    timestamps: true
-});
+  } catch (error) {
+    console.error(`[AlertChecker] Error fetching price for ${symbol}:`, error.message);
+    return null;
+  }
+}
 
-// Indexes for efficient queries
-alertSchema.index({ user: 1, status: 1 });
-alertSchema.index({ status: 1, type: 1 });
-alertSchema.index({ symbol: 1, status: 1 });
-alertSchema.index({ triggeredAt: 1 });
-alertSchema.index({ expiresAt: 1 });
+// Check all active alerts
+async function checkAlerts() {
+  try {
+    const activeAlerts = await Alert.find({ 
+      status: 'active',
+      expiresAt: { $gt: new Date() }
+    }).populate('user', 'name email');
 
-// Virtual for formatted message
-alertSchema.virtual('message').get(function() {
-    if (this.customMessage) return this.customMessage;
-    
-    switch (this.type) {
-        case 'price_above':
-            return `${this.symbol} is above $${this.targetPrice}`;
-        case 'price_below':
-            return `${this.symbol} is below $${this.targetPrice}`;
-        case 'percent_change':
-            return `${this.symbol} changed ${this.percentChange > 0 ? '+' : ''}${this.percentChange}% in ${this.timeframe}`;
-        case 'prediction_expiry':
-            return `Your prediction is about to expire`;
-        case 'portfolio_value':
-            return `Portfolio value reached $${this.portfolioThreshold}`;
-        default:
-            return 'Alert triggered';
-    }
-});
+    if (activeAlerts.length === 0) return;
 
-// Method to check if alert condition is met
-alertSchema.methods.checkCondition = function(currentPrice, previousPrice) {
-    this.lastChecked = new Date();
-    this.checkCount += 1;
-    this.currentPrice = currentPrice;
-    
-    let triggered = false;
-    
-    switch (this.type) {
-        case 'price_above':
-            triggered = currentPrice >= this.targetPrice;
-            break;
-            
-        case 'price_below':
-            triggered = currentPrice <= this.targetPrice;
-            break;
-            
-        case 'percent_change':
-            if (previousPrice) {
-                const change = ((currentPrice - previousPrice) / previousPrice) * 100;
-                triggered = Math.abs(change) >= Math.abs(this.percentChange);
-            }
-            break;
-            
-        case 'prediction_expiry':
-            // Checked separately in prediction checker
-            break;
-            
-        case 'portfolio_value':
-            // Checked separately in portfolio checker
-            break;
+    console.log(`[AlertChecker] Checking ${activeAlerts.length} active alerts...`);
+
+    for (const alert of activeAlerts) {
+      try {
+        // Skip if no symbol (portfolio/prediction alerts handled elsewhere)
+        if (!alert.symbol) continue;
+
+        const currentPrice = await getCurrentPrice(alert.symbol, alert.assetType);
+        
+        if (!currentPrice) continue;
+
+        // Use the alert's built-in checkCondition method
+        const triggered = alert.checkCondition(currentPrice, alert.currentPrice);
+
+        if (triggered) {
+          console.log(`[AlertChecker] Alert triggered! ${alert.symbol} for user ${alert.user._id}`);
+
+          await alert.save();
+
+          // Create message based on alert type
+          let message = '';
+          let title = '';
+
+          switch (alert.type) {
+            case 'price_above':
+              title = '📈 Price Alert Triggered!';
+              message = `${alert.symbol} hit your target price! Current: $${currentPrice.toFixed(2)}, Target: $${alert.targetPrice.toFixed(2)}`;
+              break;
+
+            case 'price_below':
+              title = '📉 Price Alert Triggered!';
+              message = `${alert.symbol} dropped below your target! Current: $${currentPrice.toFixed(2)}, Target: $${alert.targetPrice.toFixed(2)}`;
+              break;
+
+            case 'percent_change':
+              title = '🚀 Price Change Alert!';
+              const change = ((currentPrice - alert.currentPrice) / alert.currentPrice) * 100;
+              message = `${alert.symbol} changed ${change > 0 ? '+' : ''}${change.toFixed(2)}% in ${alert.timeframe}`;
+              break;
+
+            default:
+              title = '🔔 Alert Triggered!';
+              message = alert.message || `Alert for ${alert.symbol} triggered`;
+          }
+
+          // 🔔 CREATE NOTIFICATION using NotificationService
+          await NotificationService.createAlertNotification(
+            alert.user._id,
+            alert.type,
+            title,
+            message,
+            alert._id
+          );
+
+          // Send email if enabled
+          if (alert.notifyVia?.email) {
+            // TODO: Implement email sending
+            console.log(`[AlertChecker] Would send email to ${alert.user.email}`);
+          }
+
+          // Send push notification if enabled
+          if (alert.notifyVia?.push) {
+            // TODO: Implement push notification
+            console.log(`[AlertChecker] Would send push notification to user ${alert.user._id}`);
+          }
+        }
+      } catch (error) {
+        console.error(`[AlertChecker] Error processing alert ${alert._id}:`, error);
+      }
     }
-    
-    if (triggered) {
-        this.status = 'triggered';
-        this.triggeredAt = new Date();
-        this.triggeredPrice = currentPrice;
-    }
-    
-    return triggered;
+  } catch (error) {
+    console.error('[AlertChecker] Error in checkAlerts:', error);
+  }
+}
+
+// Start the alert checker service
+function startAlertChecker() {
+  console.log('[AlertChecker] Starting alert checker service...');
+
+  // Check alerts every minute
+  priceCheckJob = cron.schedule('* * * * *', async () => {
+    await checkAlerts();
+  });
+
+  console.log('[AlertChecker] Cron jobs scheduled:');
+  console.log('  - Price alerts: Every minute');
+  
+  // Run once immediately
+  checkAlerts();
+}
+
+// Stop the alert checker service
+function stopAlertChecker() {
+  if (priceCheckJob) {
+    priceCheckJob.stop();
+    console.log('[AlertChecker] Alert checker service stopped');
+  }
+}
+
+module.exports = {
+  startAlertChecker,
+  stopAlertChecker,
+  checkAlerts
 };
-
-// Static method to get active alerts for a user
-alertSchema.statics.getActiveAlerts = function(userId) {
-    return this.find({
-        user: userId,
-        status: 'active',
-        expiresAt: { $gt: new Date() }
-    }).sort({ createdAt: -1 });
-};
-
-// Static method to get triggered alerts for a user
-alertSchema.statics.getTriggeredAlerts = function(userId, limit = 50) {
-    return this.find({
-        user: userId,
-        status: 'triggered'
-    })
-    .sort({ triggeredAt: -1 })
-    .limit(limit);
-};
-
-// Static method to get alerts by symbol
-alertSchema.statics.getAlertsBySymbol = function(symbol) {
-    return this.find({
-        symbol: symbol.toUpperCase(),
-        status: 'active',
-        expiresAt: { $gt: new Date() }
-    });
-};
-
-// Middleware to auto-expire old alerts
-alertSchema.pre('save', function(next) {
-    if (this.expiresAt && this.expiresAt < new Date() && this.status === 'active') {
-        this.status = 'expired';
-    }
-    next();
-});
-
-const Alert = mongoose.model('Alert', alertSchema);
-
-module.exports = Alert;
