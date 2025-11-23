@@ -1,4 +1,4 @@
-// server/app.js - Updated with Portfolio, Predictions, and Chat Routes
+// server/app.js - Updated with Portfolio, Predictions, Chat, and Alerts Routes
 
 require('dotenv').config();
 console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
@@ -25,6 +25,15 @@ const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.MONGODB_URI);
         console.log(`MongoDB Connected: ${conn.connection.host}`);
+        
+        // ✅ START ALERT CHECKER AFTER DB CONNECTION
+        const { startAlertChecker } = require('./services/alertChecker');
+        startAlertChecker();
+        
+        // ✅ START PREDICTION CHECKER (if you want)
+        // const { startPredictionChecker } = require('./services/predictionChecker');
+        // startPredictionChecker();
+        
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
     }
@@ -76,7 +85,7 @@ const portfolioRoutes = require('./routes/portfolioRoutes');
 const marketDataRoutes = require('./routes/marketDataRoutes');
 const watchlistRoutes = require('./routes/watchlistRoutes');
 const predictionsRoutes = require('./routes/predictionsRoutes');
-const chatRoutes = require('./routes/chatRoutes'); // ✅ ADDED
+const chatRoutes = require('./routes/chatRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const socialRoutes = require('./routes/socialRoutes');
 const feedRoutes = require('./routes/feedRoutes');
@@ -86,6 +95,8 @@ const aiInsightsRoutes = require('./routes/aiInsightsRoutes')
 const chartRoutes = require('./routes/chartRoutes');
 const calculatorRoutes = require('./routes/calculatorRoutes'); 
 const paperTradingRoutes = require('./routes/paperTradingRoutes');
+const alertRoutes = require('./routes/alertRoutes'); // ✅ ADDED - Price Alerts System
+
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -100,7 +111,7 @@ app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/watchlist', watchlistRoutes);
 app.use('/api/predictions', predictionsRoutes);
-app.use('/api/chat', chatRoutes); // ✅ ADDED
+app.use('/api/chat', chatRoutes);
 app.use('/api/journal', journalRoutes);
 app.use('/api/screener', screenerRoutes);
 app.use('/api/heatmap', heatmapRoutes);
@@ -116,6 +127,7 @@ app.use('/api/paper-trading', paperTradingRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/vault', vaultRoutes);
+app.use('/api/alerts', alertRoutes); // ✅ ADDED - Price Alerts System
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

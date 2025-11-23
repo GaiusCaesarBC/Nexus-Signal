@@ -1,125 +1,98 @@
-// server/models/Notification.js
+// server/models/Notification.js - UNIFIED MODEL (Trading + Social)
+
 const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
-    user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-        index: true
-    },
-    type: {
-        type: String,
-        enum: ['success', 'info', 'warning', 'error'],
-        default: 'info'
-    },
-    category: {
-        type: String,
-        enum: ['prediction', 'portfolio', 'watchlist', 'achievement', 'level', 'trade', 'system'],
-        required: true
-    },
-    title: {
-        type: String,
-        required: true
-    },
-    message: {
-        type: String,
-        required: true
-    },
-    icon: {
-        type: String,
-        default: 'Bell'
-    },
-    link: {
-        type: String // URL to navigate when clicked
-    },
-    metadata: {
-        type: mongoose.Schema.Types.Mixed // Additional data
-    },
-    read: {
-        type: Boolean,
-        default: false,
-        index: true
-    },
-    readAt: {
-        type: Date
-    }
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  
+  // Notification category
+  category: {
+    type: String,
+    enum: ['alert', 'social', 'system'],
+    required: true,
+    default: 'alert'
+  },
+  
+  // Notification type
+  type: {
+    type: String,
+    enum: [
+      // Trading alerts
+      'price_alert',
+      'prediction_expiry',
+      'portfolio_milestone',
+      'price_change',
+      
+      // Social notifications
+      'new_follower',
+      'new_comment',
+      'new_like',
+      'post_mention',
+      'comment_reply',
+      
+      // System notifications
+      'achievement_unlocked',
+      'level_up',
+      'daily_bonus'
+    ],
+    required: true
+  },
+  
+  title: {
+    type: String,
+    required: true
+  },
+  
+  message: {
+    type: String,
+    required: true
+  },
+  
+  // Related entity (post, comment, user, alert, etc.)
+  relatedId: {
+    type: mongoose.Schema.Types.ObjectId,
+    refPath: 'relatedType'
+  },
+  
+  relatedType: {
+    type: String,
+    enum: ['Post', 'Comment', 'User', 'Alert', 'Prediction', 'Achievement']
+  },
+  
+  // Actor (who triggered this notification)
+  actorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  read: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  
+  // Additional data
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  }
 }, {
-    timestamps: true
+  timestamps: true
 });
 
-// Indexes for performance
-notificationSchema.index({ user: 1, read: 1, createdAt: -1 });
-notificationSchema.index({ user: 1, createdAt: -1 });
+// Index for efficient queries
+notificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, category: 1, read: 1 });
 
-// Static method to create notification
-notificationSchema.statics.createNotification = async function(userId, data) {
-    try {
-        const notification = new this({
-            user: userId,
-            ...data
-        });
-        await notification.save();
-        return notification;
-    } catch (error) {
-        console.error('Error creating notification:', error);
-        throw error;
-    }
-};
-
-// Static method to get user notifications
-notificationSchema.statics.getUserNotifications = async function(userId, options = {}) {
-    const {
-        limit = 20,
-        skip = 0,
-        unreadOnly = false
-    } = options;
-
-    const query = { user: userId };
-    if (unreadOnly) {
-        query.read = false;
-    }
-
-    return this.find(query)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean();
-};
-
-// Static method to mark as read
-notificationSchema.statics.markAsRead = async function(notificationId, userId) {
-    return this.findOneAndUpdate(
-        { _id: notificationId, user: userId },
-        { read: true, readAt: new Date() },
-        { new: true }
-    );
-};
-
-// Static method to mark all as read
-notificationSchema.statics.markAllAsRead = async function(userId) {
-    return this.updateMany(
-        { user: userId, read: false },
-        { read: true, readAt: new Date() }
-    );
-};
-
-// Static method to delete old notifications
-notificationSchema.statics.deleteOldNotifications = async function(daysOld = 30) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-    
-    return this.deleteMany({
-        createdAt: { $lt: cutoffDate },
-        read: true
-    });
-};
-
-// Instance method to mark as read
-notificationSchema.methods.markRead = async function() {
-    this.read = true;
-    this.readAt = new Date();
-    return this.save();
-};
+// Auto-delete read notifications after 30 days
+notificationSchema.index({ createdAt: 1 }, { 
+  expireAfterSeconds: 30 * 24 * 60 * 60,
+  partialFilterExpression: { read: true }
+});
 
 module.exports = mongoose.model('Notification', notificationSchema);

@@ -1,37 +1,44 @@
-// server/routes/notificationRoutes.js
+// server/routes/notificationRoutes.js - Notification Management API
+
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/authMiddleware');
+const auth = require('../middleware/authMiddleware');
 const Notification = require('../models/Notification');
 
 // @route   GET /api/notifications
 // @desc    Get user's notifications
 // @access  Private
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', auth, async (req, res) => {
     try {
-        const { limit = 20, skip = 0, unreadOnly = false } = req.query;
-        
-        const notifications = await Notification.getUserNotifications(req.user.id, {
-            limit: parseInt(limit),
-            skip: parseInt(skip),
-            unreadOnly: unreadOnly === 'true'
-        });
+        const { limit = 50, unreadOnly = false } = req.query;
 
-        const unreadCount = await Notification.countDocuments({
-            user: req.user.id,
-            read: false
-        });
+        const query = { user: req.user.id };
+        
+        if (unreadOnly === 'true') {
+            query.read = false;
+        }
+
+        // Don't show expired notifications
+        query.$or = [
+            { expiresAt: { $gt: new Date() } },
+            { expiresAt: { $exists: false } }
+        ];
+
+        const notifications = await Notification.find(query)
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit));
 
         res.json({
             success: true,
-            notifications,
-            unreadCount
+            count: notifications.length,
+            notifications
         });
+
     } catch (error) {
-        console.error('Error fetching notifications:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch notifications'
+        console.error('[Notifications] Fetch error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch notifications',
+            message: error.message 
         });
     }
 });
@@ -39,22 +46,53 @@ router.get('/', authMiddleware, async (req, res) => {
 // @route   GET /api/notifications/unread-count
 // @desc    Get count of unread notifications
 // @access  Private
-router.get('/unread-count', authMiddleware, async (req, res) => {
+router.get('/unread-count', auth, async (req, res) => {
     try {
-        const count = await Notification.countDocuments({
-            user: req.user.id,
-            read: false
-        });
+        const count = await Notification.getUnreadCount(req.user.id);
 
         res.json({
             success: true,
             count
         });
+
     } catch (error) {
-        console.error('Error fetching unread count:', error);
-        res.status(500).json({
-            success: false,
-            count: 0
+        console.error('[Notifications] Unread count error:', error);
+        res.status(500).json({ 
+            error: 'Failed to get unread count',
+            message: error.message 
+        });
+    }
+});
+
+// @route   GET /api/notifications/:id
+// @desc    Get single notification
+// @access  Private
+router.get('/:id', auth, async (req, res) => {
+    try {
+        const notification = await Notification.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+
+        if (!notification) {
+            return res.status(404).json({ error: 'Notification not found' });
+        }
+
+        // Auto-mark as read when viewed
+        if (!notification.read) {
+            await notification.markAsRead();
+        }
+
+        res.json({
+            success: true,
+            notification
+        });
+
+    } catch (error) {
+        console.error('[Notifications] Fetch single error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch notification',
+            message: error.message 
         });
     }
 });
@@ -62,54 +100,58 @@ router.get('/unread-count', authMiddleware, async (req, res) => {
 // @route   PUT /api/notifications/:id/read
 // @desc    Mark notification as read
 // @access  Private
-router.put('/:id/read', authMiddleware, async (req, res) => {
+router.put('/:id/read', auth, async (req, res) => {
     try {
-        const notification = await Notification.markAsRead(req.params.id, req.user.id);
+        const notification = await Notification.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
 
         if (!notification) {
-            return res.status(404).json({
-                success: false,
-                error: 'Notification not found'
-            });
+            return res.status(404).json({ error: 'Notification not found' });
         }
+
+        await notification.markAsRead();
 
         res.json({
             success: true,
             notification
         });
+
     } catch (error) {
-        console.error('Error marking notification as read:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to mark notification as read'
+        console.error('[Notifications] Mark read error:', error);
+        res.status(500).json({ 
+            error: 'Failed to mark notification as read',
+            message: error.message 
         });
     }
 });
 
-// @route   PUT /api/notifications/mark-all-read
+// @route   POST /api/notifications/mark-all-read
 // @desc    Mark all notifications as read
 // @access  Private
-router.put('/mark-all-read', authMiddleware, async (req, res) => {
+router.post('/mark-all-read', auth, async (req, res) => {
     try {
-        await Notification.markAllAsRead(req.user.id);
+        const count = await Notification.markAllAsRead(req.user.id);
 
         res.json({
             success: true,
-            message: 'All notifications marked as read'
+            marked: count
         });
+
     } catch (error) {
-        console.error('Error marking all as read:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to mark all as read'
+        console.error('[Notifications] Mark all read error:', error);
+        res.status(500).json({ 
+            error: 'Failed to mark all notifications as read',
+            message: error.message 
         });
     }
 });
 
 // @route   DELETE /api/notifications/:id
-// @desc    Delete a notification
+// @desc    Delete notification
 // @access  Private
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
     try {
         const notification = await Notification.findOneAndDelete({
             _id: req.params.id,
@@ -117,29 +159,27 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         });
 
         if (!notification) {
-            return res.status(404).json({
-                success: false,
-                error: 'Notification not found'
-            });
+            return res.status(404).json({ error: 'Notification not found' });
         }
 
         res.json({
             success: true,
             message: 'Notification deleted'
         });
+
     } catch (error) {
-        console.error('Error deleting notification:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete notification'
+        console.error('[Notifications] Delete error:', error);
+        res.status(500).json({ 
+            error: 'Failed to delete notification',
+            message: error.message 
         });
     }
 });
 
-// @route   DELETE /api/notifications/clear-all
-// @desc    Delete all read notifications
+// @route   POST /api/notifications/clear-all
+// @desc    Clear all read notifications
 // @access  Private
-router.delete('/clear-all', authMiddleware, async (req, res) => {
+router.post('/clear-all', auth, async (req, res) => {
     try {
         const result = await Notification.deleteMany({
             user: req.user.id,
@@ -148,13 +188,44 @@ router.delete('/clear-all', authMiddleware, async (req, res) => {
 
         res.json({
             success: true,
-            message: `Deleted ${result.deletedCount} notifications`
+            deleted: result.deletedCount
         });
+
     } catch (error) {
-        console.error('Error clearing notifications:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to clear notifications'
+        console.error('[Notifications] Clear all error:', error);
+        res.status(500).json({ 
+            error: 'Failed to clear notifications',
+            message: error.message 
+        });
+    }
+});
+
+// @route   GET /api/notifications/by-type/:type
+// @desc    Get notifications by type
+// @access  Private
+router.get('/by-type/:type', auth, async (req, res) => {
+    try {
+        const { limit = 50 } = req.query;
+        const { type } = req.params;
+
+        const notifications = await Notification.find({
+            user: req.user.id,
+            type: type
+        })
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit));
+
+        res.json({
+            success: true,
+            count: notifications.length,
+            notifications
+        });
+
+    } catch (error) {
+        console.error('[Notifications] Fetch by type error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch notifications',
+            message: error.message 
         });
     }
 });

@@ -1,131 +1,226 @@
-// server/services/notificationService.js
+// server/services/notificationService.js - Helper for creating notifications
+
 const Notification = require('../models/Notification');
 
 class NotificationService {
-    // Prediction notifications
-    static async notifyPredictionCorrect(userId, predictionData) {
-        return Notification.createNotification(userId, {
-            type: 'success',
-            category: 'prediction',
-            title: 'AI Prediction Correct! 🎯',
-            message: `Your ${predictionData.symbol} prediction hit the target price of $${predictionData.targetPrice}`,
-            icon: 'TrendingUp',
-            link: '/predict',
-            metadata: predictionData
-        });
+  
+  // ============ SOCIAL NOTIFICATIONS ============
+  
+  static async createFollowNotification(followedUserId, followerUser) {
+    try {
+      await Notification.create({
+        userId: followedUserId,
+        category: 'social',
+        type: 'new_follower',
+        title: 'New Follower',
+        message: `${followerUser.name} started following you`,
+        actorId: followerUser._id,
+        relatedId: followerUser._id,
+        relatedType: 'User'
+      });
+      console.log(`[Notification] Created follow notification for user ${followedUserId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating follow notification:', error);
     }
+  }
 
-    static async notifyPredictionWrong(userId, predictionData) {
-        return Notification.createNotification(userId, {
-            type: 'warning',
-            category: 'prediction',
-            title: 'Prediction Missed',
-            message: `Your ${predictionData.symbol} prediction didn't hit the target`,
-            icon: 'TrendingDown',
-            link: '/predict',
-            metadata: predictionData
-        });
-    }
+  static async createCommentNotification(postAuthorId, commenterUser, postId, commentText) {
+    try {
+      // Don't notify if commenting on own post
+      if (postAuthorId.toString() === commenterUser._id.toString()) return;
 
-    // Portfolio notifications
-    static async notifyPortfolioGain(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'success',
-            category: 'portfolio',
-            title: 'Portfolio Gain! 📈',
-            message: `Your portfolio value increased by ${data.percentChange}% today`,
-            icon: 'TrendingUp',
-            link: '/portfolio',
-            metadata: data
-        });
+      await Notification.create({
+        userId: postAuthorId,
+        category: 'social',
+        type: 'new_comment',
+        title: 'New Comment',
+        message: `${commenterUser.name} commented: "${commentText.substring(0, 50)}${commentText.length > 50 ? '...' : ''}"`,
+        actorId: commenterUser._id,
+        relatedId: postId,
+        relatedType: 'Post',
+        metadata: {
+          commentPreview: commentText.substring(0, 100)
+        }
+      });
+      console.log(`[Notification] Created comment notification for user ${postAuthorId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating comment notification:', error);
     }
+  }
 
-    static async notifyPortfolioLoss(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'warning',
-            category: 'portfolio',
-            title: 'Portfolio Update',
-            message: `Your portfolio value decreased by ${Math.abs(data.percentChange)}% today`,
-            icon: 'TrendingDown',
-            link: '/portfolio',
-            metadata: data
-        });
-    }
+  static async createLikeNotification(postAuthorId, likerUser, postId) {
+    try {
+      // Don't notify if liking own post
+      if (postAuthorId.toString() === likerUser._id.toString()) return;
 
-    // Watchlist notifications
-    static async notifyPriceAlert(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'info',
-            category: 'watchlist',
-            title: 'Price Alert! 🔔',
-            message: `${data.symbol} reached your target price of $${data.targetPrice}`,
-            icon: 'AlertCircle',
-            link: '/watchlist',
-            metadata: data
-        });
-    }
+      // Check if notification already exists (avoid spam)
+      const existingNotif = await Notification.findOne({
+        userId: postAuthorId,
+        actorId: likerUser._id,
+        relatedId: postId,
+        type: 'new_like',
+        createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) } // Last hour
+      });
 
-    // Achievement notifications
-    static async notifyAchievementUnlocked(userId, achievement) {
-        return Notification.createNotification(userId, {
-            type: 'success',
-            category: 'achievement',
-            title: 'Achievement Unlocked! 🏆',
-            message: `You unlocked: ${achievement.name}`,
-            icon: 'Trophy',
-            link: '/achievements',
-            metadata: achievement
-        });
-    }
+      if (existingNotif) return;
 
-    // Level up notifications
-    static async notifyLevelUp(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'success',
-            category: 'level',
-            title: 'Level Up! 🎉',
-            message: `Congratulations! You reached Level ${data.newLevel}`,
-            icon: 'Star',
-            link: '/achievements',
-            metadata: data
-        });
+      await Notification.create({
+        userId: postAuthorId,
+        category: 'social',
+        type: 'new_like',
+        title: 'New Like',
+        message: `${likerUser.name} liked your post`,
+        actorId: likerUser._id,
+        relatedId: postId,
+        relatedType: 'Post'
+      });
+      console.log(`[Notification] Created like notification for user ${postAuthorId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating like notification:', error);
     }
+  }
 
-    // Trade notifications
-    static async notifyTradeProfitable(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'success',
-            category: 'trade',
-            title: 'Profitable Trade! 💰',
-            message: `You made $${data.profit.toFixed(2)} profit on ${data.symbol}`,
-            icon: 'DollarSign',
-            link: '/portfolio',
-            metadata: data
-        });
+  static async createMentionNotification(mentionedUserId, mentionerUser, postId, text) {
+    try {
+      await Notification.create({
+        userId: mentionedUserId,
+        category: 'social',
+        type: 'post_mention',
+        title: 'You Were Mentioned',
+        message: `${mentionerUser.name} mentioned you in a post`,
+        actorId: mentionerUser._id,
+        relatedId: postId,
+        relatedType: 'Post',
+        metadata: {
+          textPreview: text.substring(0, 100)
+        }
+      });
+      console.log(`[Notification] Created mention notification for user ${mentionedUserId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating mention notification:', error);
     }
+  }
 
-    static async notifyTradeLoss(userId, data) {
-        return Notification.createNotification(userId, {
-            type: 'warning',
-            category: 'trade',
-            title: 'Trade Closed',
-            message: `You sold ${data.symbol} with a loss of $${Math.abs(data.profit).toFixed(2)}`,
-            icon: 'AlertCircle',
-            link: '/portfolio',
-            metadata: data
-        });
-    }
+  static async createReplyNotification(originalCommentAuthorId, replierUser, postId, replyText) {
+    try {
+      // Don't notify if replying to own comment
+      if (originalCommentAuthorId.toString() === replierUser._id.toString()) return;
 
-    // System notifications
-    static async notifySystem(userId, title, message) {
-        return Notification.createNotification(userId, {
-            type: 'info',
-            category: 'system',
-            title,
-            message,
-            icon: 'Bell'
-        });
+      await Notification.create({
+        userId: originalCommentAuthorId,
+        category: 'social',
+        type: 'comment_reply',
+        title: 'New Reply',
+        message: `${replierUser.name} replied to your comment: "${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}"`,
+        actorId: replierUser._id,
+        relatedId: postId,
+        relatedType: 'Post',
+        metadata: {
+          replyPreview: replyText.substring(0, 100)
+        }
+      });
+      console.log(`[Notification] Created reply notification for user ${originalCommentAuthorId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating reply notification:', error);
     }
+  }
+
+  // ============ TRADING ALERT NOTIFICATIONS ============
+  
+  static async createAlertNotification(userId, alertType, title, message, alertId) {
+    try {
+      await Notification.create({
+        userId,
+        category: 'alert',
+        type: 'price_alert',
+        title,
+        message,
+        relatedId: alertId,
+        relatedType: 'Alert'
+      });
+      console.log(`[Notification] Created alert notification for user ${userId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating alert notification:', error);
+    }
+  }
+
+  static async createPredictionExpiryNotification(userId, symbol, expiryTime, predictionId) {
+    try {
+      await Notification.create({
+        userId,
+        category: 'alert',
+        type: 'prediction_expiry',
+        title: 'Prediction Expiring Soon',
+        message: `Your ${symbol} prediction expires in ${expiryTime}`,
+        relatedId: predictionId,
+        relatedType: 'Prediction'
+      });
+      console.log(`[Notification] Created prediction expiry notification for user ${userId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating prediction expiry notification:', error);
+    }
+  }
+
+  // ============ SYSTEM NOTIFICATIONS ============
+  
+  static async createAchievementNotification(userId, achievementName, achievementId) {
+    try {
+      await Notification.create({
+        userId,
+        category: 'system',
+        type: 'achievement_unlocked',
+        title: '🏆 Achievement Unlocked!',
+        message: `You unlocked: ${achievementName}`,
+        relatedId: achievementId,
+        relatedType: 'Achievement'
+      });
+      console.log(`[Notification] Created achievement notification for user ${userId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating achievement notification:', error);
+    }
+  }
+
+  static async createLevelUpNotification(userId, newLevel) {
+    try {
+      await Notification.create({
+        userId,
+        category: 'system',
+        type: 'level_up',
+        title: '⬆️ Level Up!',
+        message: `Congratulations! You reached level ${newLevel}`,
+        metadata: { level: newLevel }
+      });
+      console.log(`[Notification] Created level up notification for user ${userId}`);
+    } catch (error) {
+      console.error('[Notification] Error creating level up notification:', error);
+    }
+  }
+
+  // ============ BULK OPERATIONS ============
+  
+  static async getUnreadCount(userId, category = null) {
+    try {
+      const query = { userId, read: false };
+      if (category) query.category = category;
+      
+      return await Notification.countDocuments(query);
+    } catch (error) {
+      console.error('[Notification] Error getting unread count:', error);
+      return 0;
+    }
+  }
+
+  static async markAllAsRead(userId, category = null) {
+    try {
+      const query = { userId, read: false };
+      if (category) query.category = category;
+      
+      await Notification.updateMany(query, { read: true });
+      console.log(`[Notification] Marked all notifications as read for user ${userId}`);
+    } catch (error) {
+      console.error('[Notification] Error marking all as read:', error);
+    }
+  }
 }
 
 module.exports = NotificationService;

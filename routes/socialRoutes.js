@@ -3,7 +3,8 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
-const { updateUserStats, updateAllUserStats } = require('../services/statsService'); // ✅ ADD THIS
+const { updateUserStats, updateAllUserStats } = require('../services/statsService');
+const NotificationService = require('../services/notificationService'); // 🔔 ADD THIS
 
 // ============ OPTIONAL AUTH MIDDLEWARE ============
 // Allows routes to work with or without authentication
@@ -189,6 +190,12 @@ router.post('/follow/:userId', auth, async (req, res) => {
         targetUser.social.followersCount++;
 
         await Promise.all([currentUser.save(), targetUser.save()]);
+
+        // 🔔 CREATE NOTIFICATION
+        await NotificationService.createFollowNotification(
+            targetUserId,
+            currentUser
+        );
 
         res.json({ success: true, message: 'Successfully followed user' });
     } catch (error) {
