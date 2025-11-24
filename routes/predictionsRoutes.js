@@ -1,4 +1,4 @@
-// server/routes/predictionsRoutes.js - FIXED WITH WORKING PRICE FETCHING + MANUAL CHECK
+// server/routes/predictionsRoutes.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE
 
 const express = require('express');
 const router = express.Router();
@@ -7,28 +7,11 @@ const auth = require('../middleware/authMiddleware');
 const Prediction = require('../models/Prediction');
 const GamificationService = require('../services/gamificationService');
 
+// ✅ USE CENTRALIZED PRICE SERVICE
+const priceService = require('../services/priceService');
+
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
-
-// Alpha Vantage & CoinGecko configs
-const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
-const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
-
-// Map crypto symbols to CoinGecko IDs
-const cryptoSymbolMap = {
-    BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin',
-    ADA: 'cardano', SOL: 'solana', DOGE: 'dogecoin', DOT: 'polkadot',
-    BNB: 'binancecoin', LINK: 'chainlink', UNI: 'uniswap',
-    MATIC: 'matic-network', SHIB: 'shiba-inu', TRX: 'tron',
-    AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero',
-};
-
-// ✅ List of known crypto symbols for auto-detection
-const CRYPTO_SYMBOLS = [
-    'BTC', 'ETH', 'XRP', 'LTC', 'ADA', 'SOL', 'DOGE', 'DOT',
-    'BNB', 'LINK', 'UNI', 'MATIC', 'SHIB', 'TRX', 'AVAX', 'ATOM', 'XMR'
-];
 
 // Mock prediction generator
 function generateMockPrediction(symbol, days) {
@@ -58,7 +41,7 @@ function generateMockPrediction(symbol, days) {
     };
 }
 
-// ============ NEW: LIVE PREDICTION HELPERS ============
+// ============ LIVE PREDICTION HELPERS ============
 
 // Helper function to calculate live confidence based on actual movement
 function calculateLiveConfidence(prediction, currentPrice) {
@@ -75,11 +58,11 @@ function calculateLiveConfidence(prediction, currentPrice) {
         if (actualMovement > 0) {
             // Moving in right direction - confidence increases
             const progress = Math.min(actualMovement / targetMovement, 1);
-            return Math.min(95, originalConfidence + (progress * 20)); // Can go up to +20%
+            return Math.min(95, originalConfidence + (progress * 20));
         } else {
             // Moving wrong direction - confidence decreases
             const wrongProgress = Math.abs(actualMovement / targetMovement);
-            return Math.max(30, originalConfidence - (wrongProgress * 30)); // Can drop to 30%
+            return Math.max(30, originalConfidence - (wrongProgress * 30));
         }
     }
     
@@ -99,62 +82,6 @@ function calculateLiveConfidence(prediction, currentPrice) {
     return originalConfidence;
 }
 
-// ✅ FIXED: Fetch current stock price from Alpha Vantage
-async function fetchStockPrice(symbol) {
-    try {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-        const response = await axios.get(url, { timeout: 10000 });
-        const data = response.data;
-
-        if (data['Global Quote'] && data['Global Quote']['05. price']) {
-            return parseFloat(data['Global Quote']['05. price']);
-        }
-
-        console.error(`[Live] No price data for stock ${symbol}`);
-        return null;
-    } catch (error) {
-        console.error(`[Live] Error fetching stock price for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-// ✅ FIXED: Fetch current crypto price from CoinGecko
-async function fetchCryptoPrice(symbol) {
-    try {
-        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
-        const params = { ids: coinGeckoId, vs_currencies: 'usd' };
-
-        if (COINGECKO_API_KEY) {
-            params['x_cg_pro_api_key'] = COINGECKO_API_KEY;
-        }
-
-        const url = `${COINGECKO_BASE_URL}/simple/price`;
-        const response = await axios.get(url, { params, timeout: 10000 });
-        const data = response.data;
-
-        if (data[coinGeckoId] && data[coinGeckoId].usd) {
-            return data[coinGeckoId].usd;
-        }
-
-        console.error(`[Live] No price data for crypto ${symbol}`);
-        return null;
-    } catch (error) {
-        console.error(`[Live] Error fetching crypto price for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-// ✅ FIXED: Fetch current price based on asset type
-async function getCurrentPrice(symbol, assetType) {
-    console.log(`[Live] Fetching current price for ${symbol} (${assetType})`);
-    
-    if (assetType === 'crypto') {
-        return await fetchCryptoPrice(symbol);
-    } else {
-        return await fetchStockPrice(symbol);
-    }
-}
-
 // @route   POST /api/predictions/predict
 // @desc    Get prediction for a single stock/crypto and save it
 // @access  Private
@@ -166,10 +93,9 @@ router.post('/predict', auth, async (req, res) => {
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
-        // ✅ AUTO-DETECT: If no assetType provided, detect based on symbol
+        // ✅ AUTO-DETECT using centralized service
         if (!assetType) {
-            const upperSymbol = symbol.toUpperCase();
-            assetType = CRYPTO_SYMBOLS.includes(upperSymbol) ? 'crypto' : 'stock';
+            assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
             console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
         }
 
@@ -184,7 +110,7 @@ router.post('/predict', auth, async (req, res) => {
             try {
                 const baseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
                 
-                // ✅ Use correct endpoint based on asset type
+                // Use correct endpoint based on asset type
                 const endpoint = assetType === 'crypto' 
                     ? `/api/crypto/prediction/${symbol}?range=6M`
                     : `/api/stocks/prediction/${symbol}?range=6M`;
@@ -292,11 +218,12 @@ router.get('/live/:id', auth, async (req, res) => {
 
         console.log(`[Live] Found prediction for ${prediction.symbol} (${prediction.assetType})`);
 
-        // Get current price
+        // ✅ USE CENTRALIZED PRICE SERVICE
         let currentPrice;
         try {
-            currentPrice = await getCurrentPrice(prediction.symbol, prediction.assetType);
-            console.log(`[Live] Current price for ${prediction.symbol}: $${currentPrice}`);
+            const priceResult = await priceService.getCurrentPrice(prediction.symbol, prediction.assetType);
+            currentPrice = priceResult.price;
+            console.log(`[Live] Current price for ${prediction.symbol}: $${currentPrice} (source: ${priceResult.source})`);
         } catch (priceError) {
             console.error('[Live] Error fetching price:', priceError);
             currentPrice = null;
@@ -362,8 +289,8 @@ router.post('/check-outcomes', auth, async (req, res) => {
 
         for (const prediction of predictions) {
             try {
-                // Get current price
-                const currentPrice = await getCurrentPrice(prediction.symbol, prediction.assetType);
+                // ✅ USE CENTRALIZED PRICE SERVICE
+                const currentPrice = await priceService.getPrice(prediction.symbol, prediction.assetType);
 
                 if (!currentPrice) {
                     console.log(`[Check] Skipping ${prediction.symbol} - no price available`);
@@ -504,10 +431,10 @@ router.post('/batch', auth, async (req, res) => {
             return res.status(400).json({ error: 'Symbols array is required' });
         }
 
-        // ✅ Auto-detect asset type for batch if not provided
+        // ✅ Auto-detect asset type using centralized service
         if (!assetType) {
             const firstSymbol = symbols[0].toUpperCase();
-            assetType = CRYPTO_SYMBOLS.includes(firstSymbol) ? 'crypto' : 'stock';
+            assetType = priceService.isCryptoSymbol(firstSymbol) ? 'crypto' : 'stock';
             console.log(`[Predictions] Batch auto-detected as ${assetType}`);
         }
 
@@ -670,16 +597,23 @@ router.get('/health', auth, async (req, res) => {
             timeout: 5000
         });
         
+        // ✅ Include price service cache stats
+        const cacheStats = priceService.getCacheStats();
+        
         res.json({
             ml_service: 'healthy',
             mock_mode: USE_MOCK_PREDICTIONS,
+            price_cache: cacheStats,
             ...response.data
         });
         
     } catch (error) {
+        const cacheStats = priceService.getCacheStats();
+        
         res.json({
             ml_service: 'unhealthy',
             mock_mode: USE_MOCK_PREDICTIONS,
+            price_cache: cacheStats,
             error: error.message,
             note: USE_MOCK_PREDICTIONS ? 'Using mock predictions as fallback' : 'ML service unavailable'
         });
@@ -749,6 +683,35 @@ router.post('/test/expire-all', auth, async (req, res) => {
     } catch (error) {
         console.error('[TEST] Error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ✅ NEW: Get current price for any symbol (utility endpoint)
+router.get('/price/:symbol', auth, async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const { type } = req.query;
+        
+        const result = await priceService.getCurrentPrice(symbol, type);
+        
+        if (result.price === null) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Could not fetch price for ${symbol}` 
+            });
+        }
+        
+        res.json({
+            success: true,
+            symbol: symbol.toUpperCase(),
+            price: result.price,
+            source: result.source,
+            cached: result.cached,
+            isCrypto: priceService.isCryptoSymbol(symbol)
+        });
+    } catch (error) {
+        console.error('[Predictions] Price fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch price' });
     }
 });
 

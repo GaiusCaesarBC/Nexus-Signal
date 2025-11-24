@@ -1,24 +1,13 @@
-// server/services/predictionChecker.js - ENHANCED WITH BETTER LOGGING & ERROR HANDLING
+// server/services/predictionChecker.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE
 
 const cron = require('node-cron');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
-const axios = require('axios');
 
-const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
-const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
+// ✅ USE CENTRALIZED PRICE SERVICE
+const priceService = require('./priceService');
 
-// Map crypto symbols to CoinGecko IDs
-const cryptoSymbolMap = {
-    BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin',
-    ADA: 'cardano', SOL: 'solana', DOGE: 'dogecoin', DOT: 'polkadot',
-    BNB: 'binancecoin', LINK: 'chainlink', UNI: 'uniswap',
-    MATIC: 'matic-network', SHIB: 'shiba-inu', TRX: 'tron',
-    AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero',
-};
-
-// ✅ ENHANCED: Track checker statistics
+// ✅ Track checker statistics
 const checkerStats = {
     lastRun: null,
     totalChecked: 0,
@@ -28,77 +17,29 @@ const checkerStats = {
     incorrectPredictions: 0
 };
 
-// Fetch current stock price from Alpha Vantage
-async function fetchStockPrice(symbol) {
-    try {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-        const response = await axios.get(url, { timeout: 10000 });
-        const data = response.data;
-
-        if (data['Global Quote'] && data['Global Quote']['05. price']) {
-            return parseFloat(data['Global Quote']['05. price']);
-        }
-
-        console.error(`[PredictionChecker] No price data for stock ${symbol}`);
-        return null;
-    } catch (error) {
-        console.error(`[PredictionChecker] Error fetching stock price for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-// Fetch current crypto price from CoinGecko
-async function fetchCryptoPrice(symbol) {
-    try {
-        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
-        const params = { ids: coinGeckoId, vs_currencies: 'usd' };
-
-        if (COINGECKO_API_KEY) {
-            params['x_cg_pro_api_key'] = COINGECKO_API_KEY;
-        }
-
-        const url = `${COINGECKO_BASE_URL}/simple/price`;
-        const response = await axios.get(url, { params, timeout: 10000 });
-        const data = response.data;
-
-        if (data[coinGeckoId] && data[coinGeckoId].usd) {
-            return data[coinGeckoId].usd;
-        }
-
-        console.error(`[PredictionChecker] No price data for crypto ${symbol}`);
-        return null;
-    } catch (error) {
-        console.error(`[PredictionChecker] Error fetching crypto price for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-// Fetch current price based on asset type
-async function fetchCurrentPrice(symbol, assetType) {
-    if (assetType === 'crypto') {
-        return await fetchCryptoPrice(symbol);
-    } else {
-        return await fetchStockPrice(symbol);
-    }
-}
-
 // Check a single prediction
 async function checkPrediction(prediction) {
     try {
-        console.log(`[PredictionChecker] Checking ${prediction.symbol} (${prediction.assetType})`);
+        // ✅ Use centralized detection
+        const isCrypto = priceService.isCryptoSymbol(prediction.symbol);
+        const typeLabel = isCrypto ? 'crypto' : prediction.assetType;
+        console.log(`[PredictionChecker] Checking ${prediction.symbol} (${typeLabel})`);
 
-        const currentPrice = await fetchCurrentPrice(prediction.symbol, prediction.assetType);
+        // ✅ Use centralized price fetching
+        const priceResult = await priceService.getCurrentPrice(prediction.symbol, prediction.assetType);
 
-        if (currentPrice === null) {
+        if (priceResult.price === null) {
             console.log(`[PredictionChecker] ❌ Could not fetch price for ${prediction.symbol}, skipping...`);
             checkerStats.errorCount++;
             return false;
         }
 
-        // Calculate outcome
-        await prediction.calculateOutcome(currentPrice);
+        console.log(`[PredictionChecker] Price for ${prediction.symbol}: $${priceResult.price} (source: ${priceResult.source})`);
 
-        // ✅ Update statistics
+        // Calculate outcome
+        await prediction.calculateOutcome(priceResult.price);
+
+        // Update statistics
         checkerStats.successCount++;
         checkerStats.totalChecked++;
         
@@ -131,7 +72,7 @@ async function checkExpiredPredictions() {
         const expiredPredictions = await Prediction.find({
             status: 'pending',
             expiresAt: { $lte: new Date() }
-        }).limit(50); // Process 50 at a time to avoid overwhelming APIs
+        }).limit(50);
 
         if (expiredPredictions.length === 0) {
             console.log('[PredictionChecker] ✨ No expired predictions found.');
@@ -140,6 +81,17 @@ async function checkExpiredPredictions() {
         }
 
         console.log(`[PredictionChecker] Found ${expiredPredictions.length} expired predictions to check`);
+        
+        // Log what symbols we're checking
+        const symbols = [...new Set(expiredPredictions.map(p => p.symbol))];
+        console.log(`[PredictionChecker] Unique symbols: ${symbols.join(', ')}`);
+
+        // ✅ Batch fetch crypto prices for efficiency
+        const cryptoSymbols = symbols.filter(s => priceService.isCryptoSymbol(s));
+        if (cryptoSymbols.length > 0) {
+            console.log(`[PredictionChecker] Pre-fetching ${cryptoSymbols.length} crypto prices in batch...`);
+            await priceService.fetchCoinGeckoPricesBatch(cryptoSymbols);
+        }
 
         // Reset run statistics
         const runStats = {
@@ -167,10 +119,8 @@ async function checkExpiredPredictions() {
 
             runStats.checked++;
 
-            // Add delay between API calls
-            // Alpha Vantage: 75/min = 800ms between calls
-            // CoinGecko: 500/min = 120ms between calls
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Add delay between API calls (reduced since we have caching now)
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
 
         // Update global statistics
@@ -189,6 +139,7 @@ async function checkExpiredPredictions() {
         console.log(`  ⚠️  Incorrect: ${runStats.incorrect}`);
         console.log(`  ⏱️  Duration: ${duration}s`);
         console.log(`  👥 Users affected: ${affectedUserIds.length}`);
+        console.log(`  💾 Cache size: ${priceService.getCacheStats().size} entries`);
         console.log('================================\n');
 
     } catch (error) {
@@ -272,12 +223,17 @@ async function markStaleAsExpired() {
         } else {
             console.log(`[PredictionChecker] No stale predictions found`);
         }
+        
+        // ✅ Clear price cache during daily cleanup
+        priceService.clearCache();
+        console.log(`[PredictionChecker] 🗑️  Cleared price cache`);
+        
     } catch (error) {
         console.error('[PredictionChecker] ❌ Error marking stale predictions:', error.message);
     }
 }
 
-// ✅ NEW: Get checker statistics
+// Get checker statistics
 function getCheckerStats() {
     return {
         ...checkerStats,
@@ -286,7 +242,8 @@ function getCheckerStats() {
             : 'N/A',
         uptime: checkerStats.lastRun 
             ? `Last run: ${new Date(checkerStats.lastRun).toLocaleString()}`
-            : 'Not run yet'
+            : 'Not run yet',
+        priceCache: priceService.getCacheStats()
     };
 }
 
@@ -294,6 +251,7 @@ function getCheckerStats() {
 function startPredictionChecker() {
     console.log('\n🚀 ================================');
     console.log('[PredictionChecker] Starting prediction checker service...');
+    console.log('[PredictionChecker] Using centralized price service');
     console.log('================================\n');
 
     // Check expired predictions every hour
@@ -318,7 +276,7 @@ function startPredictionChecker() {
         console.log('[PredictionChecker] 🏃 Running initial check on startup...');
         setTimeout(async () => {
             await checkExpiredPredictions();
-        }, 5000); // Wait 5 seconds after startup
+        }, 5000);
     }
 }
 
@@ -328,11 +286,14 @@ async function manualCheck() {
     await checkExpiredPredictions();
 }
 
-// ✅ NEW: Export statistics getter
+// ✅ Export everything including price service helpers for backward compatibility
 module.exports = {
     startPredictionChecker,
     checkExpiredPredictions,
     manualCheck,
     getCheckerStats,
-    fetchCurrentPrice // Expose for use in routes
+    
+    // Re-export from priceService for backward compatibility
+    fetchCurrentPrice: priceService.getPrice,
+    isCryptoSymbol: priceService.isCryptoSymbol
 };

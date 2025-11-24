@@ -4,15 +4,14 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const { updateUserStats, updateAllUserStats } = require('../services/statsService');
-const NotificationService = require('../services/notificationService'); // 🔔 ADD THIS
+const NotificationService = require('../services/notificationService');
 
 // ============ OPTIONAL AUTH MIDDLEWARE ============
-// Allows routes to work with or without authentication
 const optionalAuth = (req, res, next) => {
     const token = req.cookies.token || req.header('x-auth-token');
     
     if (!token) {
-        return next(); // No token, continue without user
+        return next();
     }
 
     try {
@@ -20,46 +19,165 @@ const optionalAuth = (req, res, next) => {
         req.user = decoded.user;
         next();
     } catch (err) {
-        next(); // Invalid token, continue without user
+        next();
     }
 };
 
-// ============ LEADERBOARD ============
+// ============ HELPER: Get date range for time period ============
+const getDateRangeForPeriod = (period) => {
+    const now = new Date();
+    let startDate;
+
+    switch (period) {
+        case 'today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+        case 'week':
+            startDate = new Date(now);
+            startDate.setDate(now.getDate() - 7);
+            break;
+        case 'month':
+            startDate = new Date(now);
+            startDate.setMonth(now.getMonth() - 1);
+            break;
+        case 'all':
+        default:
+            startDate = null;
+            break;
+    }
+
+    return startDate;
+};
+
+// ============ ENHANCED LEADERBOARD ============
 // @route   GET /api/social/leaderboard
-// @desc    Get top traders
+// @desc    Get top traders with filtering and sorting options
 // @access  Public
 router.get('/leaderboard', async (req, res) => {
     try {
-        const { timeframe = 'all', limit = 100, sortBy = 'totalReturnPercent' } = req.query;
+        const { 
+            period = 'all',      // today, week, month, all
+            limit = 100, 
+            sortBy = 'totalReturnPercent'  // totalReturnPercent, winRate, currentStreak, xp, totalTrades
+        } = req.query;
 
-        // Show public profiles OR profiles with no isPublic field (defaults to public)
-        const users = await User.find({
+        // Map frontend sortBy to database field
+        const sortFieldMap = {
+            'totalReturnPercent': 'stats.totalReturnPercent',
+            'winRate': 'stats.winRate',
+            'currentStreak': 'stats.currentStreak',
+            'xp': 'gamification.xp',
+            'totalTrades': 'stats.totalTrades',
+            // Legacy support
+            'returns': 'stats.totalReturnPercent',
+            'accuracy': 'stats.winRate',
+            'streak': 'stats.currentStreak',
+            'trades': 'stats.totalTrades'
+        };
+
+        const sortField = sortFieldMap[sortBy] || 'stats.totalReturnPercent';
+
+        // Build query - show public profiles OR profiles with no isPublic field
+        let query = {
+            $or: [
+                { 'profile.isPublic': true },
+                { 'profile.isPublic': { $exists: false } }
+            ]
+        };
+
+        // For time-based filtering, we need users with activity in that period
+        // This requires checking their recent trades - for now we'll use lastActive or createdAt
+        const startDate = getDateRangeForPeriod(period);
+        if (startDate) {
+            query['stats.lastTradeDate'] = { $gte: startDate };
+        }
+
+        // Fetch users with all relevant fields
+        const users = await User.find(query)
+            .select('username profile stats gamification social createdAt')
+            .sort({ [sortField]: -1 })
+            .limit(parseInt(limit));
+
+        // Map to leaderboard format with all enhanced fields
+        const leaderboard = users.map((user, index) => ({
+            rank: index + 1,
+            
+            // Identity
+            userId: user._id,
+            username: user.username,
+            displayName: user.profile?.displayName || user.username || 'Anonymous Trader',
+            avatar: user.profile?.avatar || '',
+            badges: user.profile?.badges || [],
+            
+            // Stats
+            totalReturn: user.stats?.totalReturnPercent || 0,
+            winRate: user.stats?.winRate || 0,
+            totalTrades: user.stats?.totalTrades || 0,
+            currentStreak: user.stats?.currentStreak || 0,
+            longestStreak: user.stats?.longestStreak || 0,
+            avgTradeReturn: user.stats?.avgTradeReturn || 0,
+            
+            // Gamification
+            level: user.gamification?.level || 1,
+            xp: user.gamification?.xp || 0,
+            title: user.gamification?.title || 'Rookie Trader',
+            
+            // Social
+            followersCount: user.social?.followersCount || 0,
+            followingCount: user.social?.followingCount || 0,
+            
+            // Meta
+            memberSince: user.createdAt
+        }));
+
+        // Return with metadata
+        res.json(leaderboard);
+
+    } catch (error) {
+        console.error('[Social] Error fetching leaderboard:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
+// ============ LEADERBOARD STATS (for header display) ============
+// @route   GET /api/social/leaderboard/stats
+// @desc    Get leaderboard statistics
+// @access  Public
+router.get('/leaderboard/stats', async (req, res) => {
+    try {
+        const totalTraders = await User.countDocuments({
+            $or: [
+                { 'profile.isPublic': true },
+                { 'profile.isPublic': { $exists: false } }
+            ]
+        });
+
+        const activeToday = await User.countDocuments({
+            'stats.lastTradeDate': { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+        });
+
+        const topPerformer = await User.findOne({
             $or: [
                 { 'profile.isPublic': true },
                 { 'profile.isPublic': { $exists: false } }
             ]
         })
-            .select('username profile.displayName profile.avatar profile.badges stats social')
-            .sort({ [`stats.${sortBy}`]: -1 })
-            .limit(parseInt(limit));
+        .sort({ 'stats.totalReturnPercent': -1 })
+        .select('username profile.displayName stats.totalReturnPercent');
 
-        const leaderboard = users.map((user, index) => ({
-            rank: index + 1,
-            userId: user._id,
-            username: user.username,
-            displayName: user.profile?.displayName || user.username || 'Anonymous Trader',
-            avatar: user.profile?.avatar || '',
-            totalReturn: user.stats?.totalReturnPercent || 0,
-            winRate: user.stats?.winRate || 0,
-            totalTrades: user.stats?.totalTrades || 0,
-            followersCount: user.social?.followersCount || 0,
-            badges: user.profile?.badges || []
-        }));
+        res.json({
+            totalTraders,
+            activeToday,
+            topPerformer: topPerformer ? {
+                username: topPerformer.username,
+                displayName: topPerformer.profile?.displayName || topPerformer.username,
+                totalReturn: topPerformer.stats?.totalReturnPercent || 0
+            } : null
+        });
 
-        res.json(leaderboard);
     } catch (error) {
-        console.error('[Social] Error fetching leaderboard:', error);
-        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+        console.error('[Social] Error fetching leaderboard stats:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard stats' });
     }
 });
 
@@ -70,7 +188,7 @@ router.get('/leaderboard', async (req, res) => {
 router.get('/profile/:userId', optionalAuth, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId)
-            .select('username profile stats achievements social')
+            .select('username profile stats achievements gamification social')
             .populate('social.followers', 'username profile.displayName profile.avatar')
             .populate('social.following', 'username profile.displayName profile.avatar');
 
@@ -78,11 +196,9 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             return res.status(404).json({ error: 'Profile not found' });
         }
 
-        // Check if this is the user's own profile
         const isOwnProfile = req.user && req.user.id === req.params.userId;
-        const isPublic = user.profile?.isPublic ?? true; // Default to public if not set
+        const isPublic = user.profile?.isPublic ?? true;
 
-        // If profile is private and not own profile, deny access
         if (!isPublic && !isOwnProfile) {
             return res.status(403).json({ 
                 error: 'This profile is private',
@@ -95,6 +211,7 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             profile: user.profile,
             stats: user.stats,
             achievements: user.achievements,
+            gamification: user.gamification,
             social: {
                 followersCount: user.social?.followersCount || 0,
                 followingCount: user.social?.followingCount || 0,
@@ -115,7 +232,7 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
 router.get('/profile/username/:username', optionalAuth, async (req, res) => {
     try {
         const user = await User.findOne({ username: req.params.username })
-            .select('username profile stats achievements social')
+            .select('username profile stats achievements gamification social')
             .populate('social.followers', 'username profile.displayName profile.avatar')
             .populate('social.following', 'username profile.displayName profile.avatar');
 
@@ -123,11 +240,9 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             return res.status(404).json({ error: 'Profile not found' });
         }
 
-        // Check if this is the user's own profile
         const isOwnProfile = req.user && req.user.id === user._id.toString();
-        const isPublic = user.profile?.isPublic ?? true; // Default to public if not set
+        const isPublic = user.profile?.isPublic ?? true;
 
-        // If profile is private and not own profile, deny access
         if (!isPublic && !isOwnProfile) {
             return res.status(403).json({ 
                 error: 'This profile is private',
@@ -141,6 +256,7 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             profile: user.profile,
             stats: user.stats,
             achievements: user.achievements,
+            gamification: user.gamification,
             social: {
                 followersCount: user.social?.followersCount || 0,
                 followingCount: user.social?.followingCount || 0,
@@ -178,12 +294,10 @@ router.post('/follow/:userId', auth, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Check if already following
         if (currentUser.social.following.includes(targetUserId)) {
             return res.status(400).json({ error: 'Already following this user' });
         }
 
-        // Add to following/followers
         currentUser.social.following.push(targetUserId);
         currentUser.social.followingCount++;
         targetUser.social.followers.push(currentUserId);
@@ -191,7 +305,6 @@ router.post('/follow/:userId', auth, async (req, res) => {
 
         await Promise.all([currentUser.save(), targetUser.save()]);
 
-        // 🔔 CREATE NOTIFICATION
         await NotificationService.createFollowNotification(
             targetUserId,
             currentUser
@@ -221,7 +334,6 @@ router.post('/unfollow/:userId', auth, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Remove from following/followers
         currentUser.social.following = currentUser.social.following.filter(
             id => id.toString() !== targetUserId
         );
@@ -281,17 +393,15 @@ router.get('/search', async (req, res) => {
             return res.status(400).json({ error: 'Search query too short' });
         }
 
-        // Search by both displayName AND username
         const users = await User.find({
             $or: [
                 { 'profile.displayName': { $regex: q, $options: 'i' } },
                 { username: { $regex: q, $options: 'i' } }
             ]
         })
-        .select('username profile.displayName profile.avatar profile.badges stats social')
+        .select('username profile stats gamification social')
         .limit(20);
 
-        // Return data in the same format as leaderboard
         const results = users.map(user => ({
             userId: user._id,
             username: user.username,
@@ -300,6 +410,9 @@ router.get('/search', async (req, res) => {
             totalReturn: user.stats?.totalReturnPercent || 0,
             winRate: user.stats?.winRate || 0,
             totalTrades: user.stats?.totalTrades || 0,
+            currentStreak: user.stats?.currentStreak || 0,
+            level: user.gamification?.level || 1,
+            xp: user.gamification?.xp || 0,
             followersCount: user.social?.followersCount || 0,
             badges: user.profile?.badges || []
         }));
@@ -311,9 +424,59 @@ router.get('/search', async (req, res) => {
     }
 });
 
-// ============ ADMIN ENDPOINTS (TEMPORARY - REMOVE AFTER RUNNING) ============
+// ============ COPY TRADING (Placeholder) ============
+// @route   POST /api/social/copy/:userId
+// @desc    Start copy trading a user
+// @access  Private
+router.post('/copy/:userId', auth, async (req, res) => {
+    try {
+        const targetUserId = req.params.userId;
+        const currentUserId = req.user.id;
 
-// ⚠️ MIGRATION: Set display names and public profiles
+        if (targetUserId === currentUserId) {
+            return res.status(400).json({ error: 'Cannot copy trade yourself' });
+        }
+
+        const targetUser = await User.findById(targetUserId);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // TODO: Implement actual copy trading logic
+        // For now, just return a placeholder response
+        res.json({ 
+            success: true, 
+            message: 'Copy trading feature coming soon!',
+            trader: {
+                username: targetUser.username,
+                displayName: targetUser.profile?.displayName || targetUser.username
+            }
+        });
+    } catch (error) {
+        console.error('[Social] Error setting up copy trading:', error);
+        res.status(500).json({ error: 'Failed to set up copy trading' });
+    }
+});
+
+// @route   DELETE /api/social/copy/:userId
+// @desc    Stop copy trading a user
+// @access  Private
+router.delete('/copy/:userId', auth, async (req, res) => {
+    try {
+        // TODO: Implement actual copy trading removal logic
+        res.json({ 
+            success: true, 
+            message: 'Copy trading stopped'
+        });
+    } catch (error) {
+        console.error('[Social] Error stopping copy trading:', error);
+        res.status(500).json({ error: 'Failed to stop copy trading' });
+    }
+});
+
+// ============ ADMIN ENDPOINTS ============
+
+// Migration: Set display names and public profiles
 router.post('/admin/migrate-profiles', async (req, res) => {
     try {
         const users = await User.find({});
@@ -322,19 +485,16 @@ router.post('/admin/migrate-profiles', async (req, res) => {
         for (const user of users) {
             let needsUpdate = false;
             
-            // Set displayName to username if not set
             if (!user.profile.displayName) {
                 user.profile.displayName = user.username;
                 needsUpdate = true;
             }
             
-            // Set isPublic to true if not set
             if (user.profile.isPublic === undefined) {
                 user.profile.isPublic = true;
                 needsUpdate = true;
             }
             
-            // Set showPortfolio to true if not set
             if (user.profile.showPortfolio === undefined) {
                 user.profile.showPortfolio = true;
                 needsUpdate = true;
@@ -359,7 +519,54 @@ router.post('/admin/migrate-profiles', async (req, res) => {
     }
 });
 
-// ⚠️ STATS: Update all user stats from portfolios
+// Migration: Initialize gamification for all users
+router.post('/admin/migrate-gamification', async (req, res) => {
+    try {
+        const users = await User.find({});
+        let updated = 0;
+        
+        for (const user of users) {
+            let needsUpdate = false;
+            
+            // Initialize gamification if not present
+            if (!user.gamification) {
+                user.gamification = {
+                    xp: 0,
+                    level: 1,
+                    title: 'Rookie Trader',
+                    achievements: [],
+                    badges: []
+                };
+                needsUpdate = true;
+            }
+            
+            // Initialize streak fields in stats if not present
+            if (user.stats && user.stats.currentStreak === undefined) {
+                user.stats.currentStreak = 0;
+                user.stats.bestStreak = 0;
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+                await user.save();
+                updated++;
+            }
+        }
+        
+        console.log(`[Migration] Initialized gamification for ${updated} users`);
+        
+        res.json({ 
+            success: true, 
+            message: `Gamification migration complete! Updated ${updated} users`,
+            total: users.length
+        });
+    } catch (error) {
+        console.error('[Migration] Error:', error);
+        res.status(500).json({ error: 'Migration failed', details: error.message });
+    }
+});
+
+// Update all user stats
 router.post('/admin/update-stats', async (req, res) => {
     try {
         await updateAllUserStats();
@@ -373,7 +580,7 @@ router.post('/admin/update-stats', async (req, res) => {
     }
 });
 
-// ⚠️ STATS: Update single user's stats
+// Update single user's stats
 router.post('/admin/update-stats/:userId', async (req, res) => {
     try {
         await updateUserStats(req.params.userId);
