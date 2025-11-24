@@ -1,4 +1,4 @@
-// server/app.js - Updated with Portfolio, Predictions, Chat, and Alerts Routes
+// server/app.js - Updated with Portfolio, Predictions, Chat, Alerts, and PATTERN Routes
 
 require('dotenv').config();
 console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
@@ -30,9 +30,9 @@ const connectDB = async () => {
         const { startAlertChecker } = require('./services/alertChecker');
         startAlertChecker();
         
-        // ✅ START PREDICTION CHECKER (if you want)
-        // const { startPredictionChecker } = require('./services/predictionChecker');
-        // startPredictionChecker();
+        // ✅ START PREDICTION CHECKER - ENABLED!
+        const { startPredictionChecker } = require('./services/predictionChecker');
+        startPredictionChecker();
         
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
@@ -96,6 +96,7 @@ const chartRoutes = require('./routes/chartRoutes');
 const calculatorRoutes = require('./routes/calculatorRoutes'); 
 const paperTradingRoutes = require('./routes/paperTradingRoutes');
 const alertRoutes = require('./routes/alertRoutes'); // ✅ ADDED - Price Alerts System
+const patternRoutes = require('./routes/patternRoutes'); // ✅ ADDED - AI Pattern Recognition
 
 
 // Basic root route for health check
@@ -128,6 +129,7 @@ app.use('/api/gamification', gamificationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/vault', vaultRoutes);
 app.use('/api/alerts', alertRoutes); // ✅ ADDED - Price Alerts System
+app.use('/api/patterns', patternRoutes); // ✅ ADDED - AI Pattern Recognition
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
