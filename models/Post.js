@@ -1,7 +1,8 @@
-// server/models/Post.js - Enhanced Social Feed Post Model
+// server/models/Post.js - 🔥 LEGENDARY POST MODEL 🔥
 
 const mongoose = require('mongoose');
 
+// ============ COMMENT SCHEMA ============
 const CommentSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
@@ -11,12 +12,7 @@ const CommentSchema = new mongoose.Schema({
     text: {
         type: String,
         required: true,
-        maxlength: 500
-    },
-    // Reply to another comment
-    replyTo: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Comment'
+        maxlength: 1000
     },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -26,279 +22,614 @@ const CommentSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
+    replyTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Comment'
     },
-    updatedAt: {
+    createdAt: {
         type: Date,
         default: Date.now
     }
 });
 
+// ============ POLL OPTION SCHEMA ============
+const PollOptionSchema = new mongoose.Schema({
+    text: {
+        type: String,
+        required: true,
+        maxlength: 100
+    },
+    votes: {
+        type: Number,
+        default: 0
+    },
+    voters: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }]
+});
+
+// ============ POLL SCHEMA ============
+const PollSchema = new mongoose.Schema({
+    question: {
+        type: String,
+        maxlength: 300
+    },
+    options: [PollOptionSchema],
+    totalVotes: {
+        type: Number,
+        default: 0
+    },
+    voters: [{
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        option: Number,
+        votedAt: { type: Date, default: Date.now }
+    }],
+    endsAt: {
+        type: Date
+    }
+});
+
+// ============ TRADE SCHEMA ============
+const TradeSchema = new mongoose.Schema({
+    symbol: {
+        type: String,
+        required: true,
+        uppercase: true
+    },
+    direction: {
+        type: String,
+        enum: ['LONG', 'SHORT'],
+        default: 'LONG'
+    },
+    entryPrice: {
+        type: Number
+    },
+    exitPrice: {
+        type: Number
+    },
+    quantity: {
+        type: Number
+    },
+    pnl: {
+        type: Number
+    },
+    pnlPercent: {
+        type: Number
+    },
+    duration: {
+        type: String
+    },
+    strategy: {
+        type: String
+    },
+    notes: {
+        type: String
+    }
+});
+
+// ============ PREDICTION SCHEMA ============
+const PredictionSchema = new mongoose.Schema({
+    symbol: {
+        type: String,
+        required: true,
+        uppercase: true
+    },
+    direction: {
+        type: String,
+        enum: ['UP', 'DOWN'],
+        required: true
+    },
+    targetPrice: {
+        type: Number
+    },
+    targetPercent: {
+        type: Number
+    },
+    timeframe: {
+        type: String // e.g., "1d", "1w", "1m"
+    },
+    confidence: {
+        type: Number,
+        min: 0,
+        max: 100
+    },
+    reasoning: {
+        type: String
+    },
+    status: {
+        type: String,
+        enum: ['active', 'correct', 'incorrect', 'expired'],
+        default: 'active'
+    },
+    result: {
+        actualPrice: Number,
+        actualPercent: Number,
+        resolvedAt: Date
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+// ============ REPORT SCHEMA ============
+const ReportSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    reason: {
+        type: String,
+        enum: ['spam', 'harassment', 'misinformation', 'inappropriate', 'other'],
+        default: 'inappropriate'
+    },
+    details: String,
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+// ============ MAIN POST SCHEMA ============
 const PostSchema = new mongoose.Schema({
+    // Author
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
         index: true
     },
-    
+
+    // Post Type
     type: {
         type: String,
-        enum: ['status', 'trade', 'achievement', 'milestone', 'prediction', 'journal'],
-        required: true,
+        enum: ['text', 'trade', 'prediction', 'poll', 'media', 'repost', 'achievement', 'milestone'],
+        default: 'text',
         index: true
     },
-    
-    // Main content
+
+    // Content
     content: {
-        text: {
-            type: String,
-            maxlength: 2000 // Increased for more detailed posts
-        },
-        
-        // Images (using Cloudinary)
-        images: [{
-            url: String,
-            publicId: String,
-            width: Number,
-            height: Number
-        }],
-        
-        // Trade post data
-        trade: {
-            symbol: String,
-            action: {
-                type: String,
-                enum: ['buy', 'sell']
-            },
-            shares: Number,
-            price: Number,
-            profit: Number,
-            profitPercent: Number
-        },
-        
-        // Achievement post data
-        achievement: {
-            title: String,
-            description: String,
-            badge: String,
-            achievementId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Achievement'
-            }
-        },
-        
-        // Milestone post data
-        milestone: {
-            title: String,
-            value: Number,
-            metric: String
-        },
-        
-        // Prediction post data
-        prediction: {
-            predictionId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Prediction'
-            },
-            symbol: String,
-            direction: String,
-            targetPrice: Number
-        }
-    },
-    
-    // Stock/crypto symbols mentioned in post (for filtering/discovery)
-    tags: [{
         type: String,
-        uppercase: true
+        maxlength: 2000
+    },
+
+    // Media
+    images: [{
+        type: String // URLs
     }],
     
-    // @mentions
+    videos: [{
+        url: String,
+        thumbnail: String,
+        duration: Number
+    }],
+
+    // Type-specific data
+    trade: TradeSchema,
+    prediction: PredictionSchema,
+    poll: PollSchema,
+
+    // Repost reference
+    repostOf: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Post'
+    },
+
+    // Extracted metadata
+    hashtags: [{
+        type: String,
+        lowercase: true,
+        index: true
+    }],
+
+    tickers: [{
+        type: String,
+        uppercase: true,
+        index: true
+    }],
+
     mentions: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }],
-    
-    visibility: {
-        type: String,
-        enum: ['public', 'followers', 'private'],
-        default: 'public',
-        index: true
+
+    // Reactions (multiple types)
+    reactions: {
+        like: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        rocket: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        fire: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        diamond: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        bull: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        bear: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        money: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
     },
-    
-    // Engagement
+
+    // Legacy likes (for backwards compatibility)
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }],
-    
-    comments: [CommentSchema],
-    
-    // Denormalized counts for performance
     likesCount: {
         type: Number,
         default: 0,
         index: true
     },
-    
+
+    // Comments
+    comments: [CommentSchema],
     commentsCount: {
-        type: Number,
-        default: 0
-    },
-    
-    // For tracking trending posts
-    engagementScore: {
         type: Number,
         default: 0,
         index: true
     },
-    
+
+    // Shares/Reposts
+    shares: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    sharesCount: {
+        type: Number,
+        default: 0
+    },
+
+    // Bookmarks
+    bookmarkedBy: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+
+    // Views
+    views: {
+        type: Number,
+        default: 0
+    },
+    viewedBy: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+
+    // Visibility
+    visibility: {
+        type: String,
+        enum: ['public', 'followers', 'private', 'hidden'],
+        default: 'public',
+        index: true
+    },
+
+    // Pinned (for profile)
+    isPinned: {
+        type: Boolean,
+        default: false
+    },
+
     // Edit tracking
     edited: {
         type: Boolean,
         default: false
     },
-    
-    editedAt: {
-        type: Date
-    },
-    
+    editedAt: Date,
+    editHistory: [{
+        content: String,
+        editedAt: Date
+    }],
+
     // Soft delete
     deleted: {
         type: Boolean,
-        default: false
+        default: false,
+        index: true
     },
-    
-    deletedAt: {
-        type: Date
+    deletedAt: Date,
+
+    // Reports
+    reports: [ReportSchema],
+
+    // Engagement score (for trending)
+    engagementScore: {
+        type: Number,
+        default: 0,
+        index: true
     }
-    
+
 }, {
-    timestamps: true
+    timestamps: true // Adds createdAt and updatedAt
 });
 
-// Compound indexes for better query performance
+// ============ INDEXES ============
+
+// Compound indexes for efficient queries
 PostSchema.index({ user: 1, createdAt: -1 });
+PostSchema.index({ deleted: 1, visibility: 1, createdAt: -1 });
+PostSchema.index({ hashtags: 1, createdAt: -1 });
+PostSchema.index({ tickers: 1, createdAt: -1 });
 PostSchema.index({ type: 1, createdAt: -1 });
-PostSchema.index({ visibility: 1, createdAt: -1 });
-PostSchema.index({ likesCount: -1, createdAt: -1 }); // Trending
-PostSchema.index({ engagementScore: -1, createdAt: -1 }); // Hot posts
-PostSchema.index({ tags: 1, createdAt: -1 }); // Symbol-based discovery
-PostSchema.index({ deleted: 1, createdAt: -1 }); // Filter deleted
+PostSchema.index({ engagementScore: -1, createdAt: -1 });
 
-// Update counts and engagement score
-PostSchema.pre('save', function(next) {
-    this.likesCount = this.likes.length;
-    this.commentsCount = this.comments.length;
-    
-    // Calculate engagement score (for trending/hot algorithm)
-    // Weighted: likes (1 point), comments (2 points), recent posts get boost
-    const hoursSincePost = (Date.now() - this.createdAt) / (1000 * 60 * 60);
-    const recencyBoost = Math.max(0, 100 - hoursSincePost); // Decays over time
-    
-    this.engagementScore = (this.likesCount * 1) + (this.commentsCount * 2) + recencyBoost;
-    
-    next();
+// Text index for search
+PostSchema.index({ content: 'text' });
+
+// ============ VIRTUAL PROPERTIES ============
+
+// Total reaction count
+PostSchema.virtual('totalReactions').get(function() {
+    if (!this.reactions) return this.likesCount || 0;
+    return Object.values(this.reactions).reduce((sum, arr) => sum + (arr?.length || 0), 0);
 });
 
-// Virtual for checking if post is recent (within 24 hours)
-PostSchema.virtual('isRecent').get(function() {
-    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    return this.createdAt > dayAgo;
+// Poll ended check
+PostSchema.virtual('pollEnded').get(function() {
+    if (!this.poll?.endsAt) return false;
+    return new Date(this.poll.endsAt) < new Date();
 });
 
-// Method to check if user has liked the post
+// Time remaining for poll
+PostSchema.virtual('pollTimeRemaining').get(function() {
+    if (!this.poll?.endsAt) return null;
+    const remaining = new Date(this.poll.endsAt) - new Date();
+    if (remaining <= 0) return 'Ended';
+    
+    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    if (hours >= 24) return `${Math.floor(hours / 24)}d left`;
+    if (hours >= 1) return `${hours}h left`;
+    
+    const minutes = Math.floor(remaining / (1000 * 60));
+    return `${minutes}m left`;
+});
+
+// ============ INSTANCE METHODS ============
+
+// Check if user has liked
 PostSchema.methods.isLikedBy = function(userId) {
-    return this.likes.some(like => like.toString() === userId.toString());
+    if (!userId) return false;
+    return this.likes?.some(id => id.toString() === userId.toString()) || false;
 };
 
-// Method to add a like
-PostSchema.methods.addLike = function(userId) {
-    if (!this.isLikedBy(userId)) {
-        this.likes.push(userId);
+// Check if user has reacted
+PostSchema.methods.getUserReaction = function(userId) {
+    if (!userId || !this.reactions) return null;
+    
+    for (const [type, users] of Object.entries(this.reactions)) {
+        if (users?.some(id => id.toString() === userId.toString())) {
+            return type;
+        }
     }
+    return null;
 };
 
-// Method to remove a like
+// Check if bookmarked by user
+PostSchema.methods.isBookmarkedBy = function(userId) {
+    if (!userId) return false;
+    return this.bookmarkedBy?.some(id => id.toString() === userId.toString()) || false;
+};
+
+// Check if user has voted on poll
+PostSchema.methods.hasVoted = function(userId) {
+    if (!userId || !this.poll?.voters) return false;
+    return this.poll.voters.some(v => v.user?.toString() === userId.toString());
+};
+
+// Get user's poll vote
+PostSchema.methods.getUserVote = function(userId) {
+    if (!userId || !this.poll?.voters) return null;
+    const vote = this.poll.voters.find(v => v.user?.toString() === userId.toString());
+    return vote ? vote.option : null;
+};
+
+// Add like (legacy)
+PostSchema.methods.addLike = function(userId) {
+    if (!this.likes) this.likes = [];
+    if (!this.likes.some(id => id.toString() === userId.toString())) {
+        this.likes.push(userId);
+        this.likesCount = this.likes.length;
+    }
+    return this;
+};
+
+// Remove like (legacy)
 PostSchema.methods.removeLike = function(userId) {
-    this.likes = this.likes.filter(like => like.toString() !== userId.toString());
+    if (this.likes) {
+        this.likes = this.likes.filter(id => id.toString() !== userId.toString());
+        this.likesCount = this.likes.length;
+    }
+    return this;
 };
 
-// Method to add a comment
+// Add comment
 PostSchema.methods.addComment = function(userId, text, replyTo = null) {
+    if (!this.comments) this.comments = [];
+    
     const comment = {
         user: userId,
         text,
         replyTo,
+        likes: [],
+        likesCount: 0,
         createdAt: new Date()
     };
-    this.comments.push(comment);
-    return this.comments[this.comments.length - 1];
-};
-
-// Static method to get feed for user (following)
-PostSchema.statics.getFeedForUser = function(userId, followingIds, limit = 20, skip = 0) {
-    return this.find({
-        $or: [
-            { user: userId }, // Own posts
-            { user: { $in: followingIds }, visibility: { $in: ['public', 'followers'] } } // Following posts
-        ],
-        deleted: false
-    })
-    .populate('user', 'username profile.displayName profile.avatar')
-    .populate('comments.user', 'username profile.displayName profile.avatar')
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .skip(skip);
-};
-
-// Static method to get discover feed (trending/popular)
-PostSchema.statics.getDiscoverFeed = function(limit = 20, skip = 0) {
-    return this.find({
-        visibility: 'public',
-        deleted: false
-    })
-    .populate('user', 'username profile.displayName profile.avatar stats')
-    .populate('comments.user', 'username profile.displayName profile.avatar')
-    .sort({ engagementScore: -1, createdAt: -1 })
-    .limit(limit)
-    .skip(skip);
-};
-
-// Static method to get posts by symbol tag
-PostSchema.statics.getPostsBySymbol = function(symbol, limit = 20, skip = 0) {
-    return this.find({
-        tags: symbol.toUpperCase(),
-        visibility: 'public',
-        deleted: false
-    })
-    .populate('user', 'username profile.displayName profile.avatar')
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .skip(skip);
-};
-
-// Static method to get user's posts
-PostSchema.statics.getUserPosts = function(userId, currentUserId = null, limit = 20, skip = 0) {
-    const isOwnProfile = currentUserId && userId.toString() === currentUserId.toString();
     
+    this.comments.push(comment);
+    this.commentsCount = this.comments.length;
+    
+    return comment;
+};
+
+// Update engagement score
+PostSchema.methods.updateEngagementScore = function() {
+    const likesWeight = 1;
+    const commentsWeight = 3;
+    const sharesWeight = 5;
+    const reactionsWeight = 2;
+    const viewsWeight = 0.1;
+
+    let reactionCount = 0;
+    if (this.reactions) {
+        reactionCount = Object.values(this.reactions)
+            .reduce((sum, arr) => sum + (arr?.length || 0), 0);
+    }
+
+    // Recency bonus (decays over 24 hours)
+    const ageInHours = (Date.now() - new Date(this.createdAt)) / (1000 * 60 * 60);
+    const recencyBonus = Math.max(0, 24 - ageInHours) * 10;
+
+    this.engagementScore = 
+        (this.likesCount || 0) * likesWeight +
+        (this.commentsCount || 0) * commentsWeight +
+        (this.sharesCount || 0) * sharesWeight +
+        reactionCount * reactionsWeight +
+        (this.views || 0) * viewsWeight +
+        recencyBonus;
+
+    return this.engagementScore;
+};
+
+// ============ STATIC METHODS ============
+
+// Get feed for user (personalized)
+PostSchema.statics.getFeedForUser = async function(userId, followingIds, limit = 20, skip = 0) {
+    const userIds = [userId, ...followingIds];
+
+    return this.find({
+        user: { $in: userIds },
+        deleted: { $ne: true },
+        visibility: { $in: ['public', 'followers'] }
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('user', 'username profile gamification')
+    .populate({
+        path: 'repostOf',
+        populate: {
+            path: 'user',
+            select: 'username profile'
+        }
+    })
+    .lean();
+};
+
+// Get discover/trending feed
+PostSchema.statics.getDiscoverFeed = async function(limit = 20, skip = 0) {
+    // Get recent posts with engagement
+    const posts = await this.find({
+        deleted: { $ne: true },
+        visibility: 'public',
+        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
+    })
+    .sort({ engagementScore: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('user', 'username profile gamification')
+    .populate({
+        path: 'repostOf',
+        populate: {
+            path: 'user',
+            select: 'username profile'
+        }
+    })
+    .lean();
+
+    return posts;
+};
+
+// Get posts by symbol/ticker
+PostSchema.statics.getPostsBySymbol = async function(symbol, limit = 20, skip = 0) {
+    return this.find({
+        tickers: symbol.toUpperCase(),
+        deleted: { $ne: true },
+        visibility: 'public'
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('user', 'username profile gamification')
+    .lean();
+};
+
+// Get posts by hashtag
+PostSchema.statics.getPostsByHashtag = async function(hashtag, limit = 20, skip = 0) {
+    return this.find({
+        hashtags: hashtag.toLowerCase().replace('#', ''),
+        deleted: { $ne: true },
+        visibility: 'public'
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('user', 'username profile gamification')
+    .lean();
+};
+
+// Get user's posts
+PostSchema.statics.getUserPosts = async function(userId, currentUserId = null, limit = 20, skip = 0) {
     const query = {
         user: userId,
-        deleted: false
+        deleted: { $ne: true }
     };
-    
-    // If not own profile, only show public and followers posts
-    if (!isOwnProfile) {
-        query.visibility = { $in: ['public', 'followers'] };
+
+    // If not own profile, only show public
+    if (currentUserId !== userId) {
+        query.visibility = 'public';
     }
-    
+
     return this.find(query)
-    .populate('user', 'username profile.displayName profile.avatar')
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .skip(skip);
+        .sort({ isPinned: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('user', 'username profile gamification')
+        .populate({
+            path: 'repostOf',
+            populate: {
+                path: 'user',
+                select: 'username profile'
+            }
+        })
+        .lean();
 };
 
+// Get trending hashtags
+PostSchema.statics.getTrendingHashtags = async function(limit = 10, hours = 24) {
+    const timeThreshold = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    return this.aggregate([
+        {
+            $match: {
+                deleted: { $ne: true },
+                createdAt: { $gte: timeThreshold },
+                hashtags: { $exists: true, $ne: [] }
+            }
+        },
+        { $unwind: '$hashtags' },
+        {
+            $group: {
+                _id: '$hashtags',
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+        {
+            $project: {
+                hashtag: { $concat: ['#', '$_id'] },
+                count: 1
+            }
+        }
+    ]);
+};
+
+// ============ PRE-SAVE HOOKS ============
+
+// Update engagement score before saving
+PostSchema.pre('save', function(next) {
+    if (this.isModified('likes') || this.isModified('comments') || 
+        this.isModified('shares') || this.isModified('reactions')) {
+        this.updateEngagementScore();
+    }
+    next();
+});
+
+// ============ EXPORT ============
 module.exports = mongoose.model('Post', PostSchema);

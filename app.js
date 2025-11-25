@@ -97,6 +97,9 @@ const calculatorRoutes = require('./routes/calculatorRoutes');
 const paperTradingRoutes = require('./routes/paperTradingRoutes');
 const alertRoutes = require('./routes/alertRoutes'); // ✅ ADDED - Price Alerts System
 const patternRoutes = require('./routes/patternRoutes'); // ✅ ADDED - AI Pattern Recognition
+const statsRoutes = require('./routes/statsRoutes'); // ✅ ADDED - Platform Stats for Landing Page
+const onboardingRoutes = require('./routes/onboardingRoutes'); // ✅ ADDED - Onboarding Flow
+
 
 
 // Basic root route for health check
@@ -104,6 +107,7 @@ app.get('/', (req, res) => res.send('API is running...'));
 
 // --- ROUTE MOUNTING ---
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', onboardingRoutes); // ✅ ADDED - Onboarding routes under /api/auth
 app.use('/api/users', userRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/stocks', stockRoutes);
@@ -126,10 +130,13 @@ app.use('/api/chart', chartRoutes);
 app.use('/api/calculators', calculatorRoutes); 
 app.use('/api/paper-trading', paperTradingRoutes);
 app.use('/api/gamification', gamificationRoutes);
+app.use('/api/gamification', onboardingRoutes); // ✅ ADDED - Gamification routes (achievements)
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/vault', vaultRoutes);
 app.use('/api/alerts', alertRoutes); // ✅ ADDED - Price Alerts System
 app.use('/api/patterns', patternRoutes); // ✅ ADDED - AI Pattern Recognition
+app.use('/api/stats', statsRoutes); // ✅ ADDED - Platform Stats
+app.use('/api', statsRoutes); // ✅ ADDED - Handles /api/waitlist
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

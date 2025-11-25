@@ -226,6 +226,42 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
     }
 });
 
+
+// @route   GET /api/social/suggested
+// @desc    Get suggested users to follow
+// @access  Private
+router.get('/suggested', auth, async (req, res) => {
+    try {
+        const { limit = 5 } = req.query;
+        
+        const currentUser = await User.findById(req.user.id).select('social.following');
+        const followingIds = currentUser?.social?.following || [];
+        
+        // Find users the current user doesn't follow
+        const suggestedUsers = await User.find({
+            _id: { $ne: req.user.id, $nin: followingIds },
+            'profile.isPublic': { $ne: false }
+        })
+        .select('username profile social.followersCount')
+        .sort({ 'social.followersCount': -1 })
+        .limit(parseInt(limit));
+
+        const results = suggestedUsers.map(user => ({
+            id: user._id,
+            name: user.profile?.displayName || user.username,
+            avatar: user.profile?.avatar || '',
+            mutuals: 0 // Could calculate mutual followers if needed
+        }));
+
+        res.json(results);
+    } catch (error) {
+        console.error('[Social] Suggested users error:', error);
+        res.status(500).json({ error: 'Failed to fetch suggestions' });
+    }
+});
+
+
+
 // @route   GET /api/social/profile/username/:username
 // @desc    Get user profile by username
 // @access  Public (but respects privacy settings)

@@ -1,4 +1,4 @@
-// server/models/User.js - COMPLETE with Social Features & Gamification
+// server/models/User.js - COMPLETE with Social Features, Gamification & Onboarding
 
 const mongoose = require('mongoose');
 
@@ -17,6 +17,9 @@ const UserSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    name: {
+        type: String
+    },
     // ✅ Existing watchlist field
     watchlist: {
         type: [String],
@@ -31,16 +34,78 @@ const UserSchema = new mongoose.Schema({
         type: Object,
         default: {}
     },
-    // 🆕 SOCIAL PROFILE
+
+    // ============ 🆕 ONBOARDING ============
+    onboardingCompleted: {
+        type: Boolean,
+        default: false
+    },
+    onboardingCompletedAt: {
+        type: Date
+    },
+
+    // ============ 🆕 USER PREFERENCES ============
+    preferences: {
+        // Trading interests selected during onboarding
+        interests: [{
+            type: String // stocks, crypto, options, daytrading, swing, longterm, etc.
+        }],
+        preferredTimeframe: {
+            type: String,
+            enum: ['intraday', 'daily', 'weekly', 'monthly'],
+            default: 'daily'
+        },
+        theme: {
+            type: String,
+            enum: ['dark', 'light', 'auto'],
+            default: 'dark'
+        },
+        notifications: {
+            email: { type: Boolean, default: true },
+            push: { type: Boolean, default: true },
+            priceAlerts: { type: Boolean, default: true },
+            socialActivity: { type: Boolean, default: true },
+            predictions: { type: Boolean, default: true },
+            marketing: { type: Boolean, default: false }
+        }
+    },
+
+    // ============ 🆕 TRADING PROFILE ============
+    bio: {
+        type: String,
+        maxlength: 160
+    },
+    riskTolerance: {
+        type: String,
+        enum: ['conservative', 'moderate', 'aggressive'],
+        default: 'moderate'
+    },
+    tradingExperience: {
+        type: String,
+        enum: ['beginner', 'intermediate', 'advanced', 'expert'],
+        default: 'intermediate'
+    },
+    favoriteSector: {
+        type: String,
+        default: 'technology'
+    },
+
+    // ============ SOCIAL PROFILE ============
     profile: {
         displayName: { type: String, default: function() { return this.username; } },
         bio: { type: String, maxlength: 500, default: '' },
         avatar: { type: String, default: '' },
+        banner: { type: String, default: '' },
+        location: { type: String, maxlength: 100 },
+        website: { type: String, maxlength: 200 },
+        twitter: { type: String, maxlength: 50 },
         isPublic: { type: Boolean, default: true },
         showPortfolio: { type: Boolean, default: true },
+        verified: { type: Boolean, default: false },
         badges: [{ type: String }]
     },
-    // 🆕 GAMIFICATION SYSTEM
+
+    // ============ GAMIFICATION SYSTEM ============
     gamification: {
         xp: { type: Number, default: 0 },
         level: { type: Number, default: 1 },
@@ -59,7 +124,8 @@ const UserSchema = new mongoose.Schema({
         loginStreak: { type: Number, default: 0 },
         lastLogin: { type: Date }
     },
-    // 🆕 SOCIAL CONNECTIONS
+
+    // ============ SOCIAL CONNECTIONS ============
     social: {
         followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
         following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -67,9 +133,12 @@ const UserSchema = new mongoose.Schema({
         followingCount: { type: Number, default: 0 },
         // Copy trading
         copiedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-        copying: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+        copying: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        // Blocked users
+        blocked: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
     },
-    // 🆕 TRADING STATS
+
+    // ============ TRADING STATS ============
     stats: {
         // Portfolio stats
         totalTrades: { type: Number, default: 0 },
@@ -101,7 +170,8 @@ const UserSchema = new mongoose.Schema({
         // Meta
         lastUpdated: { type: Date, default: Date.now }
     },
-    // 🆕 ACHIEVEMENTS (Detailed records)
+
+    // ============ ACHIEVEMENTS (Detailed records) ============
     achievements: [{
         achievementId: { type: String },
         type: { type: String },
@@ -111,13 +181,14 @@ const UserSchema = new mongoose.Schema({
         xpReward: { type: Number, default: 0 },
         earnedAt: { type: Date, default: Date.now }
     }],
+
     date: {
         type: Date,
         default: Date.now
     }
 });
 
-// ============ GAMIFICATION METHODS ============
+// ============ GAMIFICATION CONSTANTS ============
 
 // XP thresholds for each level
 const LEVEL_THRESHOLDS = [
@@ -166,6 +237,26 @@ const LEVEL_TITLES = [
     'Trading Deity',        // 19
     'Market God',           // 20
 ];
+
+// ============ ONBOARDING METHODS ============
+
+// Check if user should see onboarding
+UserSchema.methods.shouldShowOnboarding = function() {
+    return !this.onboardingCompleted;
+};
+
+// Get display name with fallback
+UserSchema.methods.getDisplayName = function() {
+    return this.profile?.displayName || this.name || this.username || 'Trader';
+};
+
+// Get initials for avatar placeholder
+UserSchema.methods.getInitials = function() {
+    const name = this.getDisplayName();
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+};
+
+// ============ GAMIFICATION METHODS ============
 
 // Add XP to user and handle leveling
 UserSchema.methods.addXp = async function(amount, reason = 'activity') {
@@ -219,6 +310,32 @@ UserSchema.methods.addXp = async function(amount, reason = 'activity') {
         newLevel,
         nextLevelXp: this.gamification.nextLevelXp
     };
+};
+
+// Check level up (without saving - for use in other methods)
+UserSchema.methods.checkLevelUp = function() {
+    if (!this.gamification) return { leveledUp: false };
+
+    const currentXp = this.gamification.totalXpEarned || 0;
+    let newLevel = 1;
+
+    for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+        if (currentXp >= LEVEL_THRESHOLDS[i]) {
+            newLevel = i + 1;
+            break;
+        }
+    }
+
+    const oldLevel = this.gamification.level || 1;
+    
+    if (newLevel > oldLevel) {
+        this.gamification.level = newLevel;
+        this.gamification.title = LEVEL_TITLES[newLevel - 1] || 'Market God';
+        this.gamification.nextLevelXp = LEVEL_THRESHOLDS[newLevel] || 999999;
+        return { leveledUp: true, oldLevel, newLevel, title: this.gamification.title };
+    }
+
+    return { leveledUp: false };
 };
 
 // Award achievement to user
@@ -503,6 +620,10 @@ UserSchema.index({ 'stats.totalTrades': -1 });
 UserSchema.index({ 'gamification.xp': -1 });
 UserSchema.index({ 'gamification.level': -1 });
 UserSchema.index({ 'stats.lastTradeDate': -1 });
+
+// Index for onboarding queries
+UserSchema.index({ onboardingCompleted: 1 });
+UserSchema.index({ 'preferences.interests': 1 });
 
 // Index for user search
 UserSchema.index({ username: 'text', 'profile.displayName': 'text' });

@@ -1,98 +1,108 @@
-// server/models/Notification.js - UNIFIED MODEL (Trading + Social)
+// server/models/Notification.js - Notification Model
 
 const mongoose = require('mongoose');
 
-const notificationSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
-  },
-  
-  // Notification category
-  category: {
-    type: String,
-    enum: ['alert', 'social', 'system'],
-    required: true,
-    default: 'alert'
-  },
-  
-  // Notification type
-  type: {
-    type: String,
-    enum: [
-      // Trading alerts
-      'price_alert',
-      'prediction_expiry',
-      'portfolio_milestone',
-      'price_change',
-      
-      // Social notifications
-      'new_follower',
-      'new_comment',
-      'new_like',
-      'post_mention',
-      'comment_reply',
-      
-      // System notifications
-      'achievement_unlocked',
-      'level_up',
-      'daily_bonus'
-    ],
-    required: true
-  },
-  
-  title: {
-    type: String,
-    required: true
-  },
-  
-  message: {
-    type: String,
-    required: true
-  },
-  
-  // Related entity (post, comment, user, alert, etc.)
-  relatedId: {
-    type: mongoose.Schema.Types.ObjectId,
-    refPath: 'relatedType'
-  },
-  
-  relatedType: {
-    type: String,
-    enum: ['Post', 'Comment', 'User', 'Alert', 'Prediction', 'Achievement']
-  },
-  
-  // Actor (who triggered this notification)
-  actorId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  
-  read: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-  
-  // Additional data
-  metadata: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  }
+const NotificationSchema = new mongoose.Schema({
+    // Target user
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true
+    },
+
+    // Notification type
+    type: {
+        type: String,
+        enum: [
+            'follow',           // New follower
+            'like',             // Like/reaction on post
+            'comment',          // Comment on post
+            'reply',            // Reply to comment
+            'mention',          // Mentioned in post
+            'share',            // Post shared/reposted
+            'prediction_result', // Prediction outcome
+            'price_alert',      // Price alert triggered
+            'achievement',      // Achievement unlocked
+            'level_up',         // Level up
+            'portfolio_milestone', // Portfolio milestone
+            'leaderboard',      // Leaderboard rank change
+            'trade_copy',       // Someone copied your trade
+            'login_streak',     // Login streak bonus
+            'system',           // System notification
+            'admin'             // Admin message
+        ],
+        required: true,
+        index: true
+    },
+
+    // Display info
+    title: {
+        type: String,
+        required: true,
+        maxlength: 200
+    },
+
+    message: {
+        type: String,
+        required: true,
+        maxlength: 500
+    },
+
+    icon: {
+        type: String,
+        default: 'bell'
+    },
+
+    // Link to navigate on click
+    link: {
+        type: String
+    },
+
+    // Additional data
+    data: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+    },
+
+    // Read status
+    read: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
+
+    // When it was read
+    readAt: {
+        type: Date
+    }
+
 }, {
-  timestamps: true
+    timestamps: true
 });
 
-// Index for efficient queries
-notificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
-notificationSchema.index({ userId: 1, category: 1, read: 1 });
+// ============ INDEXES ============
+NotificationSchema.index({ user: 1, read: 1, createdAt: -1 });
+NotificationSchema.index({ user: 1, type: 1, createdAt: -1 });
+NotificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }); // Auto-delete after 30 days
 
-// Auto-delete read notifications after 30 days
-notificationSchema.index({ createdAt: 1 }, { 
-  expireAfterSeconds: 30 * 24 * 60 * 60,
-  partialFilterExpression: { read: true }
-});
+// ============ METHODS ============
+NotificationSchema.methods.markAsRead = async function() {
+    this.read = true;
+    this.readAt = new Date();
+    return this.save();
+};
 
-module.exports = mongoose.model('Notification', notificationSchema);
+// ============ STATICS ============
+NotificationSchema.statics.getUnreadCount = async function(userId) {
+    return this.countDocuments({ user: userId, read: false });
+};
+
+NotificationSchema.statics.markAllRead = async function(userId) {
+    return this.updateMany(
+        { user: userId, read: false },
+        { read: true, readAt: new Date() }
+    );
+};
+
+module.exports = mongoose.model('Notification', NotificationSchema);

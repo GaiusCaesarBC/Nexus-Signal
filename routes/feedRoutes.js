@@ -1,4 +1,4 @@
-// server/routes/feedRoutes.js - Social Feed Routes with Notifications
+// server/routes/feedRoutes.js - 🔥 LEGENDARY SOCIAL FEED ROUTES 🔥
 
 const express = require('express');
 const router = express.Router();
@@ -9,51 +9,70 @@ const NotificationService = require('../services/notificationService');
 const multer = require('multer');
 const { cloudinary } = require('../config/cloudinaryConfig');
 
-// Multer setup for image uploads
+// ============ MULTER SETUP ============
 const storage = multer.memoryStorage();
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
     fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+        if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true);
         } else {
-            cb(new Error('Only images are allowed'));
+            cb(new Error('Only images and videos are allowed'));
         }
     }
 });
 
-// Helper: Extract mentions from text
+// ============ REACTION TYPES ============
+const REACTION_TYPES = ['like', 'rocket', 'fire', 'diamond', 'bull', 'bear', 'money'];
+
+// ============ HELPER FUNCTIONS ============
+
+// Extract @mentions from text
 function extractMentions(text) {
+    if (!text) return [];
     const mentionRegex = /@(\w+)/g;
     const mentions = [];
     let match;
     while ((match = mentionRegex.exec(text)) !== null) {
-        mentions.push(match[1]);
+        mentions.push(match[1].toLowerCase());
     }
-    return mentions;
+    return [...new Set(mentions)]; // Remove duplicates
 }
 
-// Helper: Extract stock/crypto tags
-function extractTags(text) {
-    const tagRegex = /\$([A-Z]{1,5})\b/g;
-    const tags = [];
+// Extract #hashtags from text
+function extractHashtags(text) {
+    if (!text) return [];
+    const hashtagRegex = /#(\w+)/g;
+    const hashtags = [];
     let match;
-    while ((match = tagRegex.exec(text)) !== null) {
-        tags.push(match[1]);
+    while ((match = hashtagRegex.exec(text)) !== null) {
+        hashtags.push(match[1].toLowerCase());
     }
-    return tags;
+    return [...new Set(hashtags)];
 }
 
-// Helper: Upload image to Cloudinary
-async function uploadImageToCloudinary(buffer) {
+// Extract $TICKER symbols from text
+function extractTickers(text) {
+    if (!text) return [];
+    const tickerRegex = /\$([A-Z]{1,5})\b/g;
+    const tickers = [];
+    let match;
+    while ((match = tickerRegex.exec(text)) !== null) {
+        tickers.push(match[1].toUpperCase());
+    }
+    return [...new Set(tickers)];
+}
+
+// Upload image to Cloudinary
+async function uploadToCloudinary(buffer, folder = 'nexus-signal/posts') {
     return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
             {
-                folder: 'nexus-signal/posts',
+                folder,
                 transformation: [
                     { width: 1200, height: 1200, crop: 'limit' },
-                    { quality: 'auto' }
+                    { quality: 'auto:good' }
                 ]
             },
             (error, result) => {
@@ -65,163 +84,477 @@ async function uploadImageToCloudinary(buffer) {
     });
 }
 
+// Calculate engagement score for trending
+function calculateEngagementScore(post) {
+    const likesWeight = 1;
+    const commentsWeight = 3;
+    const sharesWeight = 5;
+    const reactionsWeight = 2;
+    const recencyBonus = Math.max(0, 24 - ((Date.now() - new Date(post.createdAt)) / (1000 * 60 * 60))) * 10;
+    
+    const reactionCount = post.reactions ? 
+        Object.values(post.reactions).reduce((sum, arr) => sum + (arr?.length || 0), 0) : 0;
+
+    return (
+        (post.likesCount || 0) * likesWeight +
+        (post.commentsCount || 0) * commentsWeight +
+        (post.sharesCount || 0) * sharesWeight +
+        reactionCount * reactionsWeight +
+        recencyBonus
+    );
+}
+
+// Format post for response
+function formatPostResponse(post, currentUserId = null) {
+    const postObj = post.toObject ? post.toObject() : post;
+    
+    // Add user reaction info
+    if (currentUserId && postObj.reactions) {
+        for (const [type, users] of Object.entries(postObj.reactions)) {
+            if (users?.some(u => u.toString() === currentUserId.toString())) {
+                postObj.userReaction = type;
+                break;
+            }
+        }
+    }
+
+    // Check if bookmarked
+    if (currentUserId && postObj.bookmarkedBy) {
+        postObj.isBookmarked = postObj.bookmarkedBy.some(
+            u => u.toString() === currentUserId.toString()
+        );
+    }
+
+    // Check if liked (legacy support)
+    if (currentUserId && postObj.likes) {
+        postObj.isLiked = postObj.likes.some(
+            u => u.toString() === currentUserId.toString()
+        );
+    }
+
+    // Format author
+    if (postObj.user) {
+        postObj.author = {
+            _id: postObj.user._id,
+            username: postObj.user.username,
+            displayName: postObj.user.profile?.displayName || postObj.user.username,
+            avatar: postObj.user.profile?.avatar || '',
+            level: postObj.user.gamification?.level || 1,
+            verified: postObj.user.profile?.verified || false,
+            badges: postObj.user.profile?.badges || []
+        };
+    }
+
+    return postObj;
+}
+
 // ============ CREATE POST ============
 // @route   POST /api/feed
-// @desc    Create a new post
+// @desc    Create a new post (text, trade, prediction, poll, media)
 // @access  Private
 router.post('/', auth, upload.array('images', 4), async (req, res) => {
     try {
-        const { type, text, trade, achievement, milestone, prediction, visibility } = req.body;
+        let { 
+            type = 'text', 
+            content, 
+            text,  // Alternative to content
+            trade, 
+            prediction, 
+            poll, 
+            visibility = 'public',
+            repostOf
+        } = req.body;
 
-        if (!type) {
-            return res.status(400).json({ error: 'Post type is required' });
+        // Support both 'content' and 'text' fields
+        const postText = content || text || '';
+
+        // Parse JSON fields if strings
+        if (typeof trade === 'string') trade = JSON.parse(trade);
+        if (typeof prediction === 'string') prediction = JSON.parse(prediction);
+        if (typeof poll === 'string') poll = JSON.parse(poll);
+
+        // Validate based on type
+        if (type === 'text' && !postText.trim() && (!req.files || req.files.length === 0)) {
+            return res.status(400).json({ error: 'Post content is required' });
         }
 
-        // Parse JSON fields if they're strings
-        const tradeData = typeof trade === 'string' ? JSON.parse(trade) : trade;
-        const achievementData = typeof achievement === 'string' ? JSON.parse(achievement) : achievement;
-        const milestoneData = typeof milestone === 'string' ? JSON.parse(milestone) : milestone;
-        const predictionData = typeof prediction === 'string' ? JSON.parse(prediction) : prediction;
+        if (type === 'poll' && (!poll?.options || poll.options.filter(o => o.trim()).length < 2)) {
+            return res.status(400).json({ error: 'Poll requires at least 2 options' });
+        }
 
-        // Extract mentions and tags
-        const mentionUsernames = text ? extractMentions(text) : [];
-        const tags = text ? extractTags(text) : [];
+        // Extract mentions, hashtags, tickers
+        const mentionUsernames = extractMentions(postText);
+        const hashtags = extractHashtags(postText);
+        const tickers = extractTickers(postText);
 
         // Find mentioned users
-        let mentions = [];
+        let mentionedUserIds = [];
         if (mentionUsernames.length > 0) {
             const mentionedUsers = await User.find({
                 username: { $in: mentionUsernames }
             }).select('_id');
-            mentions = mentionedUsers.map(u => u._id);
+            mentionedUserIds = mentionedUsers.map(u => u._id);
         }
 
-        // Upload images if provided
+        // Upload images
         let images = [];
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 try {
-                    const result = await uploadImageToCloudinary(file.buffer);
-                    images.push({
-                        url: result.secure_url,
-                        publicId: result.public_id,
-                        width: result.width,
-                        height: result.height
-                    });
+                    const result = await uploadToCloudinary(file.buffer);
+                    images.push(result.secure_url);
                 } catch (error) {
                     console.error('[Feed] Image upload error:', error);
                 }
             }
         }
 
-        // Create post
-        const post = await Post.create({
+        // Build post object
+        const postData = {
             user: req.user.id,
             type,
-            content: {
-                text,
-                images,
-                trade: tradeData,
-                achievement: achievementData,
-                milestone: milestoneData,
-                prediction: predictionData
-            },
-            tags,
-            mentions,
-            visibility: visibility || 'public'
-        });
+            content: postText,
+            images,
+            hashtags,
+            tickers,
+            mentions: mentionedUserIds,
+            visibility,
+            reactions: {
+                like: [],
+                rocket: [],
+                fire: [],
+                diamond: [],
+                bull: [],
+                bear: [],
+                money: []
+            }
+        };
+
+        // Add type-specific data
+        if (type === 'trade' && trade) {
+            // Calculate P&L if not provided
+            if (trade.entryPrice && trade.exitPrice && trade.quantity) {
+                const entry = parseFloat(trade.entryPrice);
+                const exit = parseFloat(trade.exitPrice);
+                const qty = parseFloat(trade.quantity);
+                const direction = trade.direction === 'SHORT' ? -1 : 1;
+                
+                trade.pnl = ((exit - entry) * qty * direction).toFixed(2);
+                trade.pnlPercent = (((exit - entry) / entry) * 100 * direction).toFixed(2);
+            }
+            postData.trade = trade;
+        }
+
+        if (type === 'prediction' && prediction) {
+            postData.prediction = {
+                ...prediction,
+                createdAt: new Date(),
+                status: 'active'
+            };
+        }
+
+        if (type === 'poll' && poll) {
+            postData.poll = {
+                question: poll.question || postText,
+                options: poll.options.filter(o => o.trim()).map(text => ({
+                    text,
+                    votes: 0,
+                    voters: []
+                })),
+                totalVotes: 0,
+                endsAt: new Date(Date.now() + (poll.duration || 24) * 60 * 60 * 1000), // Default 24h
+                voters: []
+            };
+        }
+
+        // Handle repost
+        if (repostOf) {
+            postData.repostOf = repostOf;
+            postData.type = 'repost';
+            
+            // Increment original post's share count
+            await Post.findByIdAndUpdate(repostOf, { $inc: { sharesCount: 1 } });
+        }
+
+        // Create post
+        const post = await Post.create(postData);
 
         // Populate user data
-        await post.populate('user', 'username profile.displayName profile.avatar');
+        await post.populate('user', 'username profile gamification');
 
         // 🔔 Send mention notifications
-        for (const mentionedUserId of mentions) {
-            await NotificationService.createMentionNotification(
-                mentionedUserId,
-                { _id: req.user.id, name: req.user.name || req.user.username },
-                post._id,
-                text
-            );
+        for (const mentionedUserId of mentionedUserIds) {
+            if (mentionedUserId.toString() !== req.user.id) {
+                try {
+                    await NotificationService.createMentionNotification(
+                        mentionedUserId,
+                        { _id: req.user.id },
+                        post._id,
+                        postText.substring(0, 100)
+                    );
+                } catch (e) {
+                    console.error('[Feed] Mention notification error:', e);
+                }
+            }
         }
+
+        // Update hashtag trending counts (fire and forget)
+        updateHashtagTrending(hashtags).catch(console.error);
 
         console.log(`[Feed] Created ${type} post by user ${req.user.id}`);
 
         res.status(201).json({
             success: true,
-            post
+            post: formatPostResponse(post, req.user.id)
         });
 
     } catch (error) {
         console.error('[Feed] Create post error:', error);
-        res.status(500).json({
-            error: 'Failed to create post',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to create post', message: error.message });
     }
 });
 
-// ============ GET FEED ============
+// ============ GET PERSONALIZED FEED ============
 // @route   GET /api/feed
-// @desc    Get personalized feed (following)
+// @desc    Get personalized feed (following + own posts)
 // @access  Private
 router.get('/', auth, async (req, res) => {
     try {
         const { limit = 20, skip = 0 } = req.query;
 
-        const user = await User.findById(req.user.id);
-        const followingIds = user.social?.following || [];
+        const user = await User.findById(req.user.id).select('social.following');
+        const followingIds = user?.social?.following || [];
 
-        const posts = await Post.getFeedForUser(
-            req.user.id,
-            followingIds,
-            parseInt(limit),
-            parseInt(skip)
-        );
+        // Include own posts and following
+        const userIds = [req.user.id, ...followingIds];
+
+        const posts = await Post.find({
+            user: { $in: userIds },
+            deleted: { $ne: true },
+            visibility: { $in: ['public', 'followers'] }
+        })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip))
+        .limit(parseInt(limit))
+        .populate('user', 'username profile gamification')
+        .populate('repostOf')
+        .lean();
+
+        const formattedPosts = posts.map(p => formatPostResponse(p, req.user.id));
 
         res.json({
             success: true,
             count: posts.length,
-            posts
+            posts: formattedPosts
         });
 
     } catch (error) {
         console.error('[Feed] Get feed error:', error);
-        res.status(500).json({
-            error: 'Failed to fetch feed',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to fetch feed' });
     }
 });
 
-// ============ GET DISCOVER FEED ============
+// ============ GET DISCOVER/TRENDING FEED ============
 // @route   GET /api/feed/discover
-// @desc    Get discover feed (trending/popular posts)
+// @desc    Get trending/discover feed (algorithm-based)
 // @access  Public
 router.get('/discover', async (req, res) => {
     try {
-        const { limit = 20, skip = 0 } = req.query;
+        const { limit = 20, skip = 0, timeframe = '24h' } = req.query;
+        const currentUserId = req.user?.id || null;
 
-        const posts = await Post.getDiscoverFeed(
-            parseInt(limit),
-            parseInt(skip)
-        );
+        // Calculate time threshold
+        let timeThreshold;
+        switch (timeframe) {
+            case '1h': timeThreshold = new Date(Date.now() - 60 * 60 * 1000); break;
+            case '6h': timeThreshold = new Date(Date.now() - 6 * 60 * 60 * 1000); break;
+            case '24h': timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000); break;
+            case '7d': timeThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); break;
+            default: timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        }
+
+        // Get posts with engagement
+        const posts = await Post.find({
+            deleted: { $ne: true },
+            visibility: 'public',
+            createdAt: { $gte: timeThreshold }
+        })
+        .populate('user', 'username profile gamification')
+        .populate('repostOf')
+        .lean();
+
+        // Calculate engagement scores and sort
+        const scoredPosts = posts.map(post => ({
+            ...post,
+            engagementScore: calculateEngagementScore(post)
+        }));
+
+        scoredPosts.sort((a, b) => b.engagementScore - a.engagementScore);
+
+        // Paginate
+        const paginatedPosts = scoredPosts.slice(parseInt(skip), parseInt(skip) + parseInt(limit));
+        const formattedPosts = paginatedPosts.map(p => formatPostResponse(p, currentUserId));
 
         res.json({
             success: true,
-            count: posts.length,
-            posts
+            count: formattedPosts.length,
+            posts: formattedPosts
         });
 
     } catch (error) {
         console.error('[Feed] Get discover feed error:', error);
-        res.status(500).json({
-            error: 'Failed to fetch discover feed',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to fetch discover feed' });
     }
 });
 
-// ============ GET POSTS BY SYMBOL ============
+// ============ GET TRENDING HASHTAGS ============
+// @route   GET /api/feed/trending/hashtags
+// @desc    Get trending hashtags
+// @access  Public
+router.get('/trending/hashtags', async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+
+        // Aggregate hashtags from recent posts
+        const timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const trending = await Post.aggregate([
+            {
+                $match: {
+                    deleted: { $ne: true },
+                    createdAt: { $gte: timeThreshold },
+                    hashtags: { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$hashtags' },
+            {
+                $group: {
+                    _id: '$hashtags',
+                    count: { $sum: 1 },
+                    engagement: {
+                        $sum: {
+                            $add: ['$likesCount', { $multiply: ['$commentsCount', 2] }, { $multiply: ['$sharesCount', 3] }]
+                        }
+                    }
+                }
+            },
+            { $sort: { count: -1, engagement: -1 } },
+            { $limit: parseInt(limit) },
+            {
+                $project: {
+                    tag: { $concat: ['#', '$_id'] },
+                    count: 1,
+                    engagement: 1
+                }
+            }
+        ]);
+
+        res.json({
+            success: true,
+            hashtags: trending
+        });
+
+    } catch (error) {
+        console.error('[Feed] Get trending hashtags error:', error);
+        res.status(500).json({ error: 'Failed to fetch trending hashtags' });
+    }
+});
+
+// ============ GET TRENDING TICKERS ============
+// @route   GET /api/feed/trending/tickers
+// @desc    Get trending stock/crypto tickers
+// @access  Public
+router.get('/trending/tickers', async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+
+        const timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const trending = await Post.aggregate([
+            {
+                $match: {
+                    deleted: { $ne: true },
+                    createdAt: { $gte: timeThreshold },
+                    tickers: { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$tickers' },
+            {
+                $group: {
+                    _id: '$tickers',
+                    count: { $sum: 1 },
+                    sentiment: {
+                        $avg: {
+                            $cond: [
+                                { $in: ['bull', { $ifNull: ['$reactions.bull', []] }] },
+                                1,
+                                { $cond: [{ $in: ['bear', { $ifNull: ['$reactions.bear', []] }] }, -1, 0] }
+                            ]
+                        }
+                    }
+                }
+            },
+            { $sort: { count: -1 } },
+            { $limit: parseInt(limit) },
+            {
+                $project: {
+                    symbol: { $concat: ['$', '$_id'] },
+                    count: 1,
+                    sentiment: { $round: ['$sentiment', 2] }
+                }
+            }
+        ]);
+
+        res.json({
+            success: true,
+            tickers: trending
+        });
+
+    } catch (error) {
+        console.error('[Feed] Get trending tickers error:', error);
+        res.status(500).json({ error: 'Failed to fetch trending tickers' });
+    }
+});
+
+// ============ GET POSTS BY HASHTAG ============
+// @route   GET /api/feed/hashtag/:tag
+// @desc    Get posts with a specific hashtag
+// @access  Public
+router.get('/hashtag/:tag', async (req, res) => {
+    try {
+        const { tag } = req.params;
+        const { limit = 20, skip = 0 } = req.query;
+        const currentUserId = req.user?.id || null;
+
+        const cleanTag = tag.replace('#', '').toLowerCase();
+
+        const posts = await Post.find({
+            hashtags: cleanTag,
+            deleted: { $ne: true },
+            visibility: 'public'
+        })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip))
+        .limit(parseInt(limit))
+        .populate('user', 'username profile gamification')
+        .lean();
+
+        const formattedPosts = posts.map(p => formatPostResponse(p, currentUserId));
+
+        res.json({
+            success: true,
+            hashtag: `#${cleanTag}`,
+            count: posts.length,
+            posts: formattedPosts
+        });
+
+    } catch (error) {
+        console.error('[Feed] Get hashtag posts error:', error);
+        res.status(500).json({ error: 'Failed to fetch posts' });
+    }
+});
+
+// ============ GET POSTS BY TICKER ============
 // @route   GET /api/feed/symbol/:symbol
 // @desc    Get posts mentioning a stock/crypto symbol
 // @access  Public
@@ -229,59 +562,113 @@ router.get('/symbol/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
         const { limit = 20, skip = 0 } = req.query;
+        const currentUserId = req.user?.id || null;
 
-        const posts = await Post.getPostsBySymbol(
-            symbol,
-            parseInt(limit),
-            parseInt(skip)
-        );
+        const cleanSymbol = symbol.replace('$', '').toUpperCase();
+
+        const posts = await Post.find({
+            tickers: cleanSymbol,
+            deleted: { $ne: true },
+            visibility: 'public'
+        })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip))
+        .limit(parseInt(limit))
+        .populate('user', 'username profile gamification')
+        .lean();
+
+        const formattedPosts = posts.map(p => formatPostResponse(p, currentUserId));
 
         res.json({
             success: true,
+            symbol: `$${cleanSymbol}`,
             count: posts.length,
-            symbol: symbol.toUpperCase(),
-            posts
+            posts: formattedPosts
         });
 
     } catch (error) {
-        console.error('[Feed] Get posts by symbol error:', error);
-        res.status(500).json({
-            error: 'Failed to fetch posts',
-            message: error.message
-        });
+        console.error('[Feed] Get symbol posts error:', error);
+        res.status(500).json({ error: 'Failed to fetch posts' });
     }
 });
 
-// ============ GET USER POSTS ============
+// ============ GET USER'S POSTS ============
 // @route   GET /api/feed/user/:userId
 // @desc    Get posts by a specific user
 // @access  Public
 router.get('/user/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { limit = 20, skip = 0 } = req.query;
-        
+        const { limit = 20, skip = 0, type } = req.query;
         const currentUserId = req.user?.id || null;
 
-        const posts = await Post.getUserPosts(
-            userId,
-            currentUserId,
-            parseInt(limit),
-            parseInt(skip)
-        );
+        const query = {
+            user: userId,
+            deleted: { $ne: true }
+        };
+
+        // Filter by type if specified
+        if (type) {
+            query.type = type;
+        }
+
+        // Check visibility
+        const isOwnProfile = currentUserId === userId;
+        if (!isOwnProfile) {
+            query.visibility = 'public';
+        }
+
+        const posts = await Post.find(query)
+            .sort({ createdAt: -1 })
+            .skip(parseInt(skip))
+            .limit(parseInt(limit))
+            .populate('user', 'username profile gamification')
+            .populate('repostOf')
+            .lean();
+
+        const formattedPosts = posts.map(p => formatPostResponse(p, currentUserId));
 
         res.json({
             success: true,
             count: posts.length,
-            posts
+            posts: formattedPosts
         });
 
     } catch (error) {
         console.error('[Feed] Get user posts error:', error);
-        res.status(500).json({
-            error: 'Failed to fetch user posts',
-            message: error.message
+        res.status(500).json({ error: 'Failed to fetch user posts' });
+    }
+});
+
+// ============ GET BOOKMARKED POSTS ============
+// @route   GET /api/feed/bookmarks
+// @desc    Get user's bookmarked posts
+// @access  Private
+router.get('/bookmarks', auth, async (req, res) => {
+    try {
+        const { limit = 20, skip = 0 } = req.query;
+
+        const posts = await Post.find({
+            bookmarkedBy: req.user.id,
+            deleted: { $ne: true }
+        })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip))
+        .limit(parseInt(limit))
+        .populate('user', 'username profile gamification')
+        .lean();
+
+        const formattedPosts = posts.map(p => formatPostResponse(p, req.user.id));
+
+        res.json({
+            success: true,
+            count: posts.length,
+            posts: formattedPosts
         });
+
+    } catch (error) {
+        console.error('[Feed] Get bookmarks error:', error);
+        res.status(500).json({ error: 'Failed to fetch bookmarks' });
     }
 });
 
@@ -291,13 +678,17 @@ router.get('/user/:userId', async (req, res) => {
 // @access  Public
 router.get('/:postId', async (req, res) => {
     try {
+        const currentUserId = req.user?.id || null;
+
         const post = await Post.findOne({
             _id: req.params.postId,
-            deleted: false
+            deleted: { $ne: true }
         })
-        .populate('user', 'username profile.displayName profile.avatar')
+        .populate('user', 'username profile gamification')
         .populate('comments.user', 'username profile.displayName profile.avatar')
-        .populate('mentions', 'username profile.displayName');
+        .populate('mentions', 'username profile.displayName')
+        .populate('repostOf')
+        .lean();
 
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
@@ -305,15 +696,12 @@ router.get('/:postId', async (req, res) => {
 
         res.json({
             success: true,
-            post
+            post: formatPostResponse(post, currentUserId)
         });
 
     } catch (error) {
         console.error('[Feed] Get post error:', error);
-        res.status(500).json({
-            error: 'Failed to fetch post',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to fetch post' });
     }
 });
 
@@ -326,18 +714,19 @@ router.put('/:postId', auth, async (req, res) => {
         const post = await Post.findOne({
             _id: req.params.postId,
             user: req.user.id,
-            deleted: false
+            deleted: { $ne: true }
         });
 
         if (!post) {
             return res.status(404).json({ error: 'Post not found or unauthorized' });
         }
 
-        const { text, visibility } = req.body;
+        const { content, visibility } = req.body;
 
-        if (text !== undefined) {
-            post.content.text = text;
-            post.tags = extractTags(text);
+        if (content !== undefined) {
+            post.content = content;
+            post.hashtags = extractHashtags(content);
+            post.tickers = extractTickers(content);
             post.edited = true;
             post.editedAt = new Date();
         }
@@ -347,18 +736,16 @@ router.put('/:postId', auth, async (req, res) => {
         }
 
         await post.save();
+        await post.populate('user', 'username profile gamification');
 
         res.json({
             success: true,
-            post
+            post: formatPostResponse(post, req.user.id)
         });
 
     } catch (error) {
         console.error('[Feed] Update post error:', error);
-        res.status(500).json({
-            error: 'Failed to update post',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to update post' });
     }
 });
 
@@ -383,21 +770,113 @@ router.delete('/:postId', auth, async (req, res) => {
 
         console.log(`[Feed] Deleted post ${post._id}`);
 
-        res.json({
-            success: true,
-            message: 'Post deleted'
-        });
+        res.json({ success: true, message: 'Post deleted' });
 
     } catch (error) {
         console.error('[Feed] Delete post error:', error);
-        res.status(500).json({
-            error: 'Failed to delete post',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to delete post' });
     }
 });
 
-// ============ LIKE POST ============
+// ============ REACT TO POST ============
+// @route   POST /api/feed/:postId/react
+// @desc    Add a reaction to a post (rocket, fire, diamond, bull, bear, money)
+// @access  Private
+router.post('/:postId/react', auth, async (req, res) => {
+    try {
+        const { type } = req.body;
+
+        if (!REACTION_TYPES.includes(type)) {
+            return res.status(400).json({ error: 'Invalid reaction type' });
+        }
+
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        // Initialize reactions if not exists
+        if (!post.reactions) {
+            post.reactions = {};
+            REACTION_TYPES.forEach(t => post.reactions[t] = []);
+        }
+
+        // Remove user from all reaction arrays first
+        let previousReaction = null;
+        REACTION_TYPES.forEach(t => {
+            if (!post.reactions[t]) post.reactions[t] = [];
+            const index = post.reactions[t].findIndex(u => u.toString() === req.user.id);
+            if (index > -1) {
+                previousReaction = t;
+                post.reactions[t].splice(index, 1);
+            }
+        });
+
+        // Add new reaction (if different from previous, or if removing same reaction)
+        let userReaction = null;
+        if (previousReaction !== type) {
+            post.reactions[type].push(req.user.id);
+            userReaction = type;
+
+            // Update likes count for compatibility
+            if (type === 'like') {
+                if (!post.likes) post.likes = [];
+                if (!post.likes.includes(req.user.id)) {
+                    post.likes.push(req.user.id);
+                    post.likesCount = post.likes.length;
+                }
+            }
+        } else {
+            // Removing reaction - also remove from likes if applicable
+            if (type === 'like' && post.likes) {
+                post.likes = post.likes.filter(u => u.toString() !== req.user.id);
+                post.likesCount = post.likes.length;
+            }
+        }
+
+        await post.save();
+
+        // 🔔 Send notification for new reaction (not removal, not own post)
+        if (userReaction && post.user.toString() !== req.user.id) {
+            try {
+                const currentUser = await User.findById(req.user.id).select('username profile.displayName');
+                await NotificationService.createLikeNotification(
+                    post.user,
+                    currentUser,
+                    post._id,
+                    type
+                );
+            } catch (e) {
+                console.error('[Feed] Reaction notification error:', e);
+            }
+        }
+
+        // Count total reactions
+        const reactionCounts = {};
+        let totalReactions = 0;
+        REACTION_TYPES.forEach(t => {
+            reactionCounts[t] = post.reactions[t]?.length || 0;
+            totalReactions += reactionCounts[t];
+        });
+
+        res.json({
+            success: true,
+            userReaction,
+            reactions: reactionCounts,
+            totalReactions
+        });
+
+    } catch (error) {
+        console.error('[Feed] React error:', error);
+        res.status(500).json({ error: 'Failed to add reaction' });
+    }
+});
+
+// ============ LIKE POST (Legacy Support) ============
 // @route   POST /api/feed/:postId/like
 // @desc    Like a post
 // @access  Private
@@ -405,44 +884,43 @@ router.post('/:postId/like', auth, async (req, res) => {
     try {
         const post = await Post.findOne({
             _id: req.params.postId,
-            deleted: false
+            deleted: { $ne: true }
         });
 
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
 
+        if (!post.likes) post.likes = [];
+
         // Check if already liked
-        if (post.isLikedBy(req.user.id)) {
-            return res.status(400).json({ error: 'Already liked this post' });
+        if (post.likes.some(u => u.toString() === req.user.id)) {
+            return res.status(400).json({ error: 'Already liked' });
         }
 
-        post.addLike(req.user.id);
+        post.likes.push(req.user.id);
+        post.likesCount = post.likes.length;
+
+        // Also add to reactions.like
+        if (!post.reactions) post.reactions = { like: [] };
+        if (!post.reactions.like) post.reactions.like = [];
+        post.reactions.like.push(req.user.id);
+
         await post.save();
 
-        // 🔔 Send like notification (if not own post)
+        // 🔔 Notification
         if (post.user.toString() !== req.user.id) {
-            const currentUser = await User.findById(req.user.id).select('name username');
-            await NotificationService.createLikeNotification(
-                post.user,
-                currentUser,
-                post._id
-            );
+            try {
+                const currentUser = await User.findById(req.user.id).select('username profile.displayName');
+                await NotificationService.createLikeNotification(post.user, currentUser, post._id);
+            } catch (e) {}
         }
 
-        console.log(`[Feed] User ${req.user.id} liked post ${post._id}`);
-
-        res.json({
-            success: true,
-            likesCount: post.likesCount
-        });
+        res.json({ success: true, likesCount: post.likesCount });
 
     } catch (error) {
-        console.error('[Feed] Like post error:', error);
-        res.status(500).json({
-            error: 'Failed to like post',
-            message: error.message
-        });
+        console.error('[Feed] Like error:', error);
+        res.status(500).json({ error: 'Failed to like post' });
     }
 });
 
@@ -454,27 +932,231 @@ router.delete('/:postId/like', auth, async (req, res) => {
     try {
         const post = await Post.findOne({
             _id: req.params.postId,
-            deleted: false
+            deleted: { $ne: true }
         });
 
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
 
-        post.removeLike(req.user.id);
+        if (post.likes) {
+            post.likes = post.likes.filter(u => u.toString() !== req.user.id);
+            post.likesCount = post.likes.length;
+        }
+
+        if (post.reactions?.like) {
+            post.reactions.like = post.reactions.like.filter(u => u.toString() !== req.user.id);
+        }
+
         await post.save();
+
+        res.json({ success: true, likesCount: post.likesCount || 0 });
+
+    } catch (error) {
+        console.error('[Feed] Unlike error:', error);
+        res.status(500).json({ error: 'Failed to unlike post' });
+    }
+});
+
+// ============ BOOKMARK POST ============
+// @route   POST /api/feed/:postId/bookmark
+// @desc    Bookmark/save a post
+// @access  Private
+router.post('/:postId/bookmark', auth, async (req, res) => {
+    try {
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        if (!post.bookmarkedBy) post.bookmarkedBy = [];
+
+        if (post.bookmarkedBy.some(u => u.toString() === req.user.id)) {
+            return res.status(400).json({ error: 'Already bookmarked' });
+        }
+
+        post.bookmarkedBy.push(req.user.id);
+        await post.save();
+
+        console.log(`[Feed] User ${req.user.id} bookmarked post ${post._id}`);
+
+        res.json({ success: true, message: 'Post bookmarked' });
+
+    } catch (error) {
+        console.error('[Feed] Bookmark error:', error);
+        res.status(500).json({ error: 'Failed to bookmark post' });
+    }
+});
+
+// ============ REMOVE BOOKMARK ============
+// @route   DELETE /api/feed/:postId/bookmark
+// @desc    Remove bookmark from a post
+// @access  Private
+router.delete('/:postId/bookmark', auth, async (req, res) => {
+    try {
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        if (post.bookmarkedBy) {
+            post.bookmarkedBy = post.bookmarkedBy.filter(u => u.toString() !== req.user.id);
+            await post.save();
+        }
+
+        res.json({ success: true, message: 'Bookmark removed' });
+
+    } catch (error) {
+        console.error('[Feed] Remove bookmark error:', error);
+        res.status(500).json({ error: 'Failed to remove bookmark' });
+    }
+});
+
+// ============ SHARE/REPOST ============
+// @route   POST /api/feed/:postId/share
+// @desc    Share/repost a post
+// @access  Private
+router.post('/:postId/share', auth, async (req, res) => {
+    try {
+        const { comment } = req.body;
+
+        const originalPost = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
+        });
+
+        if (!originalPost) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        // Increment share count on original
+        originalPost.sharesCount = (originalPost.sharesCount || 0) + 1;
+        await originalPost.save();
+
+        // Create repost
+        const repost = await Post.create({
+            user: req.user.id,
+            type: 'repost',
+            content: comment || '',
+            repostOf: originalPost._id,
+            visibility: 'public',
+            reactions: {
+                like: [], rocket: [], fire: [], diamond: [], bull: [], bear: [], money: []
+            }
+        });
+
+        await repost.populate('user', 'username profile gamification');
+        await repost.populate('repostOf');
+
+        // 🔔 Notification
+        if (originalPost.user.toString() !== req.user.id) {
+            try {
+                const currentUser = await User.findById(req.user.id).select('username profile.displayName');
+                await NotificationService.createShareNotification(
+                    originalPost.user,
+                    currentUser,
+                    originalPost._id
+                );
+            } catch (e) {}
+        }
+
+        console.log(`[Feed] User ${req.user.id} shared post ${originalPost._id}`);
 
         res.json({
             success: true,
-            likesCount: post.likesCount
+            sharesCount: originalPost.sharesCount,
+            repost: formatPostResponse(repost, req.user.id)
         });
 
     } catch (error) {
-        console.error('[Feed] Unlike post error:', error);
-        res.status(500).json({
-            error: 'Failed to unlike post',
-            message: error.message
+        console.error('[Feed] Share error:', error);
+        res.status(500).json({ error: 'Failed to share post' });
+    }
+});
+
+// ============ VOTE ON POLL ============
+// @route   POST /api/feed/:postId/vote
+// @desc    Vote on a poll
+// @access  Private
+router.post('/:postId/vote', auth, async (req, res) => {
+    try {
+        const { optionIndex } = req.body;
+
+        if (optionIndex === undefined || optionIndex === null) {
+            return res.status(400).json({ error: 'Option index required' });
+        }
+
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            type: 'poll',
+            deleted: { $ne: true }
         });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Poll not found' });
+        }
+
+        if (!post.poll) {
+            return res.status(400).json({ error: 'Not a poll post' });
+        }
+
+        // Check if poll has ended
+        if (post.poll.endsAt && new Date(post.poll.endsAt) < new Date()) {
+            return res.status(400).json({ error: 'Poll has ended' });
+        }
+
+        // Check if already voted
+        if (post.poll.voters?.some(v => v.user?.toString() === req.user.id)) {
+            return res.status(400).json({ error: 'Already voted' });
+        }
+
+        // Validate option index
+        if (optionIndex < 0 || optionIndex >= post.poll.options.length) {
+            return res.status(400).json({ error: 'Invalid option' });
+        }
+
+        // Add vote
+        post.poll.options[optionIndex].votes += 1;
+        post.poll.options[optionIndex].voters.push(req.user.id);
+        post.poll.totalVotes += 1;
+        
+        if (!post.poll.voters) post.poll.voters = [];
+        post.poll.voters.push({ user: req.user.id, option: optionIndex, votedAt: new Date() });
+
+        await post.save();
+
+        console.log(`[Feed] User ${req.user.id} voted on poll ${post._id}`);
+
+        // Calculate percentages
+        const pollResults = post.poll.options.map(opt => ({
+            text: opt.text,
+            votes: opt.votes,
+            percent: post.poll.totalVotes > 0 
+                ? Math.round((opt.votes / post.poll.totalVotes) * 100) 
+                : 0
+        }));
+
+        res.json({
+            success: true,
+            poll: {
+                options: pollResults,
+                totalVotes: post.poll.totalVotes,
+                userVote: optionIndex,
+                endsAt: post.poll.endsAt
+            }
+        });
+
+    } catch (error) {
+        console.error('[Feed] Vote error:', error);
+        res.status(500).json({ error: 'Failed to vote' });
     }
 });
 
@@ -487,63 +1169,79 @@ router.post('/:postId/comment', auth, async (req, res) => {
         const { text, replyTo } = req.body;
 
         if (!text || text.trim().length === 0) {
-            return res.status(400).json({ error: 'Comment text is required' });
+            return res.status(400).json({ error: 'Comment text required' });
+        }
+
+        if (text.length > 1000) {
+            return res.status(400).json({ error: 'Comment too long (max 1000 chars)' });
         }
 
         const post = await Post.findOne({
             _id: req.params.postId,
-            deleted: false
+            deleted: { $ne: true }
         });
 
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
 
-        const comment = post.addComment(req.user.id, text, replyTo);
+        if (!post.comments) post.comments = [];
+
+        const comment = {
+            user: req.user.id,
+            text: text.trim(),
+            likes: [],
+            likesCount: 0,
+            replyTo: replyTo || null,
+            createdAt: new Date()
+        };
+
+        post.comments.push(comment);
+        post.commentsCount = post.comments.length;
         await post.save();
 
-        // Populate the new comment's user data
+        // Get the saved comment with populated user
         await post.populate('comments.user', 'username profile.displayName profile.avatar');
+        const savedComment = post.comments[post.comments.length - 1];
 
-        // 🔔 Send comment notification (if not own post)
+        // Format comment for response
+        const formattedComment = {
+            _id: savedComment._id,
+            text: savedComment.text,
+            createdAt: savedComment.createdAt,
+            likesCount: 0,
+            author: {
+                _id: savedComment.user._id,
+                username: savedComment.user.username,
+                displayName: savedComment.user.profile?.displayName || savedComment.user.username,
+                avatar: savedComment.user.profile?.avatar || ''
+            }
+        };
+
+        // 🔔 Notification
         if (post.user.toString() !== req.user.id) {
-            const currentUser = await User.findById(req.user.id).select('name username');
-            await NotificationService.createCommentNotification(
-                post.user,
-                currentUser,
-                post._id,
-                text
-            );
-        }
-
-        // 🔔 If replying to comment, notify original commenter
-        if (replyTo) {
-            const originalComment = post.comments.id(replyTo);
-            if (originalComment && originalComment.user.toString() !== req.user.id) {
-                const currentUser = await User.findById(req.user.id).select('name username');
-                await NotificationService.createReplyNotification(
-                    originalComment.user,
+            try {
+                const currentUser = await User.findById(req.user.id).select('username profile.displayName');
+                await NotificationService.createCommentNotification(
+                    post.user,
                     currentUser,
                     post._id,
-                    text
+                    text.substring(0, 100)
                 );
-            }
+            } catch (e) {}
         }
 
         console.log(`[Feed] User ${req.user.id} commented on post ${post._id}`);
 
         res.json({
             success: true,
-            comment: post.comments[post.comments.length - 1],
+            comment: formattedComment,
             commentsCount: post.commentsCount
         });
 
     } catch (error) {
-        console.error('[Feed] Add comment error:', error);
-        res.status(500).json({
-            error: 'Failed to add comment',
-            message: error.message
-        });
+        console.error('[Feed] Comment error:', error);
+        res.status(500).json({ error: 'Failed to add comment' });
     }
 });
 
@@ -555,7 +1253,53 @@ router.delete('/:postId/comment/:commentId', auth, async (req, res) => {
     try {
         const post = await Post.findOne({
             _id: req.params.postId,
-            deleted: false
+            deleted: { $ne: true }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        const commentIndex = post.comments.findIndex(
+            c => c._id.toString() === req.params.commentId
+        );
+
+        if (commentIndex === -1) {
+            return res.status(404).json({ error: 'Comment not found' });
+        }
+
+        const comment = post.comments[commentIndex];
+
+        // Check authorization (comment owner or post owner)
+        if (comment.user.toString() !== req.user.id && post.user.toString() !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        post.comments.splice(commentIndex, 1);
+        post.commentsCount = post.comments.length;
+        await post.save();
+
+        res.json({
+            success: true,
+            message: 'Comment deleted',
+            commentsCount: post.commentsCount
+        });
+
+    } catch (error) {
+        console.error('[Feed] Delete comment error:', error);
+        res.status(500).json({ error: 'Failed to delete comment' });
+    }
+});
+
+// ============ LIKE COMMENT ============
+// @route   POST /api/feed/:postId/comment/:commentId/like
+// @desc    Like a comment
+// @access  Private
+router.post('/:postId/comment/:commentId/like', auth, async (req, res) => {
+    try {
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
         });
 
         if (!post) {
@@ -568,27 +1312,82 @@ router.delete('/:postId/comment/:commentId', auth, async (req, res) => {
             return res.status(404).json({ error: 'Comment not found' });
         }
 
-        // Check if user owns the comment or the post
-        if (comment.user.toString() !== req.user.id && post.user.toString() !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized' });
+        if (!comment.likes) comment.likes = [];
+
+        if (comment.likes.some(u => u.toString() === req.user.id)) {
+            // Unlike
+            comment.likes = comment.likes.filter(u => u.toString() !== req.user.id);
+        } else {
+            // Like
+            comment.likes.push(req.user.id);
         }
 
-        comment.remove();
+        comment.likesCount = comment.likes.length;
         await post.save();
 
         res.json({
             success: true,
-            message: 'Comment deleted',
-            commentsCount: post.commentsCount
+            likesCount: comment.likesCount
         });
 
     } catch (error) {
-        console.error('[Feed] Delete comment error:', error);
-        res.status(500).json({
-            error: 'Failed to delete comment',
-            message: error.message
-        });
+        console.error('[Feed] Like comment error:', error);
+        res.status(500).json({ error: 'Failed to like comment' });
     }
 });
+
+// ============ REPORT POST ============
+// @route   POST /api/feed/:postId/report
+// @desc    Report a post
+// @access  Private
+router.post('/:postId/report', auth, async (req, res) => {
+    try {
+        const { reason, details } = req.body;
+
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            deleted: { $ne: true }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        if (!post.reports) post.reports = [];
+
+        // Check if already reported
+        if (post.reports.some(r => r.user.toString() === req.user.id)) {
+            return res.status(400).json({ error: 'Already reported this post' });
+        }
+
+        post.reports.push({
+            user: req.user.id,
+            reason: reason || 'inappropriate',
+            details: details || '',
+            createdAt: new Date()
+        });
+
+        // Auto-hide if too many reports
+        if (post.reports.length >= 5) {
+            post.visibility = 'hidden';
+            console.log(`[Feed] Post ${post._id} auto-hidden due to reports`);
+        }
+
+        await post.save();
+
+        res.json({ success: true, message: 'Report submitted' });
+
+    } catch (error) {
+        console.error('[Feed] Report error:', error);
+        res.status(500).json({ error: 'Failed to report post' });
+    }
+});
+
+// ============ HELPER: Update Hashtag Trending ============
+async function updateHashtagTrending(hashtags) {
+    // This could update a separate Hashtag collection for trending tracking
+    // For now, we rely on aggregation queries
+    console.log(`[Feed] Updated trending for hashtags: ${hashtags.join(', ')}`);
+}
 
 module.exports = router;
