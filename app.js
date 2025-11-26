@@ -19,6 +19,7 @@ const heatmapRoutes = require('./routes/heatmapRoutes');
 const gamificationRoutes = require('./routes/gamificationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const vaultRoutes = require('./routes/vaultRoutes');
+const whaleRoutes = require('./routes/whaleRoutes');
 
 // --- Database Connection Setup ---
 const connectDB = async () => {
@@ -147,6 +148,8 @@ app.use('/api/alerts', alertRoutes); // ✅ ADDED - Price Alerts System
 app.use('/api/patterns', patternRoutes); // ✅ ADDED - AI Pattern Recognition
 app.use('/api/stats', statsRoutes); // ✅ ADDED - Platform Stats
 app.use('/api', statsRoutes); // ✅ ADDED - Handles /api/waitlist
+app.use('/api/whale', whaleRoutes);
+
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
