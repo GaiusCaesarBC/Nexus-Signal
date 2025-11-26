@@ -221,52 +221,71 @@ router.get('/onboarding-status', auth, async (req, res) => {
     }
 });
 
-// ============ GAMIFICATION STATS ============
 // @route   GET /api/gamification/stats
-// @desc    Get user's gamification stats (level, XP, title, etc.)
+// @desc    Get user gamification stats
 // @access  Private
 router.get('/stats', auth, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('gamification stats');
+        const user = await User.findById(req.user.id)
+            .select('gamification stats profile')
+            .lean();
+        
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ success: false, error: 'User not found' });
         }
 
-        // Initialize gamification if not exists
-        if (!user.gamification) {
-            user.gamification = {
-                xp: 0,
-                level: 1,
-                title: 'Rookie Trader',
-                nextLevelXp: 100,
-                totalXpEarned: 0,
-                achievements: [],
-                badges: [],
-                loginStreak: 0
-            };
-            await user.save();
-        }
+        // ✅ Merge gamification data with actual trading stats
+        const response = {
+            success: true,
+            data: {
+                // Gamification fields
+                xp: user.gamification?.xp || 0,
+                level: user.gamification?.level || 1,
+                rank: user.gamification?.rank || 'Beginner',
+                nexusCoins: user.gamification?.nexusCoins || 0,
+                totalEarned: user.gamification?.totalEarned || 0,
+                loginStreak: user.gamification?.loginStreak || 0,
+                maxLoginStreak: user.gamification?.maxLoginStreak || 0,
+                profitStreak: user.gamification?.profitStreak || 0,
+                maxProfitStreak: user.gamification?.maxProfitStreak || 0,
+                achievements: user.gamification?.achievements || [],
+                
+                // ✅ Use REAL stats from user.stats (calculated from paper trading)
+                stats: {
+                    totalTrades: user.stats?.totalTrades || 0,
+                    profitableTrades: user.stats?.winningTrades || 0,
+                    totalProfit: user.stats?.totalReturn || 0,
+                    totalReturnPercent: user.stats?.totalReturnPercent || 0,  // ✅ ADDED
+                    winRate: user.stats?.winRate || 0,  // ✅ ADDED
+                    predictionsCreated: user.stats?.totalPredictions || 0,
+                    correctPredictions: user.stats?.correctPredictions || 0,
+                    predictionAccuracy: user.stats?.predictionAccuracy || 0,  // ✅ ADDED
+                    portfolioValue: user.stats?.currentValue || user.stats?.portfolioValue || 0,
+                    daysActive: user.gamification?.daysActive || 0,
+                    stocksOwned: user.stats?.openPositions || 0,
+                    referrals: user.social?.referrals || 0
+                },
+                
+                dailyChallenge: user.gamification?.dailyChallenge || {},
+                lastLoginDate: user.gamification?.lastLoginDate || new Date(),
+                xpForCurrentLevel: (user.gamification?.level || 1) * 1000,
+                xpForNextLevel: ((user.gamification?.level || 1) + 1) * 1000,
+                equippedItems: user.gamification?.equippedItems || {
+                    avatarBorder: null,
+                    activePerk: null,
+                    badges: [],
+                    profileTheme: 'theme-default'
+                }
+            }
+        };
 
-        res.json({
-            level: user.gamification.level || 1,
-            xp: user.gamification.xp || 0,
-            totalXpEarned: user.gamification.totalXpEarned || 0,
-            title: user.gamification.title || 'Rookie Trader',
-            nextLevelXp: user.gamification.nextLevelXp || 100,
-            achievements: user.gamification.achievements || [],
-            badges: user.gamification.badges || [],
-            loginStreak: user.gamification.loginStreak || 0,
-            // Include stats too
-            rank: user.stats?.rank || 0,
-            predictionAccuracy: user.stats?.predictionAccuracy || 0,
-            totalPredictions: user.stats?.totalPredictions || 0,
-            currentStreak: user.stats?.currentStreak || 0
-        });
+        res.json(response);
     } catch (error) {
-        console.error('Error fetching gamification stats:', error);
-        res.status(500).json({ error: 'Failed to fetch stats' });
+        console.error('[Gamification] Error fetching stats:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch gamification data' });
     }
 });
+
 
 // ============ AWARD ACHIEVEMENT ============
 // @route   POST /api/gamification/achievement
@@ -391,4 +410,50 @@ function getAchievementIcon(id) {
     return icons[id] || '🏅';
 }
 
+
+
+// @route   POST /api/gamification/recalculate
+// @desc    Force recalculate user stats from portfolio
+// @access  Private
+router.post('/recalculate', auth, async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        console.log('[Recalculate] Starting stats calculation for user:', user.email);
+
+        // Call the calculateStats method
+        const stats = await user.calculateStats();
+
+        console.log('[Recalculate] Stats calculated:', stats);
+
+        res.json({
+            success: true,
+            message: 'Stats recalculated successfully',
+            stats: {
+                totalReturnPercent: stats.totalReturnPercent || 0,
+                totalReturn: stats.totalReturn || 0,
+                winRate: stats.winRate || 0,
+                totalTrades: stats.totalTrades || 0,
+                currentValue: stats.currentValue || 0,
+                totalInvested: stats.totalInvested || 0,
+                predictionAccuracy: stats.predictionAccuracy || 0
+            }
+        });
+
+    } catch (error) {
+        console.error('[Recalculate] Error calculating stats:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to calculate stats',
+            details: error.message 
+        });
+    }
+});
+
 module.exports = router;
+

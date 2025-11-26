@@ -85,11 +85,11 @@ const orderSchema = new mongoose.Schema({
         enum: ['long', 'short'],
         default: 'long'
     },
-    side: {
-        type: String,
-        enum: ['buy', 'sell'],
-        required: true
-    },
+  side: {
+    type: String,
+    enum: ['buy', 'sell', 'cover'],  // ✅ Added 'cover'
+    required: true
+},
     quantity: {
         type: Number,
         required: true,

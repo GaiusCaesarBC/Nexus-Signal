@@ -46,13 +46,23 @@ connectDB();
 const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5000',
+    'http://localhost:3000/', // ✅ Added with trailing slash
+    'http://localhost:5000/', // ✅ Added with trailing slash
     'https://www.nexussignal.ai',
     'https://nexussignal.ai',
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or Postman)
         if (!origin) return callback(null, true);
+        
+        // Allow all localhost origins in development
+        if (process.env.NODE_ENV !== 'production' && origin.includes('localhost')) {
+            return callback(null, true);
+        }
+        
+        // Check allowed origins list
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {

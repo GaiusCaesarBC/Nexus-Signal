@@ -1,5 +1,5 @@
 // server/routes/paperTradingRoutes.js - Complete Paper Trading System
-// Using centralized price service
+// Using centralized price service + AUTO-UPDATE USER STATS
 
 const express = require('express');
 const router = express.Router();
@@ -55,6 +55,20 @@ function calculatePortfolioStats(account) {
         safeNumber((account.totalProfitLoss / initialBalance) * 100, 0) : 0;
     account.winRate = safeNumber(account.totalTrades, 0) > 0 ? 
         safeNumber((safeNumber(account.winningTrades, 0) / safeNumber(account.totalTrades, 1)) * 100, 0) : 0;
+}
+
+// ✅ AUTO-UPDATE USER STATS HELPER - NEW ADDITION
+async function updateUserStats(userId) {
+    try {
+        const User = require('../models/User');
+        const user = await User.findById(userId);
+        if (user && typeof user.calculateStats === 'function') {
+            await user.calculateStats();
+            console.log('✅ User stats auto-updated');
+        }
+    } catch (error) {
+        console.warn('⚠️ Stats auto-update failed:', error.message);
+    }
 }
 
 // @route   GET /api/paper-trading/account
@@ -176,6 +190,9 @@ router.post('/buy', auth, async (req, res) => {
         calculatePortfolioStats(account);
         await account.save();
         
+        // ✅ AUTO-UPDATE USER STATS AFTER TRADE
+        await updateUserStats(req.user.id);
+        
         console.log(`[Paper Trading] BUY: ${safeQuantity} ${symbol} @ $${safePrice.toFixed(2)} (${positionType}) [${priceResult.source}]`);
         
         res.json({
@@ -284,6 +301,9 @@ router.post('/sell', auth, async (req, res) => {
             calculatePortfolioStats(account);
             await account.save();
             
+            // ✅ AUTO-UPDATE USER STATS AFTER TRADE
+            await updateUserStats(req.user.id);
+            
             console.log(`[Paper Trading] SHORT SELL: ${safeQuantity} ${symbol} @ $${safePrice.toFixed(2)} [${priceResult.source}]`);
             
             return res.json({
@@ -367,6 +387,9 @@ router.post('/sell', auth, async (req, res) => {
         
         calculatePortfolioStats(account);
         await account.save();
+        
+        // ✅ AUTO-UPDATE USER STATS AFTER TRADE
+        await updateUserStats(req.user.id);
         
         console.log(`[Paper Trading] SELL: ${safeQuantity} ${symbol} @ $${safePrice.toFixed(2)} | P/L: $${profitLoss.toFixed(2)} [${priceResult.source}]`);
         
@@ -501,6 +524,9 @@ router.post('/cover', auth, async (req, res) => {
         
         calculatePortfolioStats(account);
         await account.save();
+        
+        // ✅ AUTO-UPDATE USER STATS AFTER TRADE
+        await updateUserStats(req.user.id);
         
         console.log(`[Paper Trading] COVER: ${safeQuantity} ${symbol} @ $${safePrice.toFixed(2)} | P/L: $${profitLoss.toFixed(2)} [${priceResult.source}]`);
         
@@ -660,7 +686,7 @@ router.get('/leaderboard', auth, async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         
         const accounts = await PaperTradingAccount.find()
-            .populate('user', 'name')
+            .populate('user', 'name username profile.displayName profile.avatar')
             .sort({ totalProfitLossPercent: -1 })
             .limit(limit);
         
@@ -788,6 +814,9 @@ router.post('/reset', auth, async (req, res) => {
         account.lastUpdated = new Date();
         
         await account.save();
+        
+        // ✅ AUTO-UPDATE USER STATS AFTER RESET
+        await updateUserStats(req.user.id);
         
         console.log(`[Paper Trading] Account reset for user ${req.user.id}`);
         

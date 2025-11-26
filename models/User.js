@@ -458,16 +458,52 @@ UserSchema.methods.checkLoginStreak = async function() {
 
 // ============ STATS CALCULATION ============
 
-// Method to calculate stats from portfolio and predictions
 UserSchema.methods.calculateStats = async function() {
     try {
         console.log('[User] Calculating stats for user:', this.email);
 
-        // Get all portfolio holdings
-        const Portfolio = mongoose.model('Portfolio');
-        const holdings = await Portfolio.find({ userId: this._id });
+        // ✅ Declare all variables at the top
+        let holdings = []; // ADD THIS LINE
+        let totalInvested = 0;
+        let currentValue = 0;
+        let totalReturn = 0;
+        let totalReturnPercent = 0;
+        let totalTrades = 0;
+        let wins = 0;
+        let losses = 0;
+        let bestTrade = 0;
+        let worstTrade = 0;
 
-        console.log('[User] Found holdings:', holdings.length);
+        // Initialize stats object
+        if (!this.stats) {
+            this.stats = {};
+        }
+
+        // Get paper trading account
+        try {
+            const PaperTradingAccount = mongoose.model('PaperTradingAccount');
+            const account = await PaperTradingAccount.findOne({ user: this._id });
+            
+            if (account) {
+                console.log('[User] Found paper trading account');
+                console.log('[User] Portfolio Value:', account.portfolioValue);
+                console.log('[User] Starting Balance:', account.startingBalance);
+                console.log('[User] Total P/L %:', account.totalProfitLossPercent);
+                
+                // Use account-level stats
+                totalInvested = account.startingBalance;
+                currentValue = account.portfolioValue;
+                totalReturn = account.totalProfitLoss;
+                totalReturnPercent = account.totalProfitLossPercent || 0;
+                totalTrades = account.totalTrades || 0;
+                wins = account.winningTrades || 0;
+                losses = account.losingTrades || 0;
+                
+                console.log('[User] Using account stats - Return %:', totalReturnPercent);
+            }
+        } catch (error) {
+            console.error('[User] Error fetching paper trading data:', error.message);
+        }
 
         // Initialize stats object
         if (!this.stats) {
@@ -479,41 +515,46 @@ UserSchema.methods.calculateStats = async function() {
             console.log('[User] No holdings found, checking predictions only');
         }
 
-        // Calculate portfolio value
-        let totalInvested = 0;
-        let currentValue = 0;
-        let wins = 0;
-        let losses = 0;
-        let bestTrade = 0;
-        let worstTrade = 0;
-        let totalGainPercent = 0;
+        // Only calculate from holdings if we don't have account-level stats
+if (totalReturnPercent === 0 && holdings.length > 0) {
+    console.log('[User] No account stats, calculating from holdings...');
+    
+    let holdingsInvested = 0;
+    let holdingsValue = 0;
+    let bestTrade = 0;
+    let worstTrade = 0;
+    let totalGainPercent = 0;
 
-        for (const holding of holdings) {
-            const invested = (holding.averagePrice || 0) * (holding.shares || 0);
-            const current = (holding.currentPrice || 0) * (holding.shares || 0);
-            const gainLoss = current - invested;
-            const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
+    for (const holding of holdings) {
+        const invested = (holding.averagePrice || 0) * (holding.shares || holding.quantity || 0);
+        const current = (holding.currentPrice || 0) * (holding.shares || holding.quantity || 0);
+        const gainLoss = current - invested;
+        const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
 
-            totalInvested += invested;
-            currentValue += current;
-            totalGainPercent += gainLossPercent;
+        holdingsInvested += invested;
+        holdingsValue += current;
+        totalGainPercent += gainLossPercent;
 
-            if (gainLoss > 0) wins++;
-            if (gainLoss < 0) losses++;
+        if (gainLoss > 0) wins++;
+        if (gainLoss < 0) losses++;
 
-            if (gainLossPercent > bestTrade) bestTrade = gainLossPercent;
-            if (gainLossPercent < worstTrade) worstTrade = gainLossPercent;
-        }
+        if (gainLossPercent > bestTrade) bestTrade = gainLossPercent;
+        if (gainLossPercent < worstTrade) worstTrade = gainLossPercent;
+    }
 
-        // Safe calculations
-        const totalReturn = currentValue - totalInvested;
-        const totalReturnPercent = totalInvested > 0 
-            ? (totalReturn / totalInvested) * 100 
-            : 0;
+    totalInvested = holdingsInvested;
+    currentValue = holdingsValue;
+    totalReturn = holdingsValue - holdingsInvested;
+    totalReturnPercent = holdingsInvested > 0 
+        ? (totalReturn / holdingsInvested) * 100 
+        : 0;
+    totalTrades = holdings.length;
+} else {
+    console.log('[User] Using account-level stats');
+}
 
-        const totalTrades = holdings.length;
-        const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-        const avgTradeReturn = totalTrades > 0 ? totalGainPercent / totalTrades : 0;
+const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+const avgTradeReturn = totalTrades > 0 ? totalReturnPercent : 0;
 
         // Get prediction stats
         const Prediction = mongoose.model('Prediction');

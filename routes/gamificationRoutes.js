@@ -13,6 +13,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
     try {
         console.log('[Gamification] Fetching data for user:', req.user.id);
         
+        // ✅ Get BOTH Gamification data AND User stats
         let gamification = await Gamification.findOne({ user: req.user.id });
         
         if (!gamification) {
@@ -20,11 +21,14 @@ router.get('/stats', authMiddleware, async (req, res) => {
             gamification = await GamificationService.initializeUser(req.user.id);
         }
 
+        // ✅ Get real stats from User model (paper trading)
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id).select('stats').lean();
+
         // Calculate XP bounds for current level
         const xpForCurrentLevel = (gamification.level - 1) * 1000;
         const xpForNextLevel = gamification.level * 1000;
 
-        // ✅ FIXED: Added equippedItems to response!
         res.json({
             success: true,
             data: {
@@ -38,12 +42,28 @@ router.get('/stats', authMiddleware, async (req, res) => {
                 profitStreak: gamification.profitStreak,
                 maxProfitStreak: gamification.maxProfitStreak,
                 achievements: gamification.achievements,
-                stats: gamification.stats,
+                
+                // ✅ Use REAL stats from User model (calculated from paper trading)
+                stats: {
+                    totalTrades: user?.stats?.totalTrades || 0,
+                    profitableTrades: user?.stats?.winningTrades || 0,
+                    totalProfit: user?.stats?.totalReturn || 0,
+                    totalReturnPercent: user?.stats?.totalReturnPercent || 0,  // ✅ REAL DATA
+                    winRate: user?.stats?.winRate || 0,  // ✅ REAL DATA
+                    predictionsCreated: user?.stats?.totalPredictions || 0,
+                    correctPredictions: user?.stats?.correctPredictions || 0,
+                    predictionAccuracy: user?.stats?.predictionAccuracy || 0,
+                    portfolioValue: user?.stats?.currentValue || user?.stats?.portfolioValue || 0,
+                    daysActive: gamification.daysActive || 0,
+                    stocksOwned: user?.stats?.openPositions || 0,
+                    referrals: 0
+                },
+                
                 dailyChallenge: gamification.dailyChallenge,
                 lastLoginDate: gamification.lastLoginDate,
                 xpForCurrentLevel: xpForCurrentLevel,
                 xpForNextLevel: xpForNextLevel,
-                equippedItems: gamification.equippedItems || {  // ✅ THIS WAS MISSING!
+                equippedItems: gamification.equippedItems || {
                     avatarBorder: null,
                     profileTheme: 'theme-default',
                     activePerk: null,
@@ -52,7 +72,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
             }
         });
         
-        console.log('[Gamification] Returning equipped items:', gamification.equippedItems);
+        console.log('[Gamification] Returned stats with totalReturnPercent:', user?.stats?.totalReturnPercent);
     } catch (error) {
         console.error('[Gamification] Error fetching stats:', error);
         res.status(500).json({
