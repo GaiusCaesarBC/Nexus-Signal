@@ -1,8 +1,9 @@
-// server/services/predictionChecker.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE
+// server/services/predictionChecker.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE + GAMIFICATION
 
 const cron = require('node-cron');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
+const GamificationService = require('./gamificationService');
 
 // ✅ USE CENTRALIZED PRICE SERVICE
 const priceService = require('./priceService');
@@ -31,7 +32,7 @@ async function checkPrediction(prediction) {
         if (priceResult.price === null) {
             console.log(`[PredictionChecker] ❌ Could not fetch price for ${prediction.symbol}, skipping...`);
             checkerStats.errorCount++;
-            return false;
+            return { success: false, prediction };
         }
 
         console.log(`[PredictionChecker] Price for ${prediction.symbol}: $${priceResult.price} (source: ${priceResult.source})`);
@@ -51,12 +52,12 @@ async function checkPrediction(prediction) {
             console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (${prediction.outcome.accuracy.toFixed(1)}% accurate)`);
         }
 
-        return true;
+        return { success: true, prediction };
 
     } catch (error) {
         console.error(`[PredictionChecker] Error checking prediction ${prediction._id}:`, error.message);
         checkerStats.errorCount++;
-        return false;
+        return { success: false, prediction };
     }
 }
 
@@ -102,16 +103,27 @@ async function checkExpiredPredictions() {
             incorrect: 0
         };
 
+        // ✅ Track which users need gamification updates
+        const userResults = new Map(); // userId -> { correct: number, incorrect: number }
+
         // Check each prediction with a delay to respect API rate limits
         for (const prediction of expiredPredictions) {
-            const success = await checkPrediction(prediction);
+            const result = await checkPrediction(prediction);
 
-            if (success) {
+            if (result.success) {
                 runStats.success++;
+                
+                const userId = prediction.user.toString();
+                if (!userResults.has(userId)) {
+                    userResults.set(userId, { correct: 0, incorrect: 0 });
+                }
+                
                 if (prediction.status === 'correct') {
                     runStats.correct++;
+                    userResults.get(userId).correct++;
                 } else if (prediction.status === 'incorrect') {
                     runStats.incorrect++;
+                    userResults.get(userId).incorrect++;
                 }
             } else {
                 runStats.errors++;
@@ -125,6 +137,9 @@ async function checkExpiredPredictions() {
 
         // Update global statistics
         checkerStats.lastRun = new Date();
+
+        // ✅ Update gamification for affected users
+        await updateGamificationStats(userResults);
 
         // Update user stats for affected users
         const affectedUserIds = [...new Set(expiredPredictions.map(p => p.user.toString()))];
@@ -144,6 +159,54 @@ async function checkExpiredPredictions() {
 
     } catch (error) {
         console.error('[PredictionChecker] ❌ Error in checkExpiredPredictions:', error.message);
+    }
+}
+
+// ✅ NEW: Update gamification stats when predictions are resolved
+async function updateGamificationStats(userResults) {
+    console.log(`[PredictionChecker] 🎮 Updating gamification for ${userResults.size} users...`);
+    
+    for (const [userId, results] of userResults) {
+        try {
+            // Award XP and track correct predictions
+            if (results.correct > 0) {
+                // Award XP for each correct prediction
+                const xpAmount = results.correct * 50; // 50 XP per correct prediction
+                await GamificationService.awardXP(
+                    userId, 
+                    xpAmount, 
+                    `${results.correct} correct prediction(s)`
+                );
+                
+                // Award bonus coins for correct predictions
+                const coinAmount = results.correct * 25; // 25 coins per correct prediction
+                await GamificationService.awardCoins(
+                    userId,
+                    coinAmount,
+                    `${results.correct} correct prediction(s)`
+                );
+                
+                console.log(`[PredictionChecker]   🎯 User ${userId}: +${xpAmount} XP, +${coinAmount} coins for ${results.correct} correct`);
+            }
+            
+            if (results.incorrect > 0) {
+                // Small consolation XP for participation
+                const xpAmount = results.incorrect * 5; // 5 XP per incorrect (still participated)
+                await GamificationService.awardXP(
+                    userId,
+                    xpAmount,
+                    `${results.incorrect} prediction(s) resolved`
+                );
+                
+                console.log(`[PredictionChecker]   📉 User ${userId}: +${xpAmount} XP for ${results.incorrect} incorrect`);
+            }
+            
+            // Check achievements after updating
+            await GamificationService.checkAchievements(userId);
+            
+        } catch (error) {
+            console.error(`[PredictionChecker]   ❌ Gamification error for ${userId}:`, error.message);
+        }
     }
 }
 
@@ -252,6 +315,7 @@ function startPredictionChecker() {
     console.log('\n🚀 ================================');
     console.log('[PredictionChecker] Starting prediction checker service...');
     console.log('[PredictionChecker] Using centralized price service');
+    console.log('[PredictionChecker] Gamification integration enabled');
     console.log('================================\n');
 
     // Check expired predictions every hour

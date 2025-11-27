@@ -1,648 +1,335 @@
-// server/services/priceService.js - Centralized Price Fetching Service
-// Single source of truth for all price data across the platform
+// server/services/priceService.js
+// Centralized price fetching service for stocks and crypto
+// Uses Yahoo Finance for stocks and CoinGecko for crypto
 
 const axios = require('axios');
 
-// API Configuration
-const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
-const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
-
-// Cache configuration (reduces API calls significantly)
+// ============ PRICE CACHE ============
 const priceCache = new Map();
-const CACHE_TTL_MS = 60 * 1000; // 1 minute cache for real-time prices
-const EXTENDED_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for less time-sensitive uses
+const CACHE_DURATION = 30000; // 30 seconds cache
 
-// ============ CRYPTO SYMBOL MAPPING ============
-// Comprehensive map of crypto symbols to CoinGecko IDs
-const cryptoSymbolMap = {
-    // Major cryptocurrencies
-    BTC: 'bitcoin',
-    ETH: 'ethereum',
-    XRP: 'ripple',
-    LTC: 'litecoin',
-    BCH: 'bitcoin-cash',
-    
-    // Smart contract platforms
-    ADA: 'cardano',
-    SOL: 'solana',
-    DOT: 'polkadot',
-    AVAX: 'avalanche-2',
-    ATOM: 'cosmos',
-    NEAR: 'near',
-    APT: 'aptos',
-    SUI: 'sui',
-    SEI: 'sei-network',
-    TIA: 'celestia',
-    
-    // Layer 2 & Scaling
-    MATIC: 'matic-network',
-    ARB: 'arbitrum',
-    OP: 'optimism',
-    IMX: 'immutable-x',
-    
-    // DeFi
-    UNI: 'uniswap',
-    AAVE: 'aave',
-    CRV: 'curve-dao-token',
-    MKR: 'maker',
-    SNX: 'havven',
-    COMP: 'compound-governance-token',
-    LDO: 'lido-dao',
-    RPL: 'rocket-pool',
-    FXS: 'frax-share',
-    GMX: 'gmx',
-    PENDLE: 'pendle',
-    JUP: 'jupiter-exchange-solana',
-    
-    // Exchange tokens
-    BNB: 'binancecoin',
-    CRO: 'crypto-com-chain',
-    OKB: 'okb',
-    KCS: 'kucoin-shares',
-    
-    // Oracles & Infrastructure
-    LINK: 'chainlink',
-    BAND: 'band-protocol',
-    API3: 'api3',
-    
-    // AI & Data
-    FET: 'fetch-ai',
-    RENDER: 'render-token',
-    OCEAN: 'ocean-protocol',
-    INJ: 'injective-protocol',
-    
-    // Meme coins
-    DOGE: 'dogecoin',
-    SHIB: 'shiba-inu',
-    PEPE: 'pepe',
-    BONK: 'bonk',
-    WIF: 'dogwifcoin',
-    FLOKI: 'floki',
-    TRUMP: 'official-trump',
-    
-    // Privacy coins
-    XMR: 'monero',
-    ZEC: 'zcash',
-    
-    // Other major tokens
-    TRX: 'tron',
-    XLM: 'stellar',
-    ALGO: 'algorand',
-    VET: 'vechain',
-    HBAR: 'hedera-hashgraph',
-    FIL: 'filecoin',
-    THETA: 'theta-token',
-    EOS: 'eos',
-    XTZ: 'tezos',
-    FLOW: 'flow',
-    SAND: 'the-sandbox',
-    MANA: 'decentraland',
-    AXS: 'axie-infinity',
-    GALA: 'gala',
-    ENJ: 'enjincoin',
-    CHZ: 'chiliz',
-    BAT: 'basic-attention-token',
-    ZRX: '0x',
-    ENS: 'ethereum-name-service',
-    GRT: 'the-graph',
-    QNT: 'quant-network',
-    EGLD: 'elrond-erd-2',
-    KDA: 'kadena',
-    ROSE: 'oasis-network',
-    KAVA: 'kava',
-    ONE: 'harmony',
-    ZIL: 'zilliqa',
-    ICX: 'icon',
-    WAVES: 'waves',
-    NEO: 'neo',
-    QTUM: 'qtum',
-    ONT: 'ontology',
-    IOTA: 'iota',
-    SC: 'siacoin',
-    DCR: 'decred',
-    RVN: 'ravencoin',
-    BTG: 'bitcoin-gold',
-    DGB: 'digibyte',
-    ZEN: 'horizen',
-    KSM: 'kusama',
-    CELO: 'celo',
-    ANKR: 'ankr',
-    SKL: 'skale',
-    STORJ: 'storj',
-    SNT: 'status',
-    CVC: 'civic',
-    NMR: 'numeraire',
-    REP: 'augur',
-    BNT: 'bancor',
-    CELR: 'celer-network',
-    DENT: 'dent',
-    HOT: 'holotoken',
-    WIN: 'wink',
-    BTT: 'bittorrent',
-    JST: 'just',
-    SUN: 'sun-token',
-    REEF: 'reef',
-    ALICE: 'my-neighbor-alice',
-    TLM: 'alien-worlds',
-    ILV: 'illuvium',
-    YGG: 'yield-guild-games',
-    MAGIC: 'magic',
-    PRIME: 'echelon-prime',
-    BLUR: 'blur',
-    ARK: 'ark',
-    STACKS: 'blockstack',
-    STX: 'blockstack',
-    RUNE: 'thorchain',
-    OSMO: 'osmosis',
-    JUNO: 'juno-network',
-    SCRT: 'secret',
-    MINA: 'mina-protocol',
-    CFX: 'conflux-token',
-    CORE: 'coredaoorg',
-    KASPA: 'kaspa',
-    KAS: 'kaspa',
-    TON: 'the-open-network',
-    NOT: 'notcoin',
-    TAO: 'bittensor',
-    WLD: 'worldcoin-wld',
-    PYTH: 'pyth-network',
-    JTO: 'jito-governance-token',
-    TWT: 'trust-wallet-token',
-    SAFE: 'safe',
-    EIGEN: 'eigenlayer',
-    ENA: 'ethena',
-    STRK: 'starknet',
-    ZK: 'zksync',
-    ONDO: 'ondo-finance',
-    ETHFI: 'ether-fi',
-    W: 'wormhole',
-    DYM: 'dymension',
-    ALT: 'altlayer',
-    MANTA: 'manta-network',
-    PIXEL: 'pixels',
-    PORTAL: 'portal',
-    AEVO: 'aevo-exchange',
-    BOME: 'book-of-meme',
-    MEW: 'cat-in-a-dogs-world',
-    POPCAT: 'popcat',
-    BRETT: 'brett',
-    MOG: 'mog-coin',
-    SPX: 'spx6900',
-    NEIRO: 'neiro-on-eth',
-    GOAT: 'goatseus-maximus',
-    PNUT: 'peanut-the-squirrel',
-    ACT: 'act-i-the-ai-prophecy',
-    VIRTUAL: 'virtual-protocol',
-    AI16Z: 'ai16z',
-    GRIFFAIN: 'griffain',
-    ZEREBRO: 'zerebro',
-    ARC: 'arc',
-    AIXBT: 'aixbt-by-virtuals',
-    FARTCOIN: 'fartcoin',
-    PENGU: 'pudgy-penguins',
-    HYPE: 'hyperliquid',
-    USUAL: 'usual',
-    MOVE: 'movement',
-    ME: 'magic-eden',
-    VANA: 'vana',
-    AVAAI: 'holoworld-ai',
-    BIO: 'bio-protocol',
-    ANIME: 'anime',
-    MELANIA: 'melania-meme',
-    VINE: 'vine-coin',
-    SOLV: 'solv-protocol',
-    LAYER: 'layer',
-    TST: 'tst',
-    KAITO: 'kaito',
-    IP: 'story-2',
-    RED: 'red',
-    BMT: 'bubblemaps',
-    FORM: 'binaryform-ai',
-    NIL: 'nil',
-    GPS: 'gps',
-    SOON: 'soon',
-    SHELL: 'myshell',
-    B3: 'b3-token',
-    PI: 'pi-network',
-    BNX: 'binaryx',
-    PARTI: 'parti',
-    MUB: 'mubchain'
+// ============ CRYPTO SYMBOLS ============
+const CRYPTO_SYMBOLS = [
+    'BTC', 'ETH', 'XRP', 'SOL', 'ADA', 'DOGE', 'DOT', 'MATIC', 'SHIB', 'AVAX',
+    'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL', 'AAVE',
+    'SAND', 'MANA', 'AXS', 'THETA', 'XTZ', 'EOS', 'CAKE', 'RUNE', 'ZEC', 'DASH',
+    'NEO', 'WAVES', 'BAT', 'ENJ', 'CHZ', 'COMP', 'SNX', 'YFI', 'SUSHI', 'CRV',
+    'BNB', 'TRX', 'BCH', 'NEAR', 'APT', 'ARB', 'OP', 'SUI', 'SEI', 'TIA',
+    'PEPE', 'WIF', 'BONK', 'FLOKI', 'RENDER', 'FET', 'TAO', 'INJ', 'RNDR', 'GRT',
+    'IMX', 'STX', 'MKR', 'EGLD', 'HBAR', 'QNT', 'FTM', 'KAVA', 'FLOW', 'MINA',
+    'BITCOIN', 'ETHEREUM', 'RIPPLE', 'SOLANA', 'CARDANO', 'DOGECOIN', 'POLKADOT'
+];
+
+// Crypto symbol to CoinGecko ID mapping
+const CRYPTO_ID_MAP = {
+    'BTC': 'bitcoin',
+    'BITCOIN': 'bitcoin',
+    'ETH': 'ethereum',
+    'ETHEREUM': 'ethereum',
+    'XRP': 'ripple',
+    'RIPPLE': 'ripple',
+    'SOL': 'solana',
+    'SOLANA': 'solana',
+    'ADA': 'cardano',
+    'CARDANO': 'cardano',
+    'DOGE': 'dogecoin',
+    'DOGECOIN': 'dogecoin',
+    'DOT': 'polkadot',
+    'POLKADOT': 'polkadot',
+    'MATIC': 'matic-network',
+    'POLYGON': 'matic-network',
+    'SHIB': 'shiba-inu',
+    'AVAX': 'avalanche-2',
+    'LINK': 'chainlink',
+    'UNI': 'uniswap',
+    'ATOM': 'cosmos',
+    'LTC': 'litecoin',
+    'ETC': 'ethereum-classic',
+    'XLM': 'stellar',
+    'ALGO': 'algorand',
+    'VET': 'vechain',
+    'FIL': 'filecoin',
+    'AAVE': 'aave',
+    'SAND': 'the-sandbox',
+    'MANA': 'decentraland',
+    'AXS': 'axie-infinity',
+    'THETA': 'theta-token',
+    'XTZ': 'tezos',
+    'EOS': 'eos',
+    'BNB': 'binancecoin',
+    'TRX': 'tron',
+    'BCH': 'bitcoin-cash',
+    'NEAR': 'near',
+    'APT': 'aptos',
+    'ARB': 'arbitrum',
+    'OP': 'optimism',
+    'SUI': 'sui',
+    'SEI': 'sei-network',
+    'TIA': 'celestia',
+    'PEPE': 'pepe',
+    'WIF': 'dogwifcoin',
+    'BONK': 'bonk',
+    'FLOKI': 'floki',
+    'RENDER': 'render-token',
+    'RNDR': 'render-token',
+    'FET': 'fetch-ai',
+    'TAO': 'bittensor',
+    'INJ': 'injective-protocol',
+    'GRT': 'the-graph',
+    'IMX': 'immutable-x',
+    'STX': 'blockstack',
+    'MKR': 'maker',
+    'EGLD': 'elrond-erd-2',
+    'HBAR': 'hedera-hashgraph',
+    'QNT': 'quant-network',
+    'FTM': 'fantom',
+    'KAVA': 'kava',
+    'FLOW': 'flow',
+    'MINA': 'mina-protocol'
 };
-
-// Known crypto symbols for auto-detection (derived from map)
-const KNOWN_CRYPTO_SYMBOLS = new Set(Object.keys(cryptoSymbolMap));
-
-// Common crypto trading pair suffixes
-const CRYPTO_SUFFIXES = ['-USD', '-USDT', '-BTC', '-ETH', '-BUSD', '-USDC', 'USD', 'USDT'];
 
 // ============ HELPER FUNCTIONS ============
 
-/**
- * Check if a symbol is a cryptocurrency
- * @param {string} symbol - The trading symbol
- * @returns {boolean}
- */
 function isCryptoSymbol(symbol) {
     if (!symbol) return false;
-    
-    const upperSymbol = symbol.toUpperCase();
-    
-    // Check for crypto pair suffixes
-    if (CRYPTO_SUFFIXES.some(suffix => upperSymbol.endsWith(suffix))) {
-        return true;
-    }
-    
-    // Check if base symbol is a known crypto
-    const baseSymbol = getBaseSymbol(upperSymbol);
-    return KNOWN_CRYPTO_SYMBOLS.has(baseSymbol);
+    const upper = symbol.toUpperCase();
+    return CRYPTO_SYMBOLS.includes(upper) || CRYPTO_ID_MAP[upper] !== undefined;
 }
 
-/**
- * Extract base symbol from a trading pair (BTC-USD -> BTC)
- * @param {string} symbol - The trading symbol
- * @returns {string}
- */
-function getBaseSymbol(symbol) {
-    if (!symbol) return symbol;
-    
-    const upperSymbol = symbol.toUpperCase();
-    
-    // Handle various formats: BTC-USD, BTCUSD, BTC/USD
-    if (upperSymbol.includes('-')) {
-        return upperSymbol.split('-')[0];
-    }
-    if (upperSymbol.includes('/')) {
-        return upperSymbol.split('/')[0];
-    }
-    
-    // Handle BTCUSD format
-    for (const suffix of ['USD', 'USDT', 'USDC', 'BTC', 'ETH']) {
-        if (upperSymbol.endsWith(suffix) && upperSymbol.length > suffix.length) {
-            return upperSymbol.slice(0, -suffix.length);
-        }
-    }
-    
-    return upperSymbol;
+function getCacheKey(symbol, type) {
+    return `${symbol.toUpperCase()}-${type}`;
 }
 
-/**
- * Get CoinGecko ID for a crypto symbol
- * @param {string} symbol - The crypto symbol
- * @returns {string}
- */
-function getCoinGeckoId(symbol) {
-    const baseSymbol = getBaseSymbol(symbol);
-    return cryptoSymbolMap[baseSymbol] || baseSymbol.toLowerCase();
-}
-
-/**
- * Get cached price if valid
- * @param {string} cacheKey - Cache key
- * @param {number} maxAge - Maximum age in ms
- * @returns {number|null}
- */
-function getCachedPrice(cacheKey, maxAge = CACHE_TTL_MS) {
-    const cached = priceCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < maxAge) {
+function getCachedPrice(symbol, type) {
+    const key = getCacheKey(symbol, type);
+    const cached = priceCache.get(key);
+    
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         return cached.price;
     }
+    
     return null;
 }
 
-/**
- * Set price in cache
- * @param {string} cacheKey - Cache key
- * @param {number} price - Price to cache
- */
-function setCachedPrice(cacheKey, price) {
-    priceCache.set(cacheKey, {
+function setCachedPrice(symbol, type, price) {
+    const key = getCacheKey(symbol, type);
+    priceCache.set(key, {
         price,
         timestamp: Date.now()
     });
 }
 
-/**
- * Clear expired cache entries (call periodically)
- */
-function clearExpiredCache() {
-    const now = Date.now();
-    for (const [key, value] of priceCache.entries()) {
-        if (now - value.timestamp > EXTENDED_CACHE_TTL_MS) {
-            priceCache.delete(key);
-        }
-    }
-}
+// ============ STOCK PRICE FETCHING ============
 
-// Clear cache every 10 minutes
-setInterval(clearExpiredCache, 10 * 60 * 1000);
-
-// ============ PRICE FETCHING FUNCTIONS ============
-
-/**
- * Fetch stock price from Alpha Vantage (Pro)
- * @param {string} symbol - Stock symbol
- * @returns {Promise<number|null>}
- */
-async function fetchAlphaVantagePrice(symbol) {
-    const cacheKey = `av:${symbol.toUpperCase()}`;
-    const cached = getCachedPrice(cacheKey);
+async function getStockPrice(symbol) {
+    const upperSymbol = symbol.toUpperCase();
+    
+    // Check cache first
+    const cached = getCachedPrice(upperSymbol, 'stock');
     if (cached !== null) {
-        console.log(`[PriceService] Cache hit for ${symbol}: $${cached}`);
-        return cached;
+        return { price: cached, source: 'cache' };
     }
     
     try {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-        const response = await axios.get(url, { timeout: 10000 });
-        const data = response.data;
+        // Try Yahoo Finance API (via query1)
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${upperSymbol}?interval=1d&range=1d`;
         
-        // Check for API errors
-        if (data['Error Message']) {
-            console.error(`[PriceService] Alpha Vantage error for ${symbol}:`, data['Error Message']);
-            return null;
-        }
-        
-        // Check for rate limit (shouldn't hit with Pro, but just in case)
-        if (data['Note']) {
-            console.warn(`[PriceService] Alpha Vantage rate limit warning`);
-        }
-        
-        if (data['Global Quote'] && data['Global Quote']['05. price']) {
-            const price = parseFloat(data['Global Quote']['05. price']);
-            setCachedPrice(cacheKey, price);
-            console.log(`[PriceService] Alpha Vantage price for ${symbol}: $${price}`);
-            return price;
-        }
-        
-        console.log(`[PriceService] No Alpha Vantage data for ${symbol}`);
-        return null;
-        
-    } catch (error) {
-        console.error(`[PriceService] Alpha Vantage error for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-/**
- * Fetch crypto price from CoinGecko (Pro)
- * @param {string} symbol - Crypto symbol
- * @returns {Promise<number|null>}
- */
-async function fetchCoinGeckoPrice(symbol) {
-    const coinGeckoId = getCoinGeckoId(symbol);
-    const cacheKey = `cg:${coinGeckoId}`;
-    const cached = getCachedPrice(cacheKey);
-    if (cached !== null) {
-        console.log(`[PriceService] Cache hit for ${symbol} (${coinGeckoId}): $${cached}`);
-        return cached;
-    }
-    
-    try {
-        const params = { 
-            ids: coinGeckoId, 
-            vs_currencies: 'usd',
-            precision: 'full'
-        };
-        
-        // Add Pro API key
-        if (COINGECKO_API_KEY) {
-            params['x_cg_pro_api_key'] = COINGECKO_API_KEY;
-        }
-        
-        const response = await axios.get(`${COINGECKO_BASE_URL}/simple/price`, { 
-            params, 
-            timeout: 10000,
-            headers: COINGECKO_API_KEY ? {
-                'x-cg-pro-api-key': COINGECKO_API_KEY
-            } : {}
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 10000
         });
         
-        const data = response.data;
-        
-        if (data[coinGeckoId] && data[coinGeckoId].usd !== undefined) {
-            const price = data[coinGeckoId].usd;
-            setCachedPrice(cacheKey, price);
-            console.log(`[PriceService] CoinGecko price for ${symbol} (${coinGeckoId}): $${price}`);
-            return price;
+        const result = response.data?.chart?.result?.[0];
+        if (!result) {
+            throw new Error('No data returned');
         }
         
-        console.log(`[PriceService] No CoinGecko data for ${symbol} (${coinGeckoId})`);
-        return null;
+        // Get the current price
+        const price = result.meta?.regularMarketPrice || 
+                      result.indicators?.quote?.[0]?.close?.slice(-1)[0];
+        
+        if (!price || isNaN(price)) {
+            throw new Error('Invalid price data');
+        }
+        
+        setCachedPrice(upperSymbol, 'stock', price);
+        return { price, source: 'yahoo' };
         
     } catch (error) {
-        console.error(`[PriceService] CoinGecko error for ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-/**
- * Fetch multiple crypto prices at once from CoinGecko (more efficient)
- * @param {string[]} symbols - Array of crypto symbols
- * @returns {Promise<Object>} - Map of symbol -> price
- */
-async function fetchCoinGeckoPricesBatch(symbols) {
-    if (!symbols || symbols.length === 0) return {};
-    
-    try {
-        // Convert symbols to CoinGecko IDs
-        const coinGeckoIds = symbols.map(s => getCoinGeckoId(s));
-        const uniqueIds = [...new Set(coinGeckoIds)];
+        console.error(`[PriceService] Yahoo Finance error for ${upperSymbol}:`, error.message);
         
-        const params = {
-            ids: uniqueIds.join(','),
-            vs_currencies: 'usd',
-            precision: 'full'
-        };
-        
-        if (COINGECKO_API_KEY) {
-            params['x_cg_pro_api_key'] = COINGECKO_API_KEY;
-        }
-        
-        const response = await axios.get(`${COINGECKO_BASE_URL}/simple/price`, {
-            params,
-            timeout: 15000,
-            headers: COINGECKO_API_KEY ? {
-                'x-cg-pro-api-key': COINGECKO_API_KEY
-            } : {}
-        });
-        
-        const data = response.data;
-        const result = {};
-        
-        for (const symbol of symbols) {
-            const coinGeckoId = getCoinGeckoId(symbol);
-            if (data[coinGeckoId] && data[coinGeckoId].usd !== undefined) {
-                result[symbol.toUpperCase()] = data[coinGeckoId].usd;
-                setCachedPrice(`cg:${coinGeckoId}`, data[coinGeckoId].usd);
+        // Try backup: Yahoo Finance v7 endpoint
+        try {
+            const backupUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${upperSymbol}`;
+            const backupResponse = await axios.get(backupUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                timeout: 10000
+            });
+            
+            const quote = backupResponse.data?.quoteResponse?.result?.[0];
+            if (quote && quote.regularMarketPrice) {
+                setCachedPrice(upperSymbol, 'stock', quote.regularMarketPrice);
+                return { price: quote.regularMarketPrice, source: 'yahoo-v7' };
             }
+        } catch (backupError) {
+            console.error(`[PriceService] Backup Yahoo error for ${upperSymbol}:`, backupError.message);
         }
         
-        console.log(`[PriceService] Batch fetched ${Object.keys(result).length}/${symbols.length} crypto prices`);
-        return result;
-        
-    } catch (error) {
-        console.error(`[PriceService] CoinGecko batch error:`, error.message);
-        return {};
+        return { price: null, source: 'error', error: error.message };
     }
 }
 
-/**
- * Fetch price using Yahoo Finance as fallback
- * @param {string} symbol - Stock or crypto symbol
- * @returns {Promise<number|null>}
- */
-async function fetchYahooFinancePrice(symbol) {
-    const cacheKey = `yf:${symbol.toUpperCase()}`;
-    const cached = getCachedPrice(cacheKey);
+// ============ CRYPTO PRICE FETCHING ============
+
+async function getCryptoPrice(symbol) {
+    const upperSymbol = symbol.toUpperCase();
+    
+    // Check cache first
+    const cached = getCachedPrice(upperSymbol, 'crypto');
     if (cached !== null) {
-        console.log(`[PriceService] Cache hit (Yahoo) for ${symbol}: $${cached}`);
-        return cached;
+        return { price: cached, source: 'cache' };
     }
+    
+    // Get CoinGecko ID
+    const coinId = CRYPTO_ID_MAP[upperSymbol] || upperSymbol.toLowerCase();
     
     try {
-        // Dynamic import for yahoo-finance2
-        const yahooFinance = require('yahoo-finance2').default;
+        // CoinGecko free API
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
         
-        // Format symbol for Yahoo
-        let yahooSymbol = symbol.toUpperCase();
-        if (isCryptoSymbol(symbol) && !yahooSymbol.includes('-')) {
-            yahooSymbol = `${getBaseSymbol(yahooSymbol)}-USD`;
+        const response = await axios.get(url, {
+            timeout: 10000,
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        
+        const price = response.data?.[coinId]?.usd;
+        
+        if (!price || isNaN(price)) {
+            throw new Error('Invalid price data from CoinGecko');
         }
         
-        const quote = await yahooFinance.quote(yahooSymbol);
-        
-        if (quote && quote.regularMarketPrice) {
-            const price = quote.regularMarketPrice;
-            setCachedPrice(cacheKey, price);
-            console.log(`[PriceService] Yahoo Finance price for ${yahooSymbol}: $${price}`);
-            return price;
-        }
-        
-        return null;
+        setCachedPrice(upperSymbol, 'crypto', price);
+        return { price, source: 'coingecko' };
         
     } catch (error) {
-        console.log(`[PriceService] Yahoo Finance error for ${symbol}:`, error.message);
-        return null;
+        console.error(`[PriceService] CoinGecko error for ${upperSymbol}:`, error.message);
+        
+        // Try backup: CoinGecko coins/markets endpoint
+        try {
+            const backupUrl = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${coinId}`;
+            const backupResponse = await axios.get(backupUrl, { timeout: 10000 });
+            
+            if (backupResponse.data?.[0]?.current_price) {
+                const price = backupResponse.data[0].current_price;
+                setCachedPrice(upperSymbol, 'crypto', price);
+                return { price, source: 'coingecko-markets' };
+            }
+        } catch (backupError) {
+            console.error(`[PriceService] Backup CoinGecko error:`, backupError.message);
+        }
+        
+        // Last resort: Try Yahoo Finance for crypto (BTC-USD format)
+        try {
+            const yahooSymbol = `${upperSymbol}-USD`;
+            const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`;
+            
+            const yahooResponse = await axios.get(yahooUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                timeout: 10000
+            });
+            
+            const result = yahooResponse.data?.chart?.result?.[0];
+            const price = result?.meta?.regularMarketPrice;
+            
+            if (price && !isNaN(price)) {
+                setCachedPrice(upperSymbol, 'crypto', price);
+                return { price, source: 'yahoo-crypto' };
+            }
+        } catch (yahooError) {
+            console.error(`[PriceService] Yahoo crypto error:`, yahooError.message);
+        }
+        
+        return { price: null, source: 'error', error: error.message };
     }
 }
 
-// ============ MAIN PRICE FETCHING FUNCTION ============
+// ============ MAIN EXPORT FUNCTION ============
 
-/**
- * Get current price for any asset with automatic detection and fallbacks
- * @param {string} symbol - The trading symbol
- * @param {string} [assetType] - Optional: 'stock' or 'crypto' (auto-detected if not provided)
- * @param {Object} [options] - Options
- * @param {boolean} [options.skipCache] - Skip cache lookup
- * @param {boolean} [options.useFallback] - Use fallback sources (default: true)
- * @returns {Promise<{price: number|null, source: string, cached: boolean}>}
- */
-async function getCurrentPrice(symbol, assetType = null, options = {}) {
-    const { skipCache = false, useFallback = true } = options;
-    
+async function getCurrentPrice(symbol, type = 'stock') {
     if (!symbol) {
-        console.error('[PriceService] No symbol provided');
-        return { price: null, source: null, cached: false };
+        return { price: null, source: 'error', error: 'No symbol provided' };
     }
     
     const upperSymbol = symbol.toUpperCase();
     
-    // Auto-detect asset type if not provided
-    const detectedCrypto = isCryptoSymbol(upperSymbol);
-    const isCrypto = assetType === 'crypto' || (assetType !== 'stock' && detectedCrypto);
+    // Auto-detect type if needed
+    const detectedType = type || (isCryptoSymbol(upperSymbol) ? 'crypto' : 'stock');
     
-    if (detectedCrypto && assetType && assetType !== 'crypto') {
-        console.log(`[PriceService] Auto-correcting ${symbol}: stored as ${assetType}, detected as crypto`);
-    }
+    console.log(`[PriceService] Fetching ${detectedType} price for ${upperSymbol}`);
     
-    let price = null;
-    let source = null;
-    let cached = false;
-    
-    if (isCrypto) {
-        // Crypto: Try CoinGecko first (Pro), then Yahoo Finance
-        price = await fetchCoinGeckoPrice(upperSymbol);
-        source = 'coingecko';
-        
-        if (price === null && useFallback) {
-            console.log(`[PriceService] CoinGecko failed for ${symbol}, trying Yahoo Finance...`);
-            price = await fetchYahooFinancePrice(upperSymbol);
-            source = 'yahoo';
-        }
-        
+    if (detectedType === 'crypto') {
+        return await getCryptoPrice(upperSymbol);
     } else {
-        // Stock: Try Alpha Vantage first (Pro), then Yahoo Finance
-        price = await fetchAlphaVantagePrice(upperSymbol);
-        source = 'alphavantage';
-        
-        if (price === null && useFallback) {
-            console.log(`[PriceService] Alpha Vantage failed for ${symbol}, trying Yahoo Finance...`);
-            price = await fetchYahooFinancePrice(upperSymbol);
-            source = 'yahoo';
-        }
+        return await getStockPrice(upperSymbol);
     }
-    
-    if (price === null) {
-        console.log(`[PriceService] ❌ All sources failed for ${symbol}`);
-        source = null;
-    }
-    
-    return { price, source, cached };
 }
 
-/**
- * Simple price getter (returns just the price number)
- * @param {string} symbol - The trading symbol
- * @param {string} [assetType] - Optional asset type
- * @returns {Promise<number|null>}
- */
-async function getPrice(symbol, assetType = null) {
-    const result = await getCurrentPrice(symbol, assetType);
-    return result.price;
-}
+// ============ BATCH PRICE FETCHING ============
 
-/**
- * Get prices for multiple symbols efficiently
- * @param {Array<{symbol: string, assetType?: string}>} assets - Array of assets
- * @returns {Promise<Object>} - Map of symbol -> price
- */
-async function getPricesBatch(assets) {
-    if (!assets || assets.length === 0) return {};
-    
+async function getBatchPrices(symbols) {
     const results = {};
     
-    // Separate crypto and stocks
-    const cryptoAssets = assets.filter(a => isCryptoSymbol(a.symbol) || a.assetType === 'crypto');
-    const stockAssets = assets.filter(a => !isCryptoSymbol(a.symbol) && a.assetType !== 'crypto');
+    // Separate stocks and crypto
+    const stocks = [];
+    const cryptos = [];
     
-    // Batch fetch crypto prices
-    if (cryptoAssets.length > 0) {
-        const cryptoPrices = await fetchCoinGeckoPricesBatch(cryptoAssets.map(a => a.symbol));
-        Object.assign(results, cryptoPrices);
-    }
-    
-    // Fetch stock prices individually (Alpha Vantage doesn't have great batch support)
-    for (const asset of stockAssets) {
-        const price = await getPrice(asset.symbol, 'stock');
-        if (price !== null) {
-            results[asset.symbol.toUpperCase()] = price;
-        }
-        // Small delay between stock API calls
-        if (stockAssets.indexOf(asset) < stockAssets.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+    for (const sym of symbols) {
+        if (isCryptoSymbol(sym)) {
+            cryptos.push(sym);
+        } else {
+            stocks.push(sym);
         }
     }
+    
+    // Fetch in parallel
+    const promises = [];
+    
+    for (const stock of stocks) {
+        promises.push(
+            getStockPrice(stock).then(result => {
+                results[stock.toUpperCase()] = result;
+            })
+        );
+    }
+    
+    for (const crypto of cryptos) {
+        promises.push(
+            getCryptoPrice(crypto).then(result => {
+                results[crypto.toUpperCase()] = result;
+            })
+        );
+    }
+    
+    await Promise.allSettled(promises);
     
     return results;
 }
 
 // ============ CACHE MANAGEMENT ============
 
-/**
- * Get cache statistics
- * @returns {Object}
- */
+function clearCache() {
+    priceCache.clear();
+    console.log('[PriceService] Cache cleared');
+}
+
 function getCacheStats() {
     return {
         size: priceCache.size,
@@ -650,49 +337,16 @@ function getCacheStats() {
     };
 }
 
-/**
- * Clear all cached prices
- */
-function clearCache() {
-    priceCache.clear();
-    console.log('[PriceService] Cache cleared');
-}
-
-/**
- * Manually set a price (useful for testing or manual overrides)
- * @param {string} symbol - The symbol
- * @param {number} price - The price
- */
-function setPrice(symbol, price) {
-    const cacheKey = `manual:${symbol.toUpperCase()}`;
-    setCachedPrice(cacheKey, price);
-}
-
 // ============ EXPORTS ============
 
 module.exports = {
-    // Main functions
     getCurrentPrice,
-    getPrice,
-    getPricesBatch,
-    
-    // Individual source functions (if needed directly)
-    fetchAlphaVantagePrice,
-    fetchCoinGeckoPrice,
-    fetchCoinGeckoPricesBatch,
-    fetchYahooFinancePrice,
-    
-    // Helper functions
+    getStockPrice,
+    getCryptoPrice,
+    getBatchPrices,
     isCryptoSymbol,
-    getBaseSymbol,
-    getCoinGeckoId,
-    
-    // Cache management
-    getCacheStats,
     clearCache,
-    setPrice,
-    
-    // Constants (for reference)
-    cryptoSymbolMap,
-    KNOWN_CRYPTO_SYMBOLS: Array.from(KNOWN_CRYPTO_SYMBOLS)
+    getCacheStats,
+    CRYPTO_SYMBOLS,
+    CRYPTO_ID_MAP
 };

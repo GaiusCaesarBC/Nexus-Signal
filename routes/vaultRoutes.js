@@ -1,351 +1,727 @@
-// server/routes/vaultRoutes.js - ENHANCED with better debugging
+// server/routes/vaultRoutes.js - COMPLETE VAULT SYSTEM
+// Handles: Browsing, Purchasing, Equipping, and Managing Vault Items
+
 const express = require('express');
 const router = express.Router();
-const protect = require('../middleware/authMiddleware');
+const auth = require('../middleware/authMiddleware');
+const User = require('../models/User');
 const Gamification = require('../models/Gamification');
-const { VAULT_ITEMS } = require('../data/vaultItems');
+
+// Import vault items - make sure this file exists at server/data/vaultItems.js
+let VAULT_ITEMS;
+try {
+    VAULT_ITEMS = require('../data/vaultItems').VAULT_ITEMS;
+    console.log('[Vault] Loaded vault items successfully');
+    console.log('[Vault] Borders:', VAULT_ITEMS.avatarBorders?.length || 0);
+    console.log('[Vault] Themes:', VAULT_ITEMS.profileThemes?.length || 0);
+    console.log('[Vault] Badges:', VAULT_ITEMS.badges?.length || 0);
+    console.log('[Vault] Perks:', VAULT_ITEMS.perks?.length || 0);
+} catch (error) {
+    console.error('[Vault] ERROR: Could not load vaultItems.js:', error.message);
+    console.error('[Vault] Make sure the file exists at server/data/vaultItems.js');
+    // Fallback empty items
+    VAULT_ITEMS = {
+        avatarBorders: [],
+        perks: [],
+        profileThemes: [],
+        badges: []
+    };
+}
+
+// ✅ Helper: Get gamification stats from the Gamification MODEL (same as /gamification/stats)
+const getGamificationStats = async (userId) => {
+    try {
+        const gamification = await Gamification.findOne({ user: userId });
+        
+        if (gamification) {
+            console.log(`[Vault] Found Gamification document: Level ${gamification.level}, Coins ${gamification.nexusCoins}`);
+            return {
+                level: gamification.level || 1,
+                nexusCoins: gamification.nexusCoins || 0,
+                xp: gamification.xp || 0
+            };
+        }
+        
+        console.log('[Vault] No Gamification document found for user');
+        return { level: 1, nexusCoins: 0, xp: 0 };
+    } catch (error) {
+        console.error('[Vault] Error getting gamification stats:', error);
+        return { level: 1, nexusCoins: 0, xp: 0 };
+    }
+};
+
+// ✅ Helper: Update user coins in the Gamification MODEL
+const updateUserCoins = async (userId, newCoinAmount) => {
+    try {
+        const gamification = await Gamification.findOne({ user: userId });
+        
+        if (gamification) {
+            gamification.nexusCoins = newCoinAmount;
+            await gamification.save();
+            console.log(`[Vault] Updated Gamification coins to ${newCoinAmount}`);
+            return true;
+        }
+        
+        console.error('[Vault] No Gamification document found to update coins');
+        return false;
+    } catch (error) {
+        console.error('[Vault] Error updating coins:', error);
+        return false;
+    }
+};
+
+// Helper: Get all items flattened
+const getAllItems = () => {
+    return [
+        ...(VAULT_ITEMS.avatarBorders || []),
+        ...(VAULT_ITEMS.perks || []),
+        ...(VAULT_ITEMS.profileThemes || []),
+        ...(VAULT_ITEMS.badges || [])
+    ];
+};
+
+// Helper: Find item by ID
+const findItemById = (itemId) => {
+    const allItems = getAllItems();
+    return allItems.find(item => item.id === itemId);
+};
+
+// ✅ Helper: Check if user meets unlock requirements (using real level)
+const meetsRequirements = (userLevel, userStats, requirement) => {
+    if (!requirement) return true;
+    
+    switch (requirement.type) {
+        case 'level':
+            const result = userLevel >= requirement.value;
+            console.log(`[Vault] Level check: User level ${userLevel} >= required ${requirement.value}? ${result}`);
+            return result;
+        case 'stats':
+            return (userStats?.[requirement.stat] || 0) >= requirement.value;
+        case 'special':
+            // Special requirements handled separately
+            return false;
+        default:
+            return true;
+    }
+};
+
+// Helper: Check special requirements (founder, etc)
+const meetsSpecialRequirement = (user, requirement) => {
+    if (!requirement || requirement.type !== 'special') return true;
+    
+    if (requirement.value === 'founder') {
+        return user.isFounder || user.createdAt < new Date('2025-06-01');
+    }
+    return false;
+};
+
+// Helper: Initialize user vault if needed
+const initializeUserVault = (user) => {
+    if (!user.vault) {
+        user.vault = {
+            ownedItems: ['border-bronze', 'theme-default'], // Free starter items
+            equippedBorder: 'border-bronze',
+            equippedTheme: 'theme-default',
+            equippedBadges: [],
+            activePerks: []
+        };
+    }
+    
+    // Ensure arrays exist
+    if (!user.vault.ownedItems) user.vault.ownedItems = ['border-bronze', 'theme-default'];
+    if (!user.vault.equippedBadges) user.vault.equippedBadges = [];
+    if (!user.vault.activePerks) user.vault.activePerks = [];
+    
+    return user.vault;
+};
 
 // @route   GET /api/vault/items
-// @desc    Get all vault items with ownership status
+// @desc    Get all vault items with user ownership status
 // @access  Private
-router.get('/items', protect, async (req, res) => {
+router.get('/items', auth, async (req, res) => {
     try {
-        console.log('📦 Fetching vault items for user:', req.user._id);
+        console.log('[Vault] GET /items called');
         
-        const gamification = await Gamification.findOne({ user: req.user._id });
-        
-        if (!gamification) {
-            console.log('❌ Gamification data not found for user:', req.user._id);
-            return res.status(404).json({ success: false, message: 'Gamification data not found' });
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        const ownedItemIds = gamification.ownedItems ? gamification.ownedItems.map(item => item.itemId) : [];
+        // ✅ Get REAL gamification stats (same source as /gamification/stats)
+        const gamificationStats = await getGamificationStats(user._id);
+        const userLevel = gamificationStats.level;
+        const userCoins = gamificationStats.nexusCoins;
         
-        console.log('✅ Owned items:', ownedItemIds.length);
-        console.log('✅ Equipped items:', gamification.equippedItems);
-        
-        // Combine all items and add ownership + unlock status
-        const allItems = [
-            ...VAULT_ITEMS.avatarBorders,
-            ...VAULT_ITEMS.perks,
-            ...VAULT_ITEMS.profileThemes,
-            ...VAULT_ITEMS.badges
-        ].map(item => ({
-            ...item,
-            owned: ownedItemIds.includes(item.id) || item.cost === 0,
-            equipped: isItemEquipped(item.id, gamification.equippedItems),
-            canUnlock: checkUnlockRequirement(item.unlockRequirement, gamification)
-        }));
+        console.log(`[Vault] User ${user.username}: Real Level ${userLevel}, Real Coins ${userCoins}`);
 
-        console.log('✅ Total items:', allItems.length);
-        console.log('✅ Equipped count:', allItems.filter(i => i.equipped).length);
+        // Initialize vault
+        const vault = initializeUserVault(user);
+        
+        // Save user if vault was just initialized
+        if (!user.vault || !user.vault.ownedItems) {
+            user.vault = vault;
+            await user.save();
+            console.log(`[Vault] Saved initialized vault for user ${user.username}`);
+        }
+
+        console.log(`[Vault] Items available - Borders: ${VAULT_ITEMS.avatarBorders?.length}, Themes: ${VAULT_ITEMS.profileThemes?.length}, Badges: ${VAULT_ITEMS.badges?.length}, Perks: ${VAULT_ITEMS.perks?.length}`);
+
+        // Build response with ownership and unlock status
+        const buildItemsWithStatus = (items) => {
+            if (!items || !Array.isArray(items)) {
+                console.log('[Vault] Warning: items is not an array');
+                return [];
+            }
+            return items.map(item => {
+                // Check requirements using REAL level
+                let canUnlock = true;
+                if (item.unlockRequirement) {
+                    if (item.unlockRequirement.type === 'special') {
+                        canUnlock = meetsSpecialRequirement(user, item.unlockRequirement);
+                    } else {
+                        canUnlock = meetsRequirements(userLevel, user.stats, item.unlockRequirement);
+                    }
+                }
+                
+                return {
+                    ...item,
+                    owned: vault.ownedItems.includes(item.id),
+                    equipped: 
+                        vault.equippedBorder === item.id ||
+                        vault.equippedTheme === item.id ||
+                        vault.equippedBadges?.includes(item.id) ||
+                        vault.activePerks?.includes(item.id),
+                    canUnlock,
+                    canAfford: userCoins >= item.cost
+                };
+            });
+        };
+
+        const responseData = {
+            success: true,
+            userCoins: userCoins,
+            userLevel: userLevel,
+            vault: {
+                equippedBorder: vault.equippedBorder || 'border-bronze',
+                equippedTheme: vault.equippedTheme || 'theme-default',
+                equippedBadges: vault.equippedBadges || [],
+                activePerks: vault.activePerks || []
+            },
+            items: {
+                avatarBorders: buildItemsWithStatus(VAULT_ITEMS.avatarBorders || []),
+                perks: buildItemsWithStatus(VAULT_ITEMS.perks || []),
+                profileThemes: buildItemsWithStatus(VAULT_ITEMS.profileThemes || []),
+                badges: buildItemsWithStatus(VAULT_ITEMS.badges || [])
+            }
+        };
+
+        console.log(`[Vault] Returning - Level: ${responseData.userLevel}, Coins: ${responseData.userCoins}`);
+        console.log(`[Vault] Returning ${responseData.items.avatarBorders.length} borders, ${responseData.items.profileThemes.length} themes`);
+        
+        res.json(responseData);
+    } catch (error) {
+        console.error('[Vault] Get items error:', error);
+        res.status(500).json({ error: 'Failed to fetch vault items', details: error.message });
+    }
+});
+
+// @route   GET /api/vault/owned
+// @desc    Get user's owned items only
+// @access  Private
+router.get('/owned', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const vault = initializeUserVault(user);
+        const allItems = getAllItems();
+        
+        const ownedItems = allItems.filter(item => vault.ownedItems.includes(item.id));
 
         res.json({
             success: true,
-            items: allItems,
-            equippedItems: gamification.equippedItems || {},
-            nexusCoins: gamification.nexusCoins
+            ownedItems,
+            equipped: {
+                border: vault.equippedBorder,
+                theme: vault.equippedTheme,
+                badges: vault.equippedBadges || [],
+                perks: vault.activePerks || []
+            }
         });
     } catch (error) {
-        console.error('❌ Error fetching vault items:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('[Vault] Get owned error:', error);
+        res.status(500).json({ error: 'Failed to fetch owned items' });
     }
 });
 
 // @route   POST /api/vault/purchase/:itemId
-// @desc    Purchase an item
+// @desc    Purchase a vault item with Nexus Coins
 // @access  Private
-router.post('/purchase/:itemId', protect, async (req, res) => {
+router.post('/purchase/:itemId', auth, async (req, res) => {
     try {
-        console.log('💰 Purchase attempt for item:', req.params.itemId);
+        const { itemId } = req.params;
+        const user = await User.findById(req.user._id);
         
-        const gamification = await Gamification.findOne({ user: req.user._id });
-        
-        if (!gamification) {
-            return res.status(404).json({ success: false, message: 'Gamification data not found' });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        const item = findItemById(req.params.itemId);
-        
+        const item = findItemById(itemId);
         if (!item) {
-            console.log('❌ Item not found:', req.params.itemId);
-            return res.status(404).json({ success: false, message: 'Item not found' });
+            return res.status(404).json({ error: 'Item not found' });
         }
 
-        // Initialize ownedItems if it doesn't exist
-        if (!gamification.ownedItems) {
-            gamification.ownedItems = [];
-        }
+        const vault = initializeUserVault(user);
 
         // Check if already owned
-        if (gamification.ownedItems.some(oi => oi.itemId === item.id)) {
-            console.log('⚠️ Item already owned:', item.id);
-            return res.status(400).json({ success: false, message: 'Item already owned' });
+        if (vault.ownedItems.includes(itemId)) {
+            return res.status(400).json({ error: 'You already own this item' });
         }
 
-        // Check unlock requirements
-        if (!checkUnlockRequirement(item.unlockRequirement, gamification)) {
-            console.log('🔒 Unlock requirements not met for:', item.id);
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Unlock requirements not met',
-                requirement: item.unlockRequirement
-            });
+        // ✅ Get REAL gamification stats (same source as /gamification/stats)
+        const gamificationStats = await getGamificationStats(user._id);
+        const userLevel = gamificationStats.level;
+        const userCoins = gamificationStats.nexusCoins;
+        
+        console.log(`[Vault] Purchase check - User ${user.username}: Level ${userLevel}, Coins ${userCoins}`);
+
+        // Check unlock requirements using REAL level
+        if (item.unlockRequirement) {
+            let canUnlock = true;
+            if (item.unlockRequirement.type === 'special') {
+                canUnlock = meetsSpecialRequirement(user, item.unlockRequirement);
+            } else {
+                canUnlock = meetsRequirements(userLevel, user.stats, item.unlockRequirement);
+            }
+            
+            if (!canUnlock) {
+                return res.status(400).json({ 
+                    error: 'You do not meet the requirements to unlock this item',
+                    requirement: item.unlockRequirement,
+                    yourLevel: userLevel
+                });
+            }
         }
 
-        // Check if user has enough coins
-        if (gamification.nexusCoins < item.cost) {
-            console.log('💸 Insufficient coins:', gamification.nexusCoins, '<', item.cost);
+        // Check if can afford using REAL coins
+        if (userCoins < item.cost) {
             return res.status(400).json({ 
-                success: false, 
-                message: 'Insufficient Nexus Coins',
+                error: 'Not enough Nexus Coins',
                 required: item.cost,
-                current: gamification.nexusCoins
+                current: userCoins
             });
         }
 
-        // Deduct coins and add item
-        gamification.nexusCoins -= item.cost;
-        gamification.ownedItems.push({
-            itemId: item.id,
-            type: item.type,
+        // Calculate new coin balance
+        const newCoinBalance = userCoins - item.cost;
+        
+        // ✅ Update coins in the correct location
+        const coinsUpdated = await updateUserCoins(user._id, newCoinBalance);
+        if (!coinsUpdated) {
+            console.error('[Vault] Failed to update coins!');
+        }
+        
+        // Add item to owned items
+        vault.ownedItems.push(itemId);
+        user.vault = vault;
+
+        // Add to purchase history
+        if (!user.vault.purchaseHistory) user.vault.purchaseHistory = [];
+        user.vault.purchaseHistory.push({
+            itemId,
+            itemName: item.name,
+            cost: item.cost,
             purchasedAt: new Date()
         });
 
-        await gamification.save();
+        await user.save();
 
-        console.log('✅ Item purchased successfully:', item.name);
+        console.log(`[Vault] User ${user.username} purchased ${item.name} for ${item.cost} coins. New balance: ${newCoinBalance}`);
 
         res.json({
             success: true,
-            message: `${item.name} purchased successfully!`,
-            nexusCoins: gamification.nexusCoins,
-            item: item
+            message: `Successfully purchased ${item.name}!`,
+            item: {
+                ...item,
+                owned: true
+            },
+            remainingCoins: newCoinBalance
         });
     } catch (error) {
-        console.error('❌ Error purchasing item:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('[Vault] Purchase error:', error);
+        res.status(500).json({ error: 'Failed to purchase item' });
     }
 });
 
 // @route   POST /api/vault/equip/:itemId
-// @desc    Equip an item
+// @desc    Equip a vault item
 // @access  Private
-router.post('/equip/:itemId', protect, async (req, res) => {
+router.post('/equip/:itemId', auth, async (req, res) => {
     try {
-        console.log('⚡ Equip attempt for item:', req.params.itemId, 'by user:', req.user._id);
+        const { itemId } = req.params;
+        const user = await User.findById(req.user._id);
         
-        const gamification = await Gamification.findOne({ user: req.user._id });
-        
-        if (!gamification) {
-            console.log('❌ Gamification data not found');
-            return res.status(404).json({ success: false, message: 'Gamification data not found' });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        const item = findItemById(req.params.itemId);
-        
+        const item = findItemById(itemId);
         if (!item) {
-            console.log('❌ Item not found:', req.params.itemId);
-            return res.status(404).json({ success: false, message: 'Item not found' });
+            return res.status(404).json({ error: 'Item not found' });
         }
 
-        console.log('📋 Item to equip:', item.name, 'Type:', item.type);
+        const vault = initializeUserVault(user);
 
-        // Initialize arrays if they don't exist
-        if (!gamification.ownedItems) {
-            gamification.ownedItems = [];
+        // Check if owned (unless it's a free item)
+        if (!vault.ownedItems.includes(itemId) && item.cost > 0) {
+            return res.status(400).json({ error: 'You do not own this item' });
         }
-
-        // Check if owned
-        const owned = gamification.ownedItems.some(oi => oi.itemId === item.id) || item.cost === 0;
-        
-        if (!owned) {
-            console.log('❌ Item not owned:', item.id);
-            return res.status(403).json({ success: false, message: 'Item not owned' });
-        }
-
-        // Initialize equippedItems if it doesn't exist
-        if (!gamification.equippedItems) {
-            console.log('🔧 Initializing equippedItems object');
-            gamification.equippedItems = {
-                avatarBorder: null,
-                profileTheme: 'theme-default',
-                activePerk: null,
-                badges: []
-            };
-        }
-
-        console.log('📦 Before equip:', JSON.stringify(gamification.equippedItems));
 
         // Equip based on type
         switch (item.type) {
             case 'avatar-border':
-                gamification.equippedItems.avatarBorder = item.id;
-                console.log('✅ Equipped avatar border:', item.id);
+                vault.equippedBorder = itemId;
                 break;
             case 'profile-theme':
-                gamification.equippedItems.profileTheme = item.id;
-                console.log('✅ Equipped profile theme:', item.id);
-                break;
-            case 'perk':
-                gamification.equippedItems.activePerk = item.id;
-                console.log('✅ Equipped perk:', item.id);
+                vault.equippedTheme = itemId;
                 break;
             case 'badge':
-                if (!gamification.equippedItems.badges) {
-                    gamification.equippedItems.badges = [];
+                // Can equip up to 5 badges
+                if (!vault.equippedBadges) vault.equippedBadges = [];
+                if (!vault.equippedBadges.includes(itemId)) {
+                    if (vault.equippedBadges.length >= 5) {
+                        return res.status(400).json({ 
+                            error: 'Maximum 5 badges can be displayed. Unequip one first.' 
+                        });
+                    }
+                    vault.equippedBadges.push(itemId);
                 }
-                if (gamification.equippedItems.badges.length >= 3) {
-                    console.log('⚠️ Maximum 3 badges already equipped');
-                    return res.status(400).json({ success: false, message: 'Maximum 3 badges can be equipped' });
-                }
-                if (!gamification.equippedItems.badges.includes(item.id)) {
-                    gamification.equippedItems.badges.push(item.id);
-                    console.log('✅ Equipped badge:', item.id);
+                break;
+            case 'perk':
+                // Can have up to 3 active perks
+                if (!vault.activePerks) vault.activePerks = [];
+                if (!vault.activePerks.includes(itemId)) {
+                    if (vault.activePerks.length >= 3) {
+                        return res.status(400).json({ 
+                            error: 'Maximum 3 perks can be active. Deactivate one first.' 
+                        });
+                    }
+                    vault.activePerks.push(itemId);
                 }
                 break;
             default:
-                console.log('❌ Invalid item type:', item.type);
-                return res.status(400).json({ success: false, message: 'Invalid item type' });
+                return res.status(400).json({ error: 'Invalid item type' });
         }
 
-        console.log('📦 After equip:', JSON.stringify(gamification.equippedItems));
+        user.vault = vault;
+        await user.save();
 
-        // Mark as modified and save
-        gamification.markModified('equippedItems');
-        await gamification.save();
-
-        console.log('💾 Saved to database');
-
-        // Verify save
-        const verifyGamification = await Gamification.findOne({ user: req.user._id });
-        console.log('✔️ Verified equipped items after save:', JSON.stringify(verifyGamification.equippedItems));
+        console.log(`[Vault] User ${user.username} equipped ${item.name}`);
 
         res.json({
             success: true,
-            message: `${item.name} equipped successfully!`,
-            equippedItems: gamification.equippedItems
+            message: `${item.name} equipped!`,
+            equipped: {
+                border: vault.equippedBorder,
+                theme: vault.equippedTheme,
+                badges: vault.equippedBadges,
+                perks: vault.activePerks
+            }
         });
     } catch (error) {
-        console.error('❌ Error equipping item:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('[Vault] Equip error:', error);
+        res.status(500).json({ error: 'Failed to equip item' });
     }
 });
 
 // @route   POST /api/vault/unequip/:itemId
-// @desc    Unequip an item
+// @desc    Unequip a vault item
 // @access  Private
-router.post('/unequip/:itemId', protect, async (req, res) => {
+router.post('/unequip/:itemId', auth, async (req, res) => {
     try {
-        console.log('🔓 Unequip attempt for item:', req.params.itemId);
+        const { itemId } = req.params;
+        const user = await User.findById(req.user._id);
         
-        const gamification = await Gamification.findOne({ user: req.user._id });
-        
-        if (!gamification) {
-            console.log('❌ Gamification data not found');
-            return res.status(404).json({ success: false, message: 'Gamification data not found' });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        const item = findItemById(req.params.itemId);
-        
+        const item = findItemById(itemId);
         if (!item) {
-            console.log('❌ Item not found:', req.params.itemId);
-            return res.status(404).json({ success: false, message: 'Item not found' });
+            return res.status(404).json({ error: 'Item not found' });
         }
 
-        if (!gamification.equippedItems) {
-            console.log('⚠️ No items equipped');
-            return res.status(400).json({ success: false, message: 'No items equipped' });
-        }
-
-        console.log('📦 Before unequip:', JSON.stringify(gamification.equippedItems));
+        const vault = initializeUserVault(user);
 
         // Unequip based on type
         switch (item.type) {
             case 'avatar-border':
-                gamification.equippedItems.avatarBorder = null;
-                console.log('✅ Unequipped avatar border');
+                // Can't unequip border, must equip a different one
+                // Default to bronze
+                vault.equippedBorder = 'border-bronze';
                 break;
             case 'profile-theme':
-                gamification.equippedItems.profileTheme = 'theme-default';
-                console.log('✅ Unequipped profile theme (reverted to default)');
-                break;
-            case 'perk':
-                gamification.equippedItems.activePerk = null;
-                console.log('✅ Unequipped perk');
+                // Default to default theme
+                vault.equippedTheme = 'theme-default';
                 break;
             case 'badge':
-                if (gamification.equippedItems.badges) {
-                    gamification.equippedItems.badges = gamification.equippedItems.badges.filter(
-                        badgeId => badgeId !== item.id
-                    );
-                    console.log('✅ Unequipped badge');
-                }
+                vault.equippedBadges = (vault.equippedBadges || []).filter(id => id !== itemId);
+                break;
+            case 'perk':
+                vault.activePerks = (vault.activePerks || []).filter(id => id !== itemId);
                 break;
             default:
-                console.log('❌ Invalid item type:', item.type);
-                return res.status(400).json({ success: false, message: 'Invalid item type' });
+                return res.status(400).json({ error: 'Invalid item type' });
         }
 
-        console.log('📦 After unequip:', JSON.stringify(gamification.equippedItems));
+        user.vault = vault;
+        await user.save();
 
-        gamification.markModified('equippedItems');
-        await gamification.save();
-
-        console.log('💾 Saved to database');
+        console.log(`[Vault] User ${user.username} unequipped ${item.name}`);
 
         res.json({
             success: true,
-            message: `${item.name} unequipped successfully!`,
-            equippedItems: gamification.equippedItems
+            message: `${item.name} unequipped!`,
+            equipped: {
+                border: vault.equippedBorder,
+                theme: vault.equippedTheme,
+                badges: vault.equippedBadges,
+                perks: vault.activePerks
+            }
         });
     } catch (error) {
-        console.error('❌ Error unequipping item:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('[Vault] Unequip error:', error);
+        res.status(500).json({ error: 'Failed to unequip item' });
     }
 });
 
-// Helper functions
-function findItemById(itemId) {
-    const allItems = [
-        ...VAULT_ITEMS.avatarBorders,
-        ...VAULT_ITEMS.perks,
-        ...VAULT_ITEMS.profileThemes,
-        ...VAULT_ITEMS.badges
-    ];
-    return allItems.find(item => item.id === itemId);
-}
+// @route   GET /api/vault/equipped
+// @desc    Get user's currently equipped items with full details
+// @access  Private
+router.get('/equipped', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-function isItemEquipped(itemId, equippedItems) {
-    if (!equippedItems) return false;
-    
-    const isEquipped = (
-        equippedItems.avatarBorder === itemId ||
-        equippedItems.profileTheme === itemId ||
-        equippedItems.activePerk === itemId ||
-        (equippedItems.badges && equippedItems.badges.includes(itemId))
-    );
-    
-    return isEquipped;
-}
+        const vault = initializeUserVault(user);
+        
+        // Get full item details for equipped items
+        const equippedBorder = VAULT_ITEMS.avatarBorders.find(b => b.id === vault.equippedBorder);
+        const equippedTheme = VAULT_ITEMS.profileThemes.find(t => t.id === vault.equippedTheme);
+        const equippedBadges = (vault.equippedBadges || [])
+            .map(id => VAULT_ITEMS.badges.find(b => b.id === id))
+            .filter(Boolean);
+        const activePerks = (vault.activePerks || [])
+            .map(id => VAULT_ITEMS.perks.find(p => p.id === id))
+            .filter(Boolean);
 
-function checkUnlockRequirement(requirement, gamification) {
-    if (!requirement) return true;
-
-    switch (requirement.type) {
-        case 'level':
-            return gamification.level >= requirement.value;
-        case 'achievement':
-            return gamification.achievements.some(a => a.id === requirement.value);
-        case 'stats':
-            return gamification.stats && gamification.stats[requirement.stat] >= requirement.value;
-        case 'nexusCoins':
-            return gamification.nexusCoins >= requirement.value;
-        case 'special':
-            return false; // Special items need manual unlock
-        default:
-            return true;
+        res.json({
+            success: true,
+            equipped: {
+                border: equippedBorder || null,
+                theme: equippedTheme || null,
+                badges: equippedBadges,
+                perks: activePerks
+            }
+        });
+    } catch (error) {
+        console.error('[Vault] Get equipped error:', error);
+        res.status(500).json({ error: 'Failed to fetch equipped items' });
     }
-}
+});
+
+// @route   GET /api/vault/user/:userId
+// @desc    Get another user's equipped items (for profile viewing)
+// @access  Public
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).select('vault gamification username');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const vault = user.vault || {
+            equippedBorder: 'border-bronze',
+            equippedTheme: 'theme-default',
+            equippedBadges: [],
+            activePerks: []
+        };
+
+        // Get full item details
+        const equippedBorder = VAULT_ITEMS.avatarBorders.find(b => b.id === vault.equippedBorder);
+        const equippedTheme = VAULT_ITEMS.profileThemes.find(t => t.id === vault.equippedTheme);
+        const equippedBadges = (vault.equippedBadges || [])
+            .map(id => VAULT_ITEMS.badges.find(b => b.id === id))
+            .filter(Boolean);
+
+        res.json({
+            success: true,
+            username: user.username,
+            level: user.gamification?.level || 1,
+            equipped: {
+                border: equippedBorder || null,
+                theme: equippedTheme || null,
+                badges: equippedBadges
+            }
+        });
+    } catch (error) {
+        console.error('[Vault] Get user equipped error:', error);
+        res.status(500).json({ error: 'Failed to fetch user items' });
+    }
+});
+
+// @route   GET /api/vault/active-perks
+// @desc    Get user's active perks with effects (for game calculations)
+// @access  Private
+router.get('/active-perks', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const vault = initializeUserVault(user);
+        const activePerks = (vault.activePerks || [])
+            .map(id => VAULT_ITEMS.perks.find(p => p.id === id))
+            .filter(Boolean);
+
+        // Calculate combined effects
+        const effects = {
+            xp_bonus: 0,
+            coin_bonus: 0,
+            profit_bonus: 0,
+            streak_protection: 0,
+            extra_daily: 0
+        };
+
+        activePerks.forEach(perk => {
+            if (perk.effect) {
+                effects[perk.effect.type] = (effects[perk.effect.type] || 0) + perk.effect.value;
+            }
+        });
+
+        res.json({
+            success: true,
+            activePerks,
+            combinedEffects: effects
+        });
+    } catch (error) {
+        console.error('[Vault] Get active perks error:', error);
+        res.status(500).json({ error: 'Failed to fetch active perks' });
+    }
+});
+
+// @route   GET /api/vault/stats
+// @desc    Get vault statistics
+// @access  Private
+router.get('/stats', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const vault = initializeUserVault(user);
+        const allItems = getAllItems();
+        
+        const ownedCount = vault.ownedItems.length;
+        const totalCount = allItems.length;
+        const totalSpent = (vault.purchaseHistory || []).reduce((sum, p) => sum + p.cost, 0);
+
+        // Count by rarity
+        const ownedByRarity = {
+            common: 0,
+            rare: 0,
+            epic: 0,
+            legendary: 0
+        };
+
+        vault.ownedItems.forEach(itemId => {
+            const item = findItemById(itemId);
+            if (item && item.rarity) {
+                ownedByRarity[item.rarity] = (ownedByRarity[item.rarity] || 0) + 1;
+            }
+        });
+
+        // Count by type
+        const ownedByType = {
+            'avatar-border': 0,
+            'profile-theme': 0,
+            'badge': 0,
+            'perk': 0
+        };
+
+        vault.ownedItems.forEach(itemId => {
+            const item = findItemById(itemId);
+            if (item && item.type) {
+                ownedByType[item.type] = (ownedByType[item.type] || 0) + 1;
+            }
+        });
+
+        res.json({
+            success: true,
+            stats: {
+                ownedCount,
+                totalCount,
+                completionPercent: ((ownedCount / totalCount) * 100).toFixed(1),
+                totalSpent,
+                ownedByRarity,
+                ownedByType,
+                purchaseHistory: (vault.purchaseHistory || []).slice(-10) // Last 10 purchases
+            }
+        });
+    } catch (error) {
+        console.error('[Vault] Get stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch vault stats' });
+    }
+});
+
+// @route   POST /api/vault/check-badges
+// @desc    Check and award earned badges based on user stats
+// @access  Private
+router.post('/check-badges', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const vault = initializeUserVault(user);
+        const newBadges = [];
+
+        // Check each badge's requirements
+        for (const badge of VAULT_ITEMS.badges) {
+            // Skip if already owned
+            if (vault.ownedItems.includes(badge.id)) continue;
+            
+            // Check if requirements are met
+            if (meetsRequirements(user, badge.unlockRequirement)) {
+                vault.ownedItems.push(badge.id);
+                newBadges.push(badge);
+                console.log(`[Vault] User ${user.username} earned badge: ${badge.name}`);
+            }
+        }
+
+        if (newBadges.length > 0) {
+            user.vault = vault;
+            await user.save();
+        }
+
+        res.json({
+            success: true,
+            newBadges,
+            message: newBadges.length > 0 
+                ? `Congratulations! You earned ${newBadges.length} new badge(s)!` 
+                : 'No new badges earned'
+        });
+    } catch (error) {
+        console.error('[Vault] Check badges error:', error);
+        res.status(500).json({ error: 'Failed to check badges' });
+    }
+});
 
 module.exports = router;

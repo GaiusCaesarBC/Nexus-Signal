@@ -15,8 +15,10 @@ const {
 
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for historical
+const QUOTE_CACHE_DURATION = 60 * 1000; // 1 minute for quotes
 const cryptoCache = {};
+const quoteCache = {};
 
 const cryptoSymbolMap = {
     BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin', 
@@ -24,7 +26,21 @@ const cryptoSymbolMap = {
     BNB: 'binancecoin', LINK: 'chainlink', UNI: 'uniswap', 
     MATIC: 'matic-network', SHIB: 'shiba-inu', TRX: 'tron', 
     AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero',
+    PEPE: 'pepe', ARB: 'arbitrum', OP: 'optimism',
+    APT: 'aptos', SUI: 'sui', SEI: 'sei-network',
+    INJ: 'injective-protocol', FET: 'fetch-ai', RENDER: 'render-token',
+    TAO: 'bittensor', NEAR: 'near', FTM: 'fantom',
+    ALGO: 'algorand', VET: 'vechain', HBAR: 'hedera-hashgraph',
+    ICP: 'internet-computer', FIL: 'filecoin', SAND: 'the-sandbox',
+    MANA: 'decentraland', AXS: 'axie-infinity', AAVE: 'aave',
+    MKR: 'maker', CRV: 'curve-dao-token', LDO: 'lido-dao',
+    RPL: 'rocket-pool', GMX: 'gmx', DYDX: 'dydx',
 };
+
+// Reverse map for lookups
+const coinGeckoIdToSymbol = Object.fromEntries(
+    Object.entries(cryptoSymbolMap).map(([symbol, id]) => [id, symbol])
+);
 
 function getCoinGeckoDays(range) {
     switch (range) {
@@ -38,6 +54,15 @@ function getCoinGeckoDays(range) {
         case 'MAX': return 'max';
         default: return 30;
     }
+}
+
+// Format timestamp to date string
+function formatDateString(timestamp, range) {
+    const date = new Date(timestamp);
+    if (range === '1D' || range === '5D') {
+        return date.toISOString().slice(0, 19).replace('T', ' ');
+    }
+    return date.toISOString().slice(0, 10);
 }
 
 // ✅ TEST ENDPOINT - Verify Pro API is working correctly
@@ -57,18 +82,17 @@ router.get('/test-api/:symbol?', async (req, res) => {
         const priceParams = {
             ids: coinGeckoId,
             vs_currencies: 'usd',
+            include_24hr_vol: true,
+            include_24hr_change: true,
+            include_market_cap: true,
             x_cg_pro_api_key: COINGECKO_API_KEY
         };
 
         console.log('\n--- Test 1: Simple Price ---');
-        console.log('URL:', priceUrl);
-        console.log('Params:', JSON.stringify({ ...priceParams, x_cg_pro_api_key: '***' }, null, 2));
-
         const priceResponse = await axios.get(priceUrl, { params: priceParams });
-        const currentPrice = priceResponse.data[coinGeckoId]?.usd;
+        const priceData = priceResponse.data[coinGeckoId];
 
-        console.log('✅ Current Price Response:', JSON.stringify(priceResponse.data, null, 2));
-        console.log('Current Price:', currentPrice);
+        console.log('✅ Price Response:', JSON.stringify(priceData, null, 2));
 
         // Test 2: Market chart data
         const chartUrl = `${COINGECKO_BASE_URL}/coins/${coinGeckoId}/market_chart`;
@@ -79,18 +103,10 @@ router.get('/test-api/:symbol?', async (req, res) => {
         };
 
         console.log('\n--- Test 2: Market Chart ---');
-        console.log('URL:', chartUrl);
-        console.log('Params:', JSON.stringify({ ...chartParams, x_cg_pro_api_key: '***' }, null, 2));
-
         const chartResponse = await axios.get(chartUrl, { params: chartParams });
         const prices = chartResponse.data.prices || [];
 
         console.log('✅ Data Points:', prices.length);
-        if (prices.length > 0) {
-            console.log('First Price:', prices[0]);
-            console.log('Last Price:', prices[prices.length - 1]);
-            console.log('Last Price Value:', prices[prices.length - 1][1]);
-        }
 
         res.json({
             success: true,
@@ -100,31 +116,103 @@ router.get('/test-api/:symbol?', async (req, res) => {
                 coinId: coinGeckoId
             },
             simplePrice: {
-                url: priceUrl,
-                price: currentPrice,
-                rawResponse: priceResponse.data
+                price: priceData?.usd,
+                change24h: priceData?.usd_24h_change,
+                volume24h: priceData?.usd_24h_vol,
+                marketCap: priceData?.usd_market_cap
             },
             marketChart: {
-                url: chartUrl,
                 dataPoints: prices.length,
                 firstPrice: prices[0],
-                lastPrice: prices[prices.length - 1],
-                lastPriceValue: prices.length > 0 ? prices[prices.length - 1][1] : null
+                lastPrice: prices[prices.length - 1]
             }
         });
 
     } catch (error) {
         console.error('\n❌ API TEST FAILED:', error.message);
-        if (error.response) {
-            console.error('Status:', error.response.status);
-            console.error('Data:', JSON.stringify(error.response.data, null, 2));
-        }
-
         res.status(500).json({
             success: false,
             error: error.message,
             status: error.response?.status,
             data: error.response?.data
+        });
+    }
+});
+
+// ✅ NEW: GET /api/crypto/quote/:symbol - Real-time quote data
+router.get('/quote/:symbol', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
+        
+        // Check cache
+        const cacheKey = `quote-${coinGeckoId}`;
+        if (quoteCache[cacheKey] && (Date.now() - quoteCache[cacheKey].timestamp < QUOTE_CACHE_DURATION)) {
+            console.log(`[Crypto] Serving cached quote for ${symbol}`);
+            return res.json(quoteCache[cacheKey].data);
+        }
+
+        console.log(`[Crypto] Fetching quote for ${symbol} (${coinGeckoId})`);
+
+        // Fetch detailed coin data
+        const url = `${COINGECKO_BASE_URL}/coins/${coinGeckoId}`;
+        const params = {
+            localization: false,
+            tickers: false,
+            community_data: false,
+            developer_data: false,
+            sparkline: false,
+            x_cg_pro_api_key: COINGECKO_API_KEY
+        };
+
+        const response = await axios.get(url, { params });
+        const data = response.data;
+        const market = data.market_data;
+
+        const quoteData = {
+            symbol: symbol.toUpperCase(),
+            name: data.name,
+            price: market.current_price?.usd || 0,
+            change24h: market.price_change_24h || 0,
+            changePercent24h: market.price_change_percentage_24h || 0,
+            high24h: market.high_24h?.usd || 0,
+            low24h: market.low_24h?.usd || 0,
+            volume24h: market.total_volume?.usd || 0,
+            marketCap: market.market_cap?.usd || 0,
+            marketCapRank: market.market_cap_rank || data.market_cap_rank || null,
+            circulatingSupply: market.circulating_supply || 0,
+            totalSupply: market.total_supply || null,
+            maxSupply: market.max_supply || null,
+            ath: market.ath?.usd || 0,
+            athDate: market.ath_date?.usd || null,
+            athChangePercent: market.ath_change_percentage?.usd || 0,
+            atl: market.atl?.usd || 0,
+            atlDate: market.atl_date?.usd || null,
+            priceChange7d: market.price_change_percentage_7d || 0,
+            priceChange30d: market.price_change_percentage_30d || 0,
+            priceChange1y: market.price_change_percentage_1y || null,
+            lastUpdated: data.last_updated,
+            image: data.image?.small || null
+        };
+
+        // Cache the result
+        quoteCache[cacheKey] = { timestamp: Date.now(), data: quoteData };
+
+        res.json(quoteData);
+
+    } catch (error) {
+        console.error('[Crypto] Quote error:', error.message);
+        
+        if (error.response?.status === 429) {
+            return res.status(429).json({ msg: 'Rate limit exceeded. Please wait.' });
+        }
+        if (error.response?.status === 404) {
+            return res.status(404).json({ msg: `Crypto "${req.params.symbol}" not found.` });
+        }
+        
+        res.status(500).json({ 
+            msg: 'Failed to fetch crypto quote', 
+            error: error.message 
         });
     }
 });
@@ -145,7 +233,7 @@ async function fetchCryptoData(symbol, range) {
     const params = {
         vs_currency: 'usd',
         days: days,
-        x_cg_pro_api_key: COINGECKO_API_KEY  // ✅ Correct parameter name for Pro API
+        x_cg_pro_api_key: COINGECKO_API_KEY
     };
 
     if (days > 90) {
@@ -154,7 +242,6 @@ async function fetchCryptoData(symbol, range) {
 
     const url = `${COINGECKO_BASE_URL}/coins/${coinGeckoId}/market_chart`;
     console.log(`\n[Crypto] Fetching ${symbol} (${coinGeckoId}) for ${range}`);
-    console.log(`[Crypto] URL: ${url}`);
     console.log(`[Crypto] Has API Key:`, !!COINGECKO_API_KEY);
 
     try {
@@ -181,6 +268,7 @@ async function fetchCryptoData(symbol, range) {
         prices.forEach(([timestamp, price]) => {
             historicalDataMap.set(timestamp, {
                 time: timestamp,
+                date: formatDateString(timestamp, range), // ✅ Add date string
                 open: price,
                 high: price,
                 low: price,
@@ -447,15 +535,43 @@ router.get('/historical/:symbol', async (req, res) => {
 
         res.json({
             symbol: symbol.toUpperCase(),
+            range,
+            dataPoints: historicalData.length,
             historicalData,
         });
 
     } catch (error) {
         console.error('[Crypto] Historical error:', error.message);
+        
+        if (error.response?.status === 429) {
+            return res.status(429).json({ msg: 'Rate limit exceeded. Please wait.' });
+        }
+        if (error.response?.status === 404) {
+            return res.status(404).json({ msg: `Crypto "${req.params.symbol}" not found.` });
+        }
+        
         res.status(500).json({ 
             msg: 'Failed to fetch crypto data', 
             error: error.message 
         });
+    }
+});
+
+// GET /api/crypto/list - Get list of supported cryptocurrencies
+router.get('/list', async (req, res) => {
+    try {
+        const supportedCryptos = Object.entries(cryptoSymbolMap).map(([symbol, id]) => ({
+            symbol,
+            id,
+            name: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, ' ')
+        }));
+
+        res.json({
+            count: supportedCryptos.length,
+            cryptocurrencies: supportedCryptos
+        });
+    } catch (error) {
+        res.status(500).json({ msg: 'Failed to get crypto list', error: error.message });
     }
 });
 

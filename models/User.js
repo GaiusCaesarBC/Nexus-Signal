@@ -1,4 +1,4 @@
-// server/models/User.js - COMPLETE with Social Features, Gamification & Onboarding
+// server/models/User.js - COMPLETE with Social Features, Gamification, Vault & Onboarding
 
 const mongoose = require('mongoose');
 
@@ -25,6 +25,40 @@ const UserSchema = new mongoose.Schema({
         type: [String],
         default: []
     },
+
+    // ============ 🆕 VAULT SYSTEM ============
+    vault: {
+        ownedItems: {
+            type: [String],
+            default: ['border-bronze', 'theme-default'] // Free starter items
+        },
+        equippedBorder: {
+            type: String,
+            default: 'border-bronze'
+        },
+        equippedTheme: {
+            type: String,
+            default: 'theme-default'
+        },
+        equippedBadges: {
+            type: [String],
+            default: []
+        },
+        activePerks: {
+            type: [String],
+            default: []
+        },
+        purchaseHistory: [{
+            itemId: String,
+            itemName: String,
+            cost: Number,
+            purchasedAt: {
+                type: Date,
+                default: Date.now
+            }
+        }]
+    },
+
     // ✅ Existing notification/preferences
     notifications: {
         type: Object,
@@ -112,6 +146,11 @@ const UserSchema = new mongoose.Schema({
         title: { type: String, default: 'Rookie Trader' },
         nextLevelXp: { type: Number, default: 100 },
         totalXpEarned: { type: Number, default: 0 },
+        
+        // 🆕 NEXUS COINS - Required for Vault purchases!
+        nexusCoins: { type: Number, default: 1000 },  // Start with 1000 coins
+        totalCoinsEarned: { type: Number, default: 1000 },
+        
         // Achievement IDs the user has earned
         achievements: [{ type: String }],
         // Badge IDs the user has earned
@@ -122,6 +161,7 @@ const UserSchema = new mongoose.Schema({
         lastXpEarned: { type: Date },
         // Daily login streak
         loginStreak: { type: Number, default: 0 },
+        maxLoginStreak: { type: Number, default: 0 },
         lastLogin: { type: Date }
     },
 
@@ -179,8 +219,12 @@ const UserSchema = new mongoose.Schema({
         description: { type: String },
         icon: { type: String },
         xpReward: { type: Number, default: 0 },
+        coinReward: { type: Number, default: 0 },
         earnedAt: { type: Date, default: Date.now }
     }],
+
+    // ============ FOUNDER STATUS (for special vault items) ============
+    isFounder: { type: Boolean, default: false },
 
     date: {
         type: Date,
@@ -212,6 +256,86 @@ const LEVEL_THRESHOLDS = [
     43000,  // Level 18
     51000,  // Level 19
     60000,  // Level 20
+    70000,  // Level 21
+    81000,  // Level 22
+    93000,  // Level 23
+    106000, // Level 24
+    120000, // Level 25
+    135000, // Level 26
+    151000, // Level 27
+    168000, // Level 28
+    186000, // Level 29
+    205000, // Level 30
+    225000, // Level 31
+    246000, // Level 32
+    268000, // Level 33
+    291000, // Level 34
+    315000, // Level 35
+    340000, // Level 36
+    366000, // Level 37
+    393000, // Level 38
+    421000, // Level 39
+    450000, // Level 40
+    480000, // Level 41
+    511000, // Level 42
+    543000, // Level 43
+    576000, // Level 44
+    610000, // Level 45
+    645000, // Level 46
+    681000, // Level 47
+    718000, // Level 48
+    756000, // Level 49
+    795000, // Level 50
+    850000, // Level 51
+    910000, // Level 52
+    975000, // Level 53
+    1045000, // Level 54
+    1120000, // Level 55
+    1200000, // Level 56
+    1285000, // Level 57
+    1375000, // Level 58
+    1470000, // Level 59
+    1570000, // Level 60
+    1680000, // Level 61
+    1800000, // Level 62
+    1930000, // Level 63
+    2070000, // Level 64
+    2220000, // Level 65
+    2380000, // Level 66
+    2550000, // Level 67
+    2730000, // Level 68
+    2920000, // Level 69
+    3120000, // Level 70
+    3340000, // Level 71
+    3580000, // Level 72
+    3840000, // Level 73
+    4120000, // Level 74
+    4420000, // Level 75
+    4750000, // Level 76
+    5100000, // Level 77
+    5480000, // Level 78
+    5890000, // Level 79
+    6330000, // Level 80
+    6810000, // Level 81
+    7330000, // Level 82
+    7890000, // Level 83
+    8500000, // Level 84
+    9160000, // Level 85
+    9870000, // Level 86
+    10640000, // Level 87
+    11470000, // Level 88
+    12370000, // Level 89
+    13340000, // Level 90
+    14390000, // Level 91
+    15520000, // Level 92
+    16740000, // Level 93
+    18060000, // Level 94
+    19490000, // Level 95
+    21030000, // Level 96
+    22700000, // Level 97
+    24500000, // Level 98
+    26450000, // Level 99
+    28560000, // Level 100
 ];
 
 // Titles for each level
@@ -236,6 +360,86 @@ const LEVEL_TITLES = [
     'Market Emperor',       // 18
     'Trading Deity',        // 19
     'Market God',           // 20
+    'Ascended Trader',      // 21
+    'Cosmic Trader',        // 22
+    'Dimensional Trader',   // 23
+    'Eternal Trader',       // 24
+    'Infinite Trader',      // 25
+    'Nexus Apprentice',     // 26
+    'Nexus Adept',          // 27
+    'Nexus Expert',         // 28
+    'Nexus Master',         // 29
+    'Nexus Champion',       // 30
+    'Bronze Nexian',        // 31
+    'Silver Nexian',        // 32
+    'Gold Nexian',          // 33
+    'Platinum Nexian',      // 34
+    'Diamond Nexian',       // 35
+    'Ruby Nexian',          // 36
+    'Sapphire Nexian',      // 37
+    'Emerald Nexian',       // 38
+    'Obsidian Nexian',      // 39
+    'Celestial Nexian',     // 40
+    'Market Monarch',       // 41
+    'Trading Sovereign',    // 42
+    'Wealth Architect',     // 43
+    'Fortune Weaver',       // 44
+    'Destiny Trader',       // 45
+    'Fate Bender',          // 46
+    'Reality Trader',       // 47
+    'Quantum Trader',       // 48
+    'Void Trader',          // 49
+    'Nexus Legend',         // 50
+    'Stellar Trader',       // 51
+    'Galactic Trader',      // 52
+    'Universal Trader',     // 53
+    'Multiversal Trader',   // 54
+    'Omniversal Trader',    // 55
+    'Transcendent One',     // 56
+    'Awakened One',         // 57
+    'Enlightened One',      // 58
+    'Ascended One',         // 59
+    'Nexus Immortal',       // 60
+    'Time Lord',            // 61
+    'Space Lord',           // 62
+    'Reality Lord',         // 63
+    'Dimension Lord',       // 64
+    'Universe Lord',        // 65
+    'Creation Lord',        // 66
+    'Existence Lord',       // 67
+    'Infinity Lord',        // 68
+    'Eternity Lord',        // 69
+    'Nexus Eternal',        // 70
+    'Alpha Trader',         // 71
+    'Omega Trader',         // 72
+    'Prime Trader',         // 73
+    'Apex Trader',          // 74
+    'Ultimate Trader',      // 75
+    'Supreme Trader',       // 76
+    'Absolute Trader',      // 77
+    'Perfect Trader',       // 78
+    'Divine Trader',        // 79
+    'Nexus Divine',         // 80
+    'First Trader',         // 81
+    'True Trader',          // 82
+    'Pure Trader',          // 83
+    'Sacred Trader',        // 84
+    'Holy Trader',          // 85
+    'Blessed Trader',       // 86
+    'Chosen Trader',        // 87
+    'Anointed Trader',      // 88
+    'Exalted Trader',       // 89
+    'Nexus Exalted',        // 90
+    'Origin Trader',        // 91
+    'Source Trader',        // 92
+    'Core Trader',          // 93
+    'Essence Trader',       // 94
+    'Spirit Trader',        // 95
+    'Soul Trader',          // 96
+    'Mind Trader',          // 97
+    'Heart Trader',         // 98
+    'One Trader',           // 99
+    'Nexus One',            // 100
 ];
 
 // ============ ONBOARDING METHODS ============
@@ -258,8 +462,8 @@ UserSchema.methods.getInitials = function() {
 
 // ============ GAMIFICATION METHODS ============
 
-// Add XP to user and handle leveling
-UserSchema.methods.addXp = async function(amount, reason = 'activity') {
+// Initialize gamification if needed
+UserSchema.methods.initializeGamification = function() {
     if (!this.gamification) {
         this.gamification = {
             xp: 0,
@@ -267,10 +471,28 @@ UserSchema.methods.addXp = async function(amount, reason = 'activity') {
             title: 'Rookie Trader',
             nextLevelXp: 100,
             totalXpEarned: 0,
+            nexusCoins: 1000,
+            totalCoinsEarned: 1000,
             achievements: [],
-            badges: []
+            badges: [],
+            challengesCompleted: 0,
+            loginStreak: 0,
+            maxLoginStreak: 0
         };
     }
+    
+    // Ensure nexusCoins exists for existing users
+    if (this.gamification.nexusCoins === undefined) {
+        this.gamification.nexusCoins = 1000;
+        this.gamification.totalCoinsEarned = 1000;
+    }
+    
+    return this.gamification;
+};
+
+// Add XP to user and handle leveling
+UserSchema.methods.addXp = async function(amount, reason = 'activity') {
+    this.initializeGamification();
 
     const oldLevel = this.gamification.level;
     this.gamification.xp += amount;
@@ -291,6 +513,13 @@ UserSchema.methods.addXp = async function(amount, reason = 'activity') {
     if (leveledUp) {
         this.gamification.level = newLevel;
         this.gamification.title = LEVEL_TITLES[Math.min(newLevel - 1, LEVEL_TITLES.length - 1)];
+        
+        // Award coins for leveling up (100 coins per level)
+        const levelUpBonus = 100 * (newLevel - oldLevel);
+        this.gamification.nexusCoins += levelUpBonus;
+        this.gamification.totalCoinsEarned += levelUpBonus;
+        
+        console.log(`[User] ${this.username} leveled up to ${newLevel}! Bonus: ${levelUpBonus} coins`);
     }
 
     // Calculate XP needed for next level
@@ -308,8 +537,63 @@ UserSchema.methods.addXp = async function(amount, reason = 'activity') {
         leveledUp,
         oldLevel,
         newLevel,
-        nextLevelXp: this.gamification.nextLevelXp
+        nextLevelXp: this.gamification.nextLevelXp,
+        coinsEarned: leveledUp ? 100 * (newLevel - oldLevel) : 0
     };
+};
+
+// 🆕 Add Nexus Coins to user
+UserSchema.methods.addCoins = async function(amount, reason = 'reward') {
+    this.initializeGamification();
+    
+    this.gamification.nexusCoins += amount;
+    this.gamification.totalCoinsEarned += amount;
+    
+    console.log(`[User] ${this.username} earned ${amount} coins (${reason}). Total: ${this.gamification.nexusCoins}`);
+    
+    await this.save();
+    
+    return {
+        coinsEarned: amount,
+        totalCoins: this.gamification.nexusCoins,
+        reason
+    };
+};
+
+// 🆕 Deduct Nexus Coins from user
+UserSchema.methods.deductCoins = async function(amount, reason = 'purchase') {
+    this.initializeGamification();
+    
+    if (this.gamification.nexusCoins < amount) {
+        throw new Error('Insufficient Nexus Coins');
+    }
+    
+    this.gamification.nexusCoins -= amount;
+    
+    console.log(`[User] ${this.username} spent ${amount} coins (${reason}). Remaining: ${this.gamification.nexusCoins}`);
+    
+    await this.save();
+    
+    return {
+        coinsSpent: amount,
+        remainingCoins: this.gamification.nexusCoins,
+        reason
+    };
+};
+
+// 🆕 Get active perk effects
+UserSchema.methods.getActivePerkEffects = function() {
+    const effects = {
+        xp_bonus: 0,
+        coin_bonus: 0,
+        profit_bonus: 0,
+        streak_protection: 0,
+        extra_daily: 0
+    };
+    
+    // This would need access to VAULT_ITEMS to calculate effects
+    // For now, return empty effects - the vaultRoutes handles this
+    return effects;
 };
 
 // Check level up (without saving - for use in other methods)
@@ -330,8 +614,8 @@ UserSchema.methods.checkLevelUp = function() {
     
     if (newLevel > oldLevel) {
         this.gamification.level = newLevel;
-        this.gamification.title = LEVEL_TITLES[newLevel - 1] || 'Market God';
-        this.gamification.nextLevelXp = LEVEL_THRESHOLDS[newLevel] || 999999;
+        this.gamification.title = LEVEL_TITLES[newLevel - 1] || 'Nexus One';
+        this.gamification.nextLevelXp = LEVEL_THRESHOLDS[newLevel] || 999999999;
         return { leveledUp: true, oldLevel, newLevel, title: this.gamification.title };
     }
 
@@ -340,6 +624,8 @@ UserSchema.methods.checkLevelUp = function() {
 
 // Award achievement to user
 UserSchema.methods.awardAchievement = async function(achievement) {
+    this.initializeGamification();
+    
     // Check if already has achievement
     const hasAchievement = this.achievements.some(a => a.achievementId === achievement.id);
     if (hasAchievement) {
@@ -354,6 +640,7 @@ UserSchema.methods.awardAchievement = async function(achievement) {
         description: achievement.description,
         icon: achievement.icon,
         xpReward: achievement.xpReward || 0,
+        coinReward: achievement.coinReward || 0,
         earnedAt: new Date()
     });
 
@@ -366,14 +653,25 @@ UserSchema.methods.awardAchievement = async function(achievement) {
     let xpResult = null;
     if (achievement.xpReward) {
         xpResult = await this.addXp(achievement.xpReward, `achievement:${achievement.id}`);
-    } else {
+    }
+    
+    // Award coins for achievement
+    let coinResult = null;
+    if (achievement.coinReward) {
+        this.gamification.nexusCoins += achievement.coinReward;
+        this.gamification.totalCoinsEarned += achievement.coinReward;
+        coinResult = { coinsEarned: achievement.coinReward };
+    }
+    
+    if (!xpResult) {
         await this.save();
     }
 
     return {
         awarded: true,
         achievement,
-        xpResult
+        xpResult,
+        coinResult
     };
 };
 
@@ -402,25 +700,16 @@ UserSchema.methods.updateStreak = async function(won) {
 // Check and update daily login streak
 UserSchema.methods.checkLoginStreak = async function() {
     const now = new Date();
-    const lastLogin = this.gamification?.lastLogin;
+    this.initializeGamification();
     
-    if (!this.gamification) {
-        this.gamification = {
-            xp: 0,
-            level: 1,
-            title: 'Rookie Trader',
-            loginStreak: 1,
-            lastLogin: now
-        };
-        await this.save();
-        return { streak: 1, isNewDay: true, bonusXp: 10 };
-    }
+    const lastLogin = this.gamification.lastLogin;
 
     if (!lastLogin) {
         this.gamification.loginStreak = 1;
+        this.gamification.maxLoginStreak = 1;
         this.gamification.lastLogin = now;
         await this.save();
-        return { streak: 1, isNewDay: true, bonusXp: 10 };
+        return { streak: 1, isNewDay: true, bonusXp: 10, bonusCoins: 50 };
     }
 
     // Check if it's a new day
@@ -428,7 +717,7 @@ UserSchema.methods.checkLoginStreak = async function() {
     const isNewDay = now.toDateString() !== lastLoginDate.toDateString();
     
     if (!isNewDay) {
-        return { streak: this.gamification.loginStreak, isNewDay: false, bonusXp: 0 };
+        return { streak: this.gamification.loginStreak, isNewDay: false, bonusXp: 0, bonusCoins: 0 };
     }
 
     // Check if consecutive day
@@ -438,21 +727,81 @@ UserSchema.methods.checkLoginStreak = async function() {
         // Consecutive day - increase streak
         this.gamification.loginStreak = (this.gamification.loginStreak || 0) + 1;
     } else {
-        // Streak broken
-        this.gamification.loginStreak = 1;
+        // Streak broken (unless they have streak protection perk)
+        // Check for streak protection in vault
+        if (this.vault?.activePerks?.includes('perk-streak-master') && dayDiff <= 2) {
+            // Grace period - maintain streak
+            this.gamification.loginStreak = (this.gamification.loginStreak || 0) + 1;
+            console.log(`[User] ${this.username} streak protected by Streak Master perk!`);
+        } else {
+            this.gamification.loginStreak = 1;
+        }
+    }
+    
+    // Update max streak
+    if (this.gamification.loginStreak > (this.gamification.maxLoginStreak || 0)) {
+        this.gamification.maxLoginStreak = this.gamification.loginStreak;
     }
 
     this.gamification.lastLogin = now;
     
-    // Calculate bonus XP based on streak
-    const bonusXp = Math.min(10 + (this.gamification.loginStreak * 5), 100);
+    // Calculate bonus XP and coins based on streak
+    const streak = this.gamification.loginStreak;
+    const bonusXp = Math.min(10 + (streak * 5), 200);  // Max 200 XP
+    const bonusCoins = Math.min(50 + (streak * 10), 500);  // Max 500 coins
+    
+    // Apply coin bonus perk if active
+    let finalCoins = bonusCoins;
+    if (this.vault?.activePerks?.includes('perk-coin-magnet')) {
+        finalCoins = Math.floor(bonusCoins * 1.05);  // +5% coins
+    }
+    
+    // Award the bonuses
+    this.gamification.nexusCoins += finalCoins;
+    this.gamification.totalCoinsEarned += finalCoins;
     
     await this.save();
     
     return { 
-        streak: this.gamification.loginStreak, 
+        streak: this.gamification.loginStreak,
+        maxStreak: this.gamification.maxLoginStreak,
         isNewDay: true, 
-        bonusXp 
+        bonusXp,
+        bonusCoins: finalCoins
+    };
+};
+
+// ============ VAULT HELPER METHODS ============
+
+// Initialize vault if needed
+UserSchema.methods.initializeVault = function() {
+    if (!this.vault) {
+        this.vault = {
+            ownedItems: ['border-bronze', 'theme-default'],
+            equippedBorder: 'border-bronze',
+            equippedTheme: 'theme-default',
+            equippedBadges: [],
+            activePerks: [],
+            purchaseHistory: []
+        };
+    }
+    return this.vault;
+};
+
+// Check if user owns a vault item
+UserSchema.methods.ownsVaultItem = function(itemId) {
+    this.initializeVault();
+    return this.vault.ownedItems.includes(itemId);
+};
+
+// Get equipped items
+UserSchema.methods.getEquippedItems = function() {
+    this.initializeVault();
+    return {
+        border: this.vault.equippedBorder,
+        theme: this.vault.equippedTheme,
+        badges: this.vault.equippedBadges || [],
+        perks: this.vault.activePerks || []
     };
 };
 
@@ -463,7 +812,7 @@ UserSchema.methods.calculateStats = async function() {
         console.log('[User] Calculating stats for user:', this.email);
 
         // ✅ Declare all variables at the top
-        let holdings = []; // ADD THIS LINE
+        let holdings = [];
         let totalInvested = 0;
         let currentValue = 0;
         let totalReturn = 0;
@@ -505,56 +854,49 @@ UserSchema.methods.calculateStats = async function() {
             console.error('[User] Error fetching paper trading data:', error.message);
         }
 
-        // Initialize stats object
-        if (!this.stats) {
-            this.stats = {};
-        }
-
         // Handle empty portfolio
         if (!holdings || holdings.length === 0) {
             console.log('[User] No holdings found, checking predictions only');
         }
 
         // Only calculate from holdings if we don't have account-level stats
-if (totalReturnPercent === 0 && holdings.length > 0) {
-    console.log('[User] No account stats, calculating from holdings...');
-    
-    let holdingsInvested = 0;
-    let holdingsValue = 0;
-    let bestTrade = 0;
-    let worstTrade = 0;
-    let totalGainPercent = 0;
+        if (totalReturnPercent === 0 && holdings.length > 0) {
+            console.log('[User] No account stats, calculating from holdings...');
+            
+            let holdingsInvested = 0;
+            let holdingsValue = 0;
+            let totalGainPercent = 0;
 
-    for (const holding of holdings) {
-        const invested = (holding.averagePrice || 0) * (holding.shares || holding.quantity || 0);
-        const current = (holding.currentPrice || 0) * (holding.shares || holding.quantity || 0);
-        const gainLoss = current - invested;
-        const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
+            for (const holding of holdings) {
+                const invested = (holding.averagePrice || 0) * (holding.shares || holding.quantity || 0);
+                const current = (holding.currentPrice || 0) * (holding.shares || holding.quantity || 0);
+                const gainLoss = current - invested;
+                const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
 
-        holdingsInvested += invested;
-        holdingsValue += current;
-        totalGainPercent += gainLossPercent;
+                holdingsInvested += invested;
+                holdingsValue += current;
+                totalGainPercent += gainLossPercent;
 
-        if (gainLoss > 0) wins++;
-        if (gainLoss < 0) losses++;
+                if (gainLoss > 0) wins++;
+                if (gainLoss < 0) losses++;
 
-        if (gainLossPercent > bestTrade) bestTrade = gainLossPercent;
-        if (gainLossPercent < worstTrade) worstTrade = gainLossPercent;
-    }
+                if (gainLossPercent > bestTrade) bestTrade = gainLossPercent;
+                if (gainLossPercent < worstTrade) worstTrade = gainLossPercent;
+            }
 
-    totalInvested = holdingsInvested;
-    currentValue = holdingsValue;
-    totalReturn = holdingsValue - holdingsInvested;
-    totalReturnPercent = holdingsInvested > 0 
-        ? (totalReturn / holdingsInvested) * 100 
-        : 0;
-    totalTrades = holdings.length;
-} else {
-    console.log('[User] Using account-level stats');
-}
+            totalInvested = holdingsInvested;
+            currentValue = holdingsValue;
+            totalReturn = holdingsValue - holdingsInvested;
+            totalReturnPercent = holdingsInvested > 0 
+                ? (totalReturn / holdingsInvested) * 100 
+                : 0;
+            totalTrades = holdings.length;
+        } else {
+            console.log('[User] Using account-level stats');
+        }
 
-const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-const avgTradeReturn = totalTrades > 0 ? totalReturnPercent : 0;
+        const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+        const avgTradeReturn = totalTrades > 0 ? totalReturnPercent : 0;
 
         // Get prediction stats
         const Prediction = mongoose.model('Prediction');
@@ -660,6 +1002,7 @@ UserSchema.index({ 'stats.currentStreak': -1 });
 UserSchema.index({ 'stats.totalTrades': -1 });
 UserSchema.index({ 'gamification.xp': -1 });
 UserSchema.index({ 'gamification.level': -1 });
+UserSchema.index({ 'gamification.nexusCoins': -1 });
 UserSchema.index({ 'stats.lastTradeDate': -1 });
 
 // Index for onboarding queries
@@ -668,5 +1011,9 @@ UserSchema.index({ 'preferences.interests': 1 });
 
 // Index for user search
 UserSchema.index({ username: 'text', 'profile.displayName': 'text' });
+
+// Index for vault queries
+UserSchema.index({ 'vault.equippedBorder': 1 });
+UserSchema.index({ 'vault.equippedTheme': 1 });
 
 module.exports = mongoose.model('User', UserSchema);

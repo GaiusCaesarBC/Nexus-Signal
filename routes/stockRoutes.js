@@ -1,4 +1,4 @@
-// server/routes/stockRoutes.js - USING ALPHA VANTAGE
+// server/routes/stockRoutes.js - USING ALPHA VANTAGE + QUOTE ENDPOINT
 
 const express = require('express');
 const router = express.Router();
@@ -16,6 +16,7 @@ const { getSentimentSignal } = require('../services/sentimentService');
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const stockCache = {};
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+const QUOTE_CACHE_DURATION = 60 * 1000; // 1 minute for quotes
 
 // Map frontend ranges to Alpha Vantage time series functions
 function getAlphaVantageFunction(range) {
@@ -95,6 +96,7 @@ async function fetchAlphaVantageData(symbol, range) {
 
     // Convert to our format
     const historicalData = Object.entries(timeSeries).map(([dateStr, values]) => ({
+        date: dateStr, // ✅ Keep original date string for frontend
         time: new Date(dateStr).getTime(),
         open: parseFloat(values['1. open']),
         high: parseFloat(values['2. high']),
@@ -135,6 +137,137 @@ async function fetchAlphaVantageData(symbol, range) {
     return historicalData.filter(d => d.time >= cutoffTime);
 }
 
+// ============================================
+// ✅ NEW: GET STOCK QUOTE (for Key Statistics)
+// ============================================
+router.get('/quote/:symbol', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const upperSymbol = symbol.toUpperCase();
+
+        // Check cache
+        const cacheKey = `quote-${upperSymbol}`;
+        if (stockCache[cacheKey] && (Date.now() - stockCache[cacheKey].timestamp < QUOTE_CACHE_DURATION)) {
+            console.log(`[CACHE HIT] Quote for ${upperSymbol}`);
+            return res.json(stockCache[cacheKey].data);
+        }
+
+        console.log(`Fetching quote for ${upperSymbol}`);
+
+        // Fetch GLOBAL_QUOTE from Alpha Vantage
+        const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${upperSymbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+        const quoteResponse = await axios.get(quoteUrl);
+        const quoteData = quoteResponse.data['Global Quote'];
+
+        if (!quoteData || Object.keys(quoteData).length === 0) {
+            // Try to get data from daily time series as fallback
+            console.log(`No quote data, trying daily time series for ${upperSymbol}`);
+            const historicalData = await fetchAlphaVantageData(upperSymbol, '1M');
+            
+            if (historicalData.length === 0) {
+                return res.status(404).json({ error: `No data found for ${upperSymbol}` });
+            }
+
+            const latest = historicalData[historicalData.length - 1];
+            const previous = historicalData.length > 1 ? historicalData[historicalData.length - 2] : latest;
+            
+            // Calculate 52-week high/low from available data
+            const yearData = historicalData.slice(-252); // ~1 year of trading days
+            const high52 = Math.max(...yearData.map(d => d.high));
+            const low52 = Math.min(...yearData.map(d => d.low));
+
+            const fallbackQuote = {
+                symbol: upperSymbol,
+                price: latest.close,
+                open: latest.open,
+                high: latest.high,
+                low: latest.low,
+                previousClose: previous.close,
+                change: latest.close - previous.close,
+                changePercent: ((latest.close - previous.close) / previous.close) * 100,
+                volume: latest.volume,
+                high52,
+                low52,
+                lastUpdated: latest.date
+            };
+
+            stockCache[cacheKey] = { timestamp: Date.now(), data: fallbackQuote };
+            return res.json(fallbackQuote);
+        }
+
+        // Parse Alpha Vantage quote response
+        const price = parseFloat(quoteData['05. price']) || 0;
+        const previousClose = parseFloat(quoteData['08. previous close']) || 0;
+        const change = parseFloat(quoteData['09. change']) || 0;
+        const changePercent = parseFloat(quoteData['10. change percent']?.replace('%', '')) || 0;
+
+        // Fetch OVERVIEW for additional stats (market cap, PE, EPS, etc.)
+        let overview = {};
+        try {
+            const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${upperSymbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+            const overviewResponse = await axios.get(overviewUrl);
+            overview = overviewResponse.data || {};
+        } catch (overviewError) {
+            console.warn(`Could not fetch overview for ${upperSymbol}:`, overviewError.message);
+        }
+
+        const quoteResult = {
+            symbol: upperSymbol,
+            price,
+            open: parseFloat(quoteData['02. open']) || 0,
+            dayHigh: parseFloat(quoteData['03. high']) || 0,
+            dayLow: parseFloat(quoteData['04. low']) || 0,
+            previousClose,
+            change,
+            changePercent,
+            volume: parseInt(quoteData['06. volume']) || 0,
+            latestTradingDay: quoteData['07. latest trading day'],
+            
+            // From OVERVIEW endpoint
+            marketCap: parseFloat(overview['MarketCapitalization']) || null,
+            pe: parseFloat(overview['PERatio']) || null,
+            eps: parseFloat(overview['EPS']) || null,
+            high52: parseFloat(overview['52WeekHigh']) || null,
+            low52: parseFloat(overview['52WeekLow']) || null,
+            avgVolume: parseInt(overview['AverageVolume']) || null,
+            dividend: parseFloat(overview['DividendPerShare']) || null,
+            dividendYield: parseFloat(overview['DividendYield']) || null,
+            beta: parseFloat(overview['Beta']) || null,
+            exchange: overview['Exchange'] || 'NASDAQ',
+            name: overview['Name'] || upperSymbol,
+            sector: overview['Sector'] || null,
+            industry: overview['Industry'] || null
+        };
+
+        // Cache the result
+        stockCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: quoteResult
+        };
+
+        res.json(quoteResult);
+
+    } catch (error) {
+        console.error('Error fetching stock quote:', error.message);
+        
+        // Check for rate limit
+        if (error.message?.includes('rate limit')) {
+            return res.status(429).json({ 
+                error: 'API rate limit reached. Please try again in a minute.',
+                retryAfter: 60
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch stock quote', 
+            message: error.message 
+        });
+    }
+});
+
+// ============================================
+// GET HISTORICAL DATA
+// ============================================
 router.get('/historical/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -177,6 +310,9 @@ router.get('/historical/:symbol', async (req, res) => {
     }
 });
 
+// ============================================
+// GET PREDICTION
+// ============================================
 router.get('/prediction/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -235,6 +371,9 @@ router.get('/prediction/:symbol', async (req, res) => {
     }
 });
 
+// ============================================
+// PREDICTION CALCULATION
+// ============================================
 const calculateStockPrediction = (historicalData, lastClosePrice, sentimentData = null) => {
     console.log('=== ENHANCED PREDICTION DEBUG ===');
     console.log('Historical data points:', historicalData.length);
@@ -378,7 +517,7 @@ const calculateStockPrediction = (historicalData, lastClosePrice, sentimentData 
     
     const predictedPrice = lastClosePrice * (1 + percentageChange / 100);
 
-    // ✅ NEW: Format indicators for frontend display
+    // ✅ Format indicators for frontend display
     const formattedIndicators = {
         RSI: {
             value: rsi !== null ? rsi.toFixed(2) : 'N/A',
@@ -422,8 +561,8 @@ const calculateStockPrediction = (historicalData, lastClosePrice, sentimentData 
         percentageChange,
         confidence,
         message: signals.length > 0 ? signals.join('. ') : 'Neutral market conditions',
-        indicators: formattedIndicators,  // ✅ Return real formatted indicators
-        rawIndicators: {  // ✅ Also return raw values for debugging
+        indicators: formattedIndicators,
+        rawIndicators: {
             rsi,
             macd: macdResult,
             bollingerBands: bbResult,
@@ -435,4 +574,5 @@ const calculateStockPrediction = (historicalData, lastClosePrice, sentimentData 
         }
     };
 };
+
 module.exports = router;

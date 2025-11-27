@@ -1,7 +1,8 @@
-// server/data/vaultItems.js - ENHANCED VERSION with more items!
+// server/data/vaultItems.js - VAULT ITEMS DATABASE
+// Place this file at: server/data/vaultItems.js
 
 const VAULT_ITEMS = {
-    // ===== AVATAR BORDERS (Enhanced) =====
+    // ===== AVATAR BORDERS (11 items) =====
     avatarBorders: [
         {
             id: 'border-bronze',
@@ -129,8 +130,20 @@ const VAULT_ITEMS = {
         }
     ],
 
-    // ===== PERKS (Enhanced) =====
+    // ===== PERKS (6 items) =====
     perks: [
+        {
+            id: 'perk-fast-learner',
+            name: 'Fast Learner',
+            description: '+5% XP from all sources',
+            type: 'perk',
+            rarity: 'rare',
+            cost: 2500,
+            effect: { type: 'xp_bonus', value: 0.05 },
+            icon: '📚',
+            duration: null,
+            unlockRequirement: { type: 'level', value: 10 }
+        },
         {
             id: 'perk-lucky-trader',
             name: 'Lucky Trader',
@@ -156,6 +169,18 @@ const VAULT_ITEMS = {
             unlockRequirement: { type: 'level', value: 25 }
         },
         {
+            id: 'perk-profit-boost',
+            name: 'Profit Boost',
+            description: '+3% bonus on profitable trades',
+            type: 'perk',
+            rarity: 'epic',
+            cost: 8000,
+            effect: { type: 'profit_bonus', value: 0.03 },
+            icon: '💎',
+            duration: null,
+            unlockRequirement: { type: 'level', value: 35 }
+        },
+        {
             id: 'perk-streak-master',
             name: 'Streak Master',
             description: 'Login streak never breaks (1 day grace period)',
@@ -178,34 +203,10 @@ const VAULT_ITEMS = {
             icon: '⚡',
             duration: null,
             unlockRequirement: { type: 'level', value: 50 }
-        },
-        {
-            id: 'perk-fast-learner',
-            name: 'Fast Learner',
-            description: '+5% XP from all sources',
-            type: 'perk',
-            rarity: 'rare',
-            cost: 2500,
-            effect: { type: 'xp_bonus', value: 0.05 },
-            icon: '📚',
-            duration: null,
-            unlockRequirement: { type: 'level', value: 10 }
-        },
-        {
-            id: 'perk-profit-boost',
-            name: 'Profit Boost',
-            description: '+3% bonus on profitable trades',
-            type: 'perk',
-            rarity: 'epic',
-            cost: 8000,
-            effect: { type: 'profit_bonus', value: 0.03 },
-            icon: '💎',
-            duration: null,
-            unlockRequirement: { type: 'level', value: 35 }
         }
     ],
 
-    // ===== PROFILE THEMES (Enhanced with MORE themes) =====
+    // ===== PROFILE THEMES (12 items) =====
     profileThemes: [
         {
             id: 'theme-default',
@@ -389,12 +390,12 @@ const VAULT_ITEMS = {
         }
     ],
 
-    // ===== BADGES (Enhanced) =====
+    // ===== BADGES (12 items) =====
     badges: [
         {
             id: 'badge-founder',
             name: 'Founder',
-            description: 'Early adopter of TradingView Nexus',
+            description: 'Early adopter of Nexus Signal',
             type: 'badge',
             rarity: 'legendary',
             cost: 0,
@@ -414,6 +415,17 @@ const VAULT_ITEMS = {
             unlockRequirement: { type: 'stats', stat: 'totalTrades', value: 1 }
         },
         {
+            id: 'badge-week-warrior',
+            name: 'Week Warrior',
+            description: '7 day login streak achieved',
+            type: 'badge',
+            rarity: 'common',
+            cost: 0,
+            icon: '⭐',
+            color: '#f59e0b',
+            unlockRequirement: { type: 'stats', stat: 'maxLoginStreak', value: 7 }
+        },
+        {
             id: 'badge-trade-master',
             name: 'Trade Master',
             description: 'Completed 500+ trades',
@@ -423,6 +435,17 @@ const VAULT_ITEMS = {
             icon: '📊',
             color: '#3b82f6',
             unlockRequirement: { type: 'stats', stat: 'totalTrades', value: 500 }
+        },
+        {
+            id: 'badge-portfolio-builder',
+            name: 'Portfolio Builder',
+            description: 'Own 10+ different stocks',
+            type: 'badge',
+            rarity: 'rare',
+            cost: 0,
+            icon: '🏗️',
+            color: '#0ea5e9',
+            unlockRequirement: { type: 'stats', stat: 'stocksOwned', value: 10 }
         },
         {
             id: 'badge-profit-king',
@@ -447,17 +470,6 @@ const VAULT_ITEMS = {
             unlockRequirement: { type: 'stats', stat: 'maxLoginStreak', value: 30 }
         },
         {
-            id: 'badge-week-warrior',
-            name: 'Week Warrior',
-            description: '7 day login streak achieved',
-            type: 'badge',
-            rarity: 'common',
-            cost: 0,
-            icon: '⭐',
-            color: '#f59e0b',
-            unlockRequirement: { type: 'stats', stat: 'maxLoginStreak', value: 7 }
-        },
-        {
             id: 'badge-prediction-master',
             name: 'Oracle',
             description: '100+ correct predictions',
@@ -469,15 +481,15 @@ const VAULT_ITEMS = {
             unlockRequirement: { type: 'stats', stat: 'correctPredictions', value: 100 }
         },
         {
-            id: 'badge-portfolio-builder',
-            name: 'Portfolio Builder',
-            description: 'Own 10+ different stocks',
+            id: 'badge-level-50',
+            name: 'Half Century',
+            description: 'Reached Level 50',
             type: 'badge',
-            rarity: 'rare',
+            rarity: 'epic',
             cost: 0,
-            icon: '🏗️',
-            color: '#0ea5e9',
-            unlockRequirement: { type: 'stats', stat: 'stocksOwned', value: 10 }
+            icon: '5️⃣0️⃣',
+            color: '#a855f7',
+            unlockRequirement: { type: 'level', value: 50 }
         },
         {
             id: 'badge-whale',
@@ -489,17 +501,6 @@ const VAULT_ITEMS = {
             icon: '🐋',
             color: '#8b5cf6',
             unlockRequirement: { type: 'stats', stat: 'nexusCoins', value: 100000 }
-        },
-        {
-            id: 'badge-level-50',
-            name: 'Half Century',
-            description: 'Reached Level 50',
-            type: 'badge',
-            rarity: 'epic',
-            cost: 0,
-            icon: '5️⃣0️⃣',
-            color: '#a855f7',
-            unlockRequirement: { type: 'level', value: 50 }
         },
         {
             id: 'badge-level-100',
