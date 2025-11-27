@@ -69,57 +69,22 @@ positionSchema.methods.calculateProfitLoss = function() {
 
 // ============ ORDER SCHEMA ============
 const orderSchema = new mongoose.Schema({
-    symbol: {
-        type: String,
-        required: true,
-        uppercase: true
-    },
-    type: {
-        type: String,
-        enum: ['stock', 'crypto'],
-        default: 'stock'
-    },
-    // ✅ Position Type: Long or Short
-    positionType: {
-        type: String,
-        enum: ['long', 'short'],
-        default: 'long'
-    },
-  side: {
-    type: String,
-    enum: ['buy', 'sell', 'cover'],  // ✅ Added 'cover'
-    required: true
-},
-    quantity: {
-        type: Number,
-        required: true,
-        min: 0
-    },
-    price: {
-        type: Number,
-        required: true,
-        min: 0
-    },
-    totalAmount: {
-        type: Number,
-        required: true
-    },
-    profitLoss: {
-        type: Number,
-        default: 0
-    },
-    profitLossPercent: {
-        type: Number,
-        default: 0
-    },
-    notes: {
-        type: String,
-        maxlength: 500
-    },
-    executedAt: {
-        type: Date,
-        default: Date.now
-    }
+    symbol: { type: String, required: true },
+    type: { type: String, enum: ['stock', 'crypto'], default: 'stock' },
+    side: { type: String, enum: ['buy', 'sell', 'cover'], required: true },
+    positionType: { type: String, enum: ['long', 'short'], default: 'long' },
+    quantity: { type: Number, required: true },
+    price: { type: Number, required: true },
+    totalAmount: { type: Number, required: true },
+    
+    // ✅ NEW LEVERAGE FIELDS
+    leverage: { type: Number, default: 1 },
+    leveragedValue: { type: Number },  // Total position size
+    profitLoss: { type: Number, default: 0 },
+    profitLossPercent: { type: Number, default: 0 },
+    
+    notes: { type: String, default: '' },
+    executedAt: { type: Date, default: Date.now }
 });
 
 // ============ MAIN ACCOUNT SCHEMA ============
@@ -228,6 +193,22 @@ paperTradingAccountSchema.methods.updateWinRate = function() {
         this.winRate = 0;
     }
 };
+
+
+const tradeSchema = {
+    symbol: { type: String, required: true },
+    type: { type: String, enum: ['BUY', 'SELL', 'LIQUIDATION'], required: true }, // Added LIQUIDATION
+    shares: { type: Number, required: true },
+    price: { type: Number, required: true },
+    total: { type: Number, required: true },
+    // NEW LEVERAGE FIELDS:
+    leverage: { type: Number, default: 1 },
+    leveragedValue: { type: Number },
+    pnl: { type: Number },
+    pnlPercent: { type: Number },
+    timestamp: { type: Date, default: Date.now }
+};
+
 
 // Update all positions with current prices
 paperTradingAccountSchema.methods.updateAllPositions = function() {

@@ -1,4 +1,4 @@
-// server/models/Gamification.js
+// server/models/Gamification.js - UPDATED WITH PAPER TRADING STATS
 const mongoose = require('mongoose');
 
 const achievementSchema = new mongoose.Schema({
@@ -38,11 +38,13 @@ const gamificationSchema = new mongoose.Schema({
     maxLoginStreak: { type: Number, default: 0 },
     profitStreak: { type: Number, default: 0 },
     maxProfitStreak: { type: Number, default: 0 },
+    lossStreak: { type: Number, default: 0 },
+    maxLossStreak: { type: Number, default: 0 },
     
     // Achievements
     achievements: [achievementSchema],
     
-    // ✅ NEW: VAULT ITEMS
+    // VAULT ITEMS
     ownedItems: [{
         itemId: String,
         type: {
@@ -52,25 +54,85 @@ const gamificationSchema = new mongoose.Schema({
         purchasedAt: { type: Date, default: Date.now }
     }],
     
-    // ✅ NEW: EQUIPPED ITEMS
+    // EQUIPPED ITEMS
     equippedItems: {
         avatarBorder: { type: String, default: null },
         profileTheme: { type: String, default: 'theme-default' },
         activePerk: { type: String, default: null },
-        badges: [{ type: String, maxlength: 3 }] // Max 3 badges
+        badges: [{ type: String, maxlength: 3 }]
     },
     
-    // Stats for achievements
+    // Stats for achievements - EXPANDED
     stats: {
+        // Basic trading stats
         totalTrades: { type: Number, default: 0 },
         profitableTrades: { type: Number, default: 0 },
+        losingTrades: { type: Number, default: 0 },
         totalProfit: { type: Number, default: 0 },
+        winRate: { type: Number, default: 0 },
+        
+        // Prediction stats
         predictionsCreated: { type: Number, default: 0 },
         correctPredictions: { type: Number, default: 0 },
-        portfolioValue: { type: Number, default: 0 },
-        daysActive: { type: Number, default: 0 },
+        predictionAccuracy: { type: Number, default: 0 },
+        
+        // Portfolio stats
+        portfolioValue: { type: Number, default: 100000 },
         stocksOwned: { type: Number, default: 0 },
+        
+        // Time stats
+        daysActive: { type: Number, default: 0 },
+        
+        // ============ NEW PAPER TRADING STATS ============
+        // Refill tracking
+        totalRefills: { type: Number, default: 0 },
+        accountBlown: { type: Boolean, default: false },
+        phoenixRecovery: { type: Boolean, default: false },
+        comebackKing: { type: Boolean, default: false },
+        
+        // Streak tracking
+        maxProfitStreak: { type: Number, default: 0 },
+        maxLossStreak: { type: Number, default: 0 },
+        comebackWin: { type: Boolean, default: false },
+        
+        // Leverage stats
+        leveragedTrades: { type: Number, default: 0 },
+        usedMaxLeverage: { type: Boolean, default: false },
+        biggestLeverageWin: { type: Number, default: 0 },
+        biggestLeverageLoss: { type: Number, default: 0 },
+        
+        // Short selling stats
+        shortTrades: { type: Number, default: 0 },
+        profitableShorts: { type: Number, default: 0 },
+        totalShortProfit: { type: Number, default: 0 },
+        
+        // Special tracking
+        maxTradesInDay: { type: Number, default: 0 },
+        biggestTradeValue: { type: Number, default: 0 },
+        biggestWinPercent: { type: Number, default: 0 },
+        biggestWin: { type: Number, default: 0 },
+        biggestLoss: { type: Number, default: 0 },
+        
+        // Fun stats
+        diamondHands: { type: Boolean, default: false },
+        paperHands: { type: Boolean, default: false },
+        memeTradePrice: { type: Boolean, default: false },
+        yoloTrade: { type: Boolean, default: false },
+        longestHold: { type: Number, default: 0 },
+        
+        // Social stats
+        followersCount: { type: Number, default: 0 },
+        followingCount: { type: Number, default: 0 },
+        
+        // Legacy
         referrals: { type: Number, default: 0 }
+    },
+    
+    // Daily tracking for achievements
+    dailyStats: {
+        date: { type: Date, default: Date.now },
+        tradesCount: { type: Number, default: 0 },
+        profit: { type: Number, default: 0 }
     },
     
     // Challenges
@@ -104,7 +166,6 @@ const gamificationSchema = new mongoose.Schema({
 
 // Calculate level from XP
 gamificationSchema.methods.calculateLevel = function() {
-    // Level formula: level = floor(sqrt(xp / 100)) + 1
     const level = Math.floor(Math.sqrt(this.xp / 100)) + 1;
     return level;
 };
@@ -139,7 +200,6 @@ gamificationSchema.methods.addXP = async function(amount, reason = '') {
         this.level = newLevel;
         this.rank = this.getRank();
         
-        // Reward coins for leveling up
         const coinReward = newLevel * 100;
         this.nexusCoins += coinReward;
         this.totalEarned += coinReward;
@@ -159,13 +219,135 @@ gamificationSchema.methods.addXP = async function(amount, reason = '') {
     return { leveledUp: false };
 };
 
-// ✅ NEW: Get active perk bonuses
+// Update win rate
+gamificationSchema.methods.updateWinRate = function() {
+    if (this.stats.totalTrades > 0) {
+        this.stats.winRate = (this.stats.profitableTrades / this.stats.totalTrades) * 100;
+    }
+};
+
+// Update prediction accuracy
+gamificationSchema.methods.updatePredictionAccuracy = function() {
+    if (this.stats.predictionsCreated > 0) {
+        this.stats.predictionAccuracy = (this.stats.correctPredictions / this.stats.predictionsCreated) * 100;
+    }
+};
+
+// Record a trade for achievement tracking
+gamificationSchema.methods.recordTrade = function(tradeData) {
+    this.stats.totalTrades++;
+    
+    if (tradeData.profit > 0) {
+        this.stats.profitableTrades++;
+        this.profitStreak++;
+        this.lossStreak = 0;
+        
+        // Check for comeback win (win after 5+ losses)
+        if (this.lossStreak >= 5) {
+            this.stats.comebackWin = true;
+        }
+        
+        if (this.profitStreak > this.maxProfitStreak) {
+            this.maxProfitStreak = this.profitStreak;
+            this.stats.maxProfitStreak = this.profitStreak;
+        }
+        
+        // Track biggest win
+        if (tradeData.profit > this.stats.biggestWin) {
+            this.stats.biggestWin = tradeData.profit;
+        }
+        if (tradeData.profitPercent > this.stats.biggestWinPercent) {
+            this.stats.biggestWinPercent = tradeData.profitPercent;
+        }
+    } else {
+        this.stats.losingTrades++;
+        this.lossStreak++;
+        this.profitStreak = 0;
+        
+        if (this.lossStreak > this.maxLossStreak) {
+            this.maxLossStreak = this.lossStreak;
+            this.stats.maxLossStreak = this.lossStreak;
+        }
+        
+        // Track biggest loss
+        if (Math.abs(tradeData.profit) > this.stats.biggestLoss) {
+            this.stats.biggestLoss = Math.abs(tradeData.profit);
+        }
+    }
+    
+    this.stats.totalProfit += tradeData.profit;
+    
+    // Track leverage trades
+    if (tradeData.leverage && tradeData.leverage > 1) {
+        this.stats.leveragedTrades++;
+        if (tradeData.leverage >= 20) {
+            this.stats.usedMaxLeverage = true;
+        }
+        if (tradeData.profit > 0 && tradeData.profit > this.stats.biggestLeverageWin) {
+            this.stats.biggestLeverageWin = tradeData.profit;
+        }
+        if (tradeData.profit < 0 && Math.abs(tradeData.profit) > this.stats.biggestLeverageLoss) {
+            this.stats.biggestLeverageLoss = Math.abs(tradeData.profit);
+        }
+    }
+    
+    // Track short trades
+    if (tradeData.positionType === 'short') {
+        this.stats.shortTrades++;
+        if (tradeData.profit > 0) {
+            this.stats.profitableShorts++;
+            this.stats.totalShortProfit += tradeData.profit;
+        }
+    }
+    
+    // Track biggest trade value
+    if (tradeData.totalValue > this.stats.biggestTradeValue) {
+        this.stats.biggestTradeValue = tradeData.totalValue;
+    }
+    
+    // Check for meme price
+    if (tradeData.price === 420.69 || tradeData.price === 69.42) {
+        this.stats.memeTradePrice = true;
+    }
+    
+    // Check for YOLO trade (using entire balance)
+    if (tradeData.percentOfBalance >= 95) {
+        this.stats.yoloTrade = true;
+    }
+    
+    this.updateWinRate();
+};
+
+// Record account refill
+gamificationSchema.methods.recordRefill = function() {
+    this.stats.totalRefills++;
+    
+    // If they were at 0 and refilled, mark account blown
+    if (this.stats.portfolioValue <= 0) {
+        this.stats.accountBlown = true;
+    }
+};
+
+// Check for phoenix recovery (blow account then profit)
+gamificationSchema.methods.checkPhoenixRecovery = function(currentPortfolioValue, startingBalance) {
+    if (this.stats.accountBlown && currentPortfolioValue > startingBalance) {
+        this.stats.phoenixRecovery = true;
+    }
+};
+
+// Check for comeback king (from -50% to positive)
+gamificationSchema.methods.checkComebackKing = function(totalReturnPercent, wasAtMinus50) {
+    if (wasAtMinus50 && totalReturnPercent > 0) {
+        this.stats.comebackKing = true;
+    }
+};
+
+// Get active perk bonuses
 gamificationSchema.methods.getActivePerkBonuses = function() {
     if (!this.equippedItems.activePerk) {
         return null;
     }
     
-    // This will be used to apply bonuses in trade/XP calculations
     const perkEffects = {
         'perk-lucky-trader': { xpBonus: 0.10 },
         'perk-coin-magnet': { coinBonus: 0.05 },
@@ -174,6 +356,28 @@ gamificationSchema.methods.getActivePerkBonuses = function() {
     };
     
     return perkEffects[this.equippedItems.activePerk] || null;
+};
+
+// Check if user has achievement
+gamificationSchema.methods.hasAchievement = function(achievementId) {
+    return this.achievements.some(a => a.id === achievementId);
+};
+
+// Add achievement
+gamificationSchema.methods.addAchievement = function(achievement) {
+    if (!this.hasAchievement(achievement.id)) {
+        this.achievements.push({
+            id: achievement.id,
+            name: achievement.name,
+            description: achievement.description,
+            icon: achievement.icon,
+            points: achievement.points,
+            rarity: achievement.rarity,
+            unlockedAt: new Date()
+        });
+        return true;
+    }
+    return false;
 };
 
 module.exports = mongoose.model('Gamification', gamificationSchema);

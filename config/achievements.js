@@ -1,4 +1,4 @@
-// server/config/achievements.js - ULTIMATE BADASS EDITION 🔥
+// server/config/achievements.js - COMPLETE EDITION WITH PAPER TRADING 🔥
 
 const ACHIEVEMENTS = {
     // ============================================
@@ -19,7 +19,7 @@ const ACHIEVEMENTS = {
         id: 'baby_steps',
         name: 'Baby Steps',
         description: 'Complete your first day on the platform',
-        icon: '👶',
+        icon: '👒',
         category: 'milestones',
         rarity: 'common',
         points: 25,
@@ -57,6 +57,191 @@ const ACHIEVEMENTS = {
         rarity: 'common',
         points: 50,
         check: (stats) => stats.predictionsCreated >= 1
+    },
+
+    // ============================================
+    // 📉 PAPER TRADING - LOSSES & RECOVERY (NEW!)
+    // ============================================
+    FIRST_LOSS: {
+        id: 'first_loss',
+        name: 'Learning Experience',
+        description: 'Experience your first losing trade',
+        icon: '📉',
+        category: 'paper_trading',
+        rarity: 'common',
+        points: 25,
+        check: (stats) => stats.losingTrades >= 1
+    },
+
+    BLOW_YOUR_ACCOUNT: {
+        id: 'blow_your_account',
+        name: 'Blown Account',
+        description: 'Lose your entire paper trading balance',
+        icon: '💀',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 100,
+        check: (stats) => stats.accountBlown === true
+    },
+
+    FIRST_REFILL: {
+        id: 'first_refill',
+        name: 'Second Chance',
+        description: 'Refill your paper trading account for the first time',
+        icon: '🔄',
+        category: 'paper_trading',
+        rarity: 'common',
+        points: 50,
+        check: (stats) => stats.totalRefills >= 1
+    },
+
+    REFILL_VETERAN: {
+        id: 'refill_veteran',
+        name: 'Refill Veteran',
+        description: 'Refill your account 5 times',
+        icon: '♻️',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 100,
+        check: (stats) => stats.totalRefills >= 5
+    },
+
+    PHOENIX_RISING: {
+        id: 'phoenix_rising',
+        name: 'Phoenix Rising',
+        description: 'Blow your account and recover to profit',
+        icon: '🔥',
+        category: 'paper_trading',
+        rarity: 'epic',
+        points: 500,
+        check: (stats) => stats.phoenixRecovery === true
+    },
+
+    COMEBACK_KING: {
+        id: 'comeback_king',
+        name: 'Comeback King',
+        description: 'Go from -50% to positive returns',
+        icon: '👑',
+        category: 'paper_trading',
+        rarity: 'epic',
+        points: 750,
+        check: (stats) => stats.comebackKing === true
+    },
+
+    LOSS_STREAK_5: {
+        id: 'loss_streak_5',
+        name: 'Bad Luck Brian',
+        description: 'Lose 5 trades in a row',
+        icon: '😅',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 75,
+        check: (stats) => stats.maxLossStreak >= 5
+    },
+
+    LOSS_STREAK_10: {
+        id: 'loss_streak_10',
+        name: 'Rock Bottom',
+        description: 'Lose 10 trades in a row',
+        icon: '🪨',
+        category: 'paper_trading',
+        rarity: 'epic',
+        points: 150,
+        check: (stats) => stats.maxLossStreak >= 10
+    },
+
+    // ============================================
+    // ⚡ LEVERAGE ACHIEVEMENTS (NEW!)
+    // ============================================
+    FIRST_LEVERAGE: {
+        id: 'first_leverage',
+        name: 'Leverage Unlocked',
+        description: 'Make your first leveraged trade',
+        icon: '⚡',
+        category: 'paper_trading',
+        rarity: 'common',
+        points: 50,
+        check: (stats) => stats.leveragedTrades >= 1
+    },
+
+    LEVERAGE_ADDICT: {
+        id: 'leverage_addict',
+        name: 'Leverage Addict',
+        description: 'Complete 25 leveraged trades',
+        icon: '🎰',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 200,
+        check: (stats) => stats.leveragedTrades >= 25
+    },
+
+    MAX_LEVERAGE: {
+        id: 'max_leverage',
+        name: 'Full Send',
+        description: 'Use maximum leverage (20x) on a trade',
+        icon: '🚀',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 150,
+        check: (stats) => stats.usedMaxLeverage === true
+    },
+
+    LEVERAGE_WIN_BIG: {
+        id: 'leverage_win_big',
+        name: 'High Risk, High Reward',
+        description: 'Make $10,000 profit on a single leveraged trade',
+        icon: '💎',
+        category: 'paper_trading',
+        rarity: 'epic',
+        points: 500,
+        check: (stats) => stats.biggestLeverageWin >= 10000
+    },
+
+    LEVERAGE_LOSS_BIG: {
+        id: 'leverage_loss_big',
+        name: 'Liquidated',
+        description: 'Lose $10,000 on a single leveraged trade',
+        icon: '☠️',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 100,
+        check: (stats) => stats.biggestLeverageLoss >= 10000
+    },
+
+    // ============================================
+    // 📈 SHORT SELLING ACHIEVEMENTS (NEW!)
+    // ============================================
+    FIRST_SHORT: {
+        id: 'first_short',
+        name: 'Bear Mode',
+        description: 'Open your first short position',
+        icon: '🐻',
+        category: 'paper_trading',
+        rarity: 'common',
+        points: 75,
+        check: (stats) => stats.shortTrades >= 1
+    },
+
+    SHORT_MASTER: {
+        id: 'short_master',
+        name: 'Short Master',
+        description: 'Profit from 10 short positions',
+        icon: '📉',
+        category: 'paper_trading',
+        rarity: 'rare',
+        points: 250,
+        check: (stats) => stats.profitableShorts >= 10
+    },
+
+    BEAR_MARKET_KING: {
+        id: 'bear_market_king',
+        name: 'Bear Market King',
+        description: 'Make $25,000 total profit from short positions',
+        icon: '🐻‍❄️',
+        category: 'paper_trading',
+        rarity: 'epic',
+        points: 500,
+        check: (stats) => stats.totalShortProfit >= 25000
     },
 
     // ============================================
@@ -208,11 +393,7 @@ const ACHIEVEMENTS = {
         category: 'skill',
         rarity: 'rare',
         points: 250,
-        check: (stats) => {
-            if (stats.totalTrades < 20) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 60;
-        }
+        check: (stats) => stats.totalTrades >= 20 && stats.winRate >= 60
     },
 
     SHARP_SHOOTER: {
@@ -223,11 +404,7 @@ const ACHIEVEMENTS = {
         category: 'skill',
         rarity: 'epic',
         points: 500,
-        check: (stats) => {
-            if (stats.totalTrades < 50) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 70;
-        }
+        check: (stats) => stats.totalTrades >= 50 && stats.winRate >= 70
     },
 
     SNIPER: {
@@ -238,11 +415,7 @@ const ACHIEVEMENTS = {
         category: 'skill',
         rarity: 'epic',
         points: 1000,
-        check: (stats) => {
-            if (stats.totalTrades < 100) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 80;
-        }
+        check: (stats) => stats.totalTrades >= 100 && stats.winRate >= 80
     },
 
     PERFECT_PRECISION: {
@@ -253,22 +426,43 @@ const ACHIEVEMENTS = {
         category: 'skill',
         rarity: 'legendary',
         points: 2000,
-        check: (stats) => {
-            if (stats.totalTrades < 50) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 90;
-        }
+        check: (stats) => stats.totalTrades >= 50 && stats.winRate >= 90
+    },
+
+    // ============================================
+    // 🔥 STREAK ACHIEVEMENTS
+    // ============================================
+    WIN_STREAK_5: {
+        id: 'win_streak_5',
+        name: 'Hot Streak',
+        description: '5 profitable trades in a row',
+        icon: '🔥',
+        category: 'streaks',
+        rarity: 'rare',
+        points: 200,
+        check: (stats, gamification) => (gamification?.maxProfitStreak || stats.maxProfitStreak || 0) >= 5
+    },
+
+    WIN_STREAK_10: {
+        id: 'win_streak_10',
+        name: 'On Fire',
+        description: '10 profitable trades in a row',
+        icon: '🔥🔥',
+        category: 'streaks',
+        rarity: 'epic',
+        points: 500,
+        check: (stats, gamification) => (gamification?.maxProfitStreak || stats.maxProfitStreak || 0) >= 10
     },
 
     UNSTOPPABLE: {
         id: 'unstoppable',
         name: 'Unstoppable',
-        description: '10 profitable trades in a row',
+        description: '20 profitable trades in a row',
         icon: '🚀',
         category: 'streaks',
         rarity: 'legendary',
         points: 1500,
-        check: (stats, gamification) => gamification.maxProfitStreak >= 10
+        check: (stats, gamification) => (gamification?.maxProfitStreak || stats.maxProfitStreak || 0) >= 20
     },
 
     // ============================================
@@ -348,11 +542,7 @@ const ACHIEVEMENTS = {
         category: 'predictions',
         rarity: 'epic',
         points: 750,
-        check: (stats) => {
-            if (stats.predictionsCreated < 20) return false;
-            const accuracy = (stats.correctPredictions / stats.predictionsCreated) * 100;
-            return accuracy >= 75;
-        }
+        check: (stats) => stats.predictionsCreated >= 20 && stats.predictionAccuracy >= 75
     },
 
     // ============================================
@@ -402,37 +592,26 @@ const ACHIEVEMENTS = {
         check: (stats) => stats.stocksOwned >= 50
     },
 
-    PORTFOLIO_10K: {
-        id: 'portfolio_10k',
-        name: 'Five Figure Portfolio',
-        description: 'Portfolio value reaches $10,000',
-        icon: '💰',
-        category: 'portfolio',
-        rarity: 'rare',
-        points: 250,
-        check: (stats) => stats.portfolioValue >= 10000
-    },
-
-    PORTFOLIO_50K: {
-        id: 'portfolio_50k',
-        name: 'Portfolio Whale',
-        description: 'Portfolio value reaches $50,000',
-        icon: '🐋',
+    PORTFOLIO_DOUBLE: {
+        id: 'portfolio_double',
+        name: 'Double Up',
+        description: 'Double your starting portfolio value',
+        icon: '2️⃣',
         category: 'portfolio',
         rarity: 'epic',
-        points: 750,
-        check: (stats) => stats.portfolioValue >= 50000
+        points: 500,
+        check: (stats) => stats.portfolioValue >= 200000
     },
 
-    PORTFOLIO_100K: {
-        id: 'portfolio_100k',
-        name: 'Six Figure Portfolio',
-        description: 'Portfolio value reaches $100,000',
-        icon: '💎',
+    PORTFOLIO_TRIPLE: {
+        id: 'portfolio_triple',
+        name: 'Triple Threat',
+        description: 'Triple your starting portfolio value',
+        icon: '3️⃣',
         category: 'portfolio',
         rarity: 'legendary',
-        points: 1500,
-        check: (stats) => stats.portfolioValue >= 100000
+        points: 1000,
+        check: (stats) => stats.portfolioValue >= 300000
     },
 
     PORTFOLIO_MILLION: {
@@ -457,7 +636,7 @@ const ACHIEVEMENTS = {
         category: 'streaks',
         rarity: 'common',
         points: 100,
-        check: (stats, gamification) => gamification.maxLoginStreak >= 7
+        check: (stats, gamification) => (gamification?.maxLoginStreak || 0) >= 7
     },
 
     DEDICATED: {
@@ -468,7 +647,7 @@ const ACHIEVEMENTS = {
         category: 'streaks',
         rarity: 'rare',
         points: 300,
-        check: (stats, gamification) => gamification.maxLoginStreak >= 30
+        check: (stats, gamification) => (gamification?.maxLoginStreak || 0) >= 30
     },
 
     COMMITTED: {
@@ -479,18 +658,18 @@ const ACHIEVEMENTS = {
         category: 'streaks',
         rarity: 'epic',
         points: 600,
-        check: (stats, gamification) => gamification.maxLoginStreak >= 60
+        check: (stats, gamification) => (gamification?.maxLoginStreak || 0) >= 60
     },
 
     UNSTOPPABLE_LOGIN: {
         id: 'unstoppable_login',
-        name: 'Unstoppable',
+        name: 'Unstoppable Dedication',
         description: 'Login for 100 days in a row',
         icon: '⚡',
         category: 'streaks',
         rarity: 'epic',
         points: 1000,
-        check: (stats, gamification) => gamification.maxLoginStreak >= 100
+        check: (stats, gamification) => (gamification?.maxLoginStreak || 0) >= 100
     },
 
     YEAR_LONG: {
@@ -501,7 +680,7 @@ const ACHIEVEMENTS = {
         category: 'streaks',
         rarity: 'legendary',
         points: 3650,
-        check: (stats, gamification) => gamification.maxLoginStreak >= 365
+        check: (stats, gamification) => (gamification?.maxLoginStreak || 0) >= 365
     },
 
     // ============================================
@@ -515,7 +694,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'common',
         points: 50,
-        check: (stats, gamification) => gamification.level >= 5
+        check: (stats, gamification) => (gamification?.level || 0) >= 5
     },
 
     LEVEL_10: {
@@ -526,7 +705,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'common',
         points: 100,
-        check: (stats, gamification) => gamification.level >= 10
+        check: (stats, gamification) => (gamification?.level || 0) >= 10
     },
 
     LEVEL_25: {
@@ -537,7 +716,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'rare',
         points: 250,
-        check: (stats, gamification) => gamification.level >= 25
+        check: (stats, gamification) => (gamification?.level || 0) >= 25
     },
 
     LEVEL_50: {
@@ -548,7 +727,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'epic',
         points: 500,
-        check: (stats, gamification) => gamification.level >= 50
+        check: (stats, gamification) => (gamification?.level || 0) >= 50
     },
 
     LEVEL_75: {
@@ -559,7 +738,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'epic',
         points: 750,
-        check: (stats, gamification) => gamification.level >= 75
+        check: (stats, gamification) => (gamification?.level || 0) >= 75
     },
 
     LEVEL_100: {
@@ -570,7 +749,7 @@ const ACHIEVEMENTS = {
         category: 'milestones',
         rarity: 'legendary',
         points: 1000,
-        check: (stats, gamification) => gamification.level >= 100
+        check: (stats, gamification) => (gamification?.level || 0) >= 100
     },
 
     // ============================================
@@ -579,34 +758,34 @@ const ACHIEVEMENTS = {
     COIN_COLLECTOR: {
         id: 'coin_collector',
         name: 'Coin Collector',
-        description: 'Earn 1,000 Nexus Coins',
+        description: 'Earn 1,000 Nexus Coins total',
         icon: '🪙',
         category: 'coins',
         rarity: 'rare',
         points: 100,
-        check: (stats, gamification) => gamification.totalEarned >= 1000
+        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 1000
     },
 
     COIN_HOARDER: {
         id: 'coin_hoarder',
         name: 'Coin Hoarder',
-        description: 'Earn 5,000 Nexus Coins',
+        description: 'Earn 5,000 Nexus Coins total',
         icon: '💰',
         category: 'coins',
         rarity: 'epic',
         points: 250,
-        check: (stats, gamification) => gamification.totalEarned >= 5000
+        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 5000
     },
 
     COIN_TYCOON: {
         id: 'coin_tycoon',
         name: 'Coin Tycoon',
-        description: 'Earn 10,000 Nexus Coins',
+        description: 'Earn 10,000 Nexus Coins total',
         icon: '💎',
         category: 'coins',
         rarity: 'legendary',
         points: 500,
-        check: (stats, gamification) => gamification.totalEarned >= 10000
+        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 10000
     },
 
     RICH: {
@@ -617,34 +796,12 @@ const ACHIEVEMENTS = {
         category: 'coins',
         rarity: 'epic',
         points: 500,
-        check: (stats, gamification) => gamification.nexusCoins >= 5000
+        check: (stats, gamification) => (gamification?.nexusCoins || 0) >= 5000
     },
 
     // ============================================
-    // 🏆 SPECIAL & FUN ACHIEVEMENTS (RARE-LEGENDARY)
+    // 🏆 SPECIAL & FUN ACHIEVEMENTS
     // ============================================
-    EARLY_BIRD: {
-        id: 'early_bird',
-        name: 'Early Bird',
-        description: 'Make a trade before 9 AM',
-        icon: '🌅',
-        category: 'special',
-        rarity: 'rare',
-        points: 150,
-        check: () => false // Implement time-based check
-    },
-
-    NIGHT_OWL: {
-        id: 'night_owl',
-        name: 'Night Owl',
-        description: 'Make a trade after midnight',
-        icon: '🦉',
-        category: 'special',
-        rarity: 'rare',
-        points: 150,
-        check: () => false // Implement time-based check
-    },
-
     SPEED_DEMON: {
         id: 'speed_demon',
         name: 'Speed Demon',
@@ -653,84 +810,51 @@ const ACHIEVEMENTS = {
         category: 'special',
         rarity: 'epic',
         points: 300,
-        check: () => false // Implement daily tracking
+        check: (stats) => stats.maxTradesInDay >= 10
     },
 
     COMEBACK_KID: {
         id: 'comeback_kid',
         name: 'Comeback Kid',
-        description: 'Recover from 5 losses in a row with a win',
+        description: 'Win a trade after 5 losses in a row',
         icon: '🔄',
         category: 'special',
         rarity: 'epic',
         points: 400,
-        check: () => false // Implement loss tracking
+        check: (stats) => stats.comebackWin === true
     },
 
     RISK_TAKER: {
         id: 'risk_taker',
         name: 'Risk Taker',
-        description: 'Make a trade worth over $10,000',
+        description: 'Make a single trade worth over $50,000',
         icon: '🎲',
         category: 'special',
         rarity: 'epic',
         points: 500,
-        check: () => false // Implement trade value tracking
+        check: (stats) => stats.biggestTradeValue >= 50000
     },
 
     DIAMOND_HANDS: {
         id: 'diamond_hands',
         name: 'Diamond Hands 💎🙌',
-        description: 'Hold a stock for 30 days',
+        description: 'Hold a losing position for 7+ days without selling',
         icon: '💎',
         category: 'special',
         rarity: 'epic',
         points: 750,
-        check: () => false // Implement holding period tracking
+        check: (stats) => stats.diamondHands === true
     },
 
     PAPER_HANDS: {
         id: 'paper_hands',
         name: 'Paper Hands',
-        description: 'Sell a stock within 1 hour of buying',
+        description: 'Sell a stock within 5 minutes of buying',
         icon: '📄',
         category: 'special',
-        rarity: 'rare',
+        rarity: 'common',
         points: 50,
-        check: () => false // Implement quick sell tracking
-    },
-
-    LUCKY_SEVEN: {
-        id: 'lucky_seven',
-        name: 'Lucky Seven',
-        description: 'Make exactly $777 profit on a trade',
-        icon: '🎰',
-        category: 'special',
-        rarity: 'legendary',
-        points: 777,
-        check: () => false // Implement exact profit tracking
-    },
-
-    PENNY_PINCHER: {
-        id: 'penny_pincher',
-        name: 'Penny Pincher',
-        description: 'Make 50 trades with penny stocks',
-        icon: '🪙',
-        category: 'special',
-        rarity: 'rare',
-        points: 200,
-        check: () => false // Implement penny stock tracking
-    },
-
-    BLUE_CHIP: {
-        id: 'blue_chip',
-        name: 'Blue Chip Investor',
-        description: 'Own 5 stocks worth over $100',
-        icon: '🔵',
-        category: 'special',
-        rarity: 'rare',
-        points: 250,
-        check: () => false // Implement price tracking
+        check: (stats) => stats.paperHands === true
     },
 
     // ============================================
@@ -744,11 +868,7 @@ const ACHIEVEMENTS = {
         category: 'mastery',
         rarity: 'legendary',
         points: 2500,
-        check: (stats) => {
-            if (stats.totalTrades < 200) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 85;
-        }
+        check: (stats) => stats.totalTrades >= 200 && stats.winRate >= 85
     },
 
     GRAND_MASTER: {
@@ -760,170 +880,43 @@ const ACHIEVEMENTS = {
         rarity: 'legendary',
         points: 5000,
         check: (stats, gamification) => {
-            if (gamification.level < 100 || stats.totalTrades < 100) return false;
-            const winRate = (stats.profitableTrades / stats.totalTrades) * 100;
-            return winRate >= 90;
+            return (gamification?.level || 0) >= 100 && 
+                   stats.totalTrades >= 100 && 
+                   stats.winRate >= 90;
         }
     },
 
     ACHIEVEMENT_HUNTER: {
         id: 'achievement_hunter',
         name: 'Achievement Hunter',
-        description: 'Unlock 50 achievements',
+        description: 'Unlock 25 achievements',
         icon: '🏆',
         category: 'mastery',
-        rarity: 'legendary',
-        points: 2500,
-        check: (stats, gamification) => gamification.achievements.length >= 50
+        rarity: 'epic',
+        points: 1000,
+        check: (stats, gamification) => (gamification?.achievements?.length || 0) >= 25
     },
 
     COMPLETIONIST: {
         id: 'completionist',
         name: 'Completionist',
-        description: 'Unlock 100 achievements',
+        description: 'Unlock 50 achievements',
         icon: '👑',
         category: 'mastery',
         rarity: 'legendary',
-        points: 10000,
-        check: (stats, gamification) => gamification.achievements.length >= 100
-    },
-
-    JACK_OF_ALL_TRADES: {
-        id: 'jack_of_all_trades',
-        name: 'Jack of All Trades',
-        description: 'Unlock at least one achievement in every category',
-        icon: '🃏',
-        category: 'mastery',
-        rarity: 'legendary',
-        points: 3000,
-        check: (stats, gamification) => {
-            const categories = new Set(gamification.achievements.map(a => {
-                // Find the category from ACHIEVEMENTS
-                const achievement = Object.values(ACHIEVEMENTS).find(ach => ach.id === a.id);
-                return achievement?.category;
-            }));
-            return categories.size >= 8; // Adjust based on total categories
-        }
-    },
-
-    THE_LEGEND: {
-        id: 'the_legend',
-        name: 'The Legend',
-        description: 'Unlock all legendary achievements',
-        icon: '⚡',
-        category: 'mastery',
-        rarity: 'legendary',
-        points: 15000,
-        check: (stats, gamification) => {
-            const legendaryAchievements = Object.values(ACHIEVEMENTS).filter(a => a.rarity === 'legendary');
-            const unlockedLegendary = gamification.achievements.filter(a => {
-                const achievement = Object.values(ACHIEVEMENTS).find(ach => ach.id === a.id);
-                return achievement?.rarity === 'legendary';
-            });
-            return unlockedLegendary.length >= legendaryAchievements.length;
-        }
+        points: 5000,
+        check: (stats, gamification) => (gamification?.achievements?.length || 0) >= 50
     },
 
     // ============================================
-    // 🎊 EASTER EGG ACHIEVEMENTS (LEGENDARY)
+    // 🌟 TIME-BASED ACHIEVEMENTS
     // ============================================
-    STONKS: {
-        id: 'stonks',
-        name: 'STONKS 📈',
-        description: 'Buy TSLA at exactly $420.69',
-        icon: '🚀',
-        category: 'easter_egg',
-        rarity: 'legendary',
-        points: 420,
-        check: () => false // Implement meme price tracking
-    },
-
-    TO_THE_MOON: {
-        id: 'to_the_moon',
-        name: 'To The Moon! 🚀',
-        description: 'Have a stock gain over 100% in one day',
-        icon: '🌙',
-        category: 'easter_egg',
-        rarity: 'legendary',
-        points: 1000,
-        check: () => false // Implement daily gain tracking
-    },
-
-    WSB_MEMBER: {
-        id: 'wsb_member',
-        name: 'WSB Member',
-        description: 'YOLO $10,000 on a single trade',
-        icon: '🦍',
-        category: 'easter_egg',
-        rarity: 'legendary',
-        points: 1000,
-        check: () => false // Implement YOLO tracking
-    },
-
-    BUY_THE_DIP: {
-        id: 'buy_the_dip',
-        name: 'Buy The Dip',
-        description: 'Buy a stock at its 52-week low',
-        icon: '📉',
-        category: 'easter_egg',
-        rarity: 'rare',
-        points: 300,
-        check: () => false // Implement 52-week tracking
-    },
-
-    HODL: {
-        id: 'hodl',
-        name: 'HODL',
-        description: 'Hold a losing position for 7 days',
-        icon: '💪',
-        category: 'easter_egg',
-        rarity: 'rare',
-        points: 200,
-        check: () => false // Implement loss holding tracking
-    },
-
-    NUMBER_GO_UP: {
-        id: 'number_go_up',
-        name: 'Number Go Up',
-        description: 'Watch your portfolio gain $1,000 in one day',
-        icon: '📊',
-        category: 'easter_egg',
-        rarity: 'epic',
-        points: 500,
-        check: () => false // Implement daily portfolio tracking
-    },
-
-    // ============================================
-    // 🌟 TIME-BASED ACHIEVEMENTS (RARE-EPIC)
-    // ============================================
-    WEEKEND_WARRIOR: {
-        id: 'weekend_warrior',
-        name: 'Weekend Warrior',
-        description: 'Login on both Saturday and Sunday',
-        icon: '🏖️',
-        category: 'time_based',
-        rarity: 'rare',
-        points: 100,
-        check: () => false // Implement weekend tracking
-    },
-
-    MONTHLY_ACTIVE: {
-        id: 'monthly_active',
-        name: 'Monthly Active',
-        description: 'Login every day for a month',
-        icon: '📆',
-        category: 'time_based',
-        rarity: 'epic',
-        points: 500,
-        check: () => false // Implement monthly tracking
-    },
-
     VETERAN: {
         id: 'veteran',
         name: 'Veteran',
-        description: 'Active for 180 days',
+        description: 'Be active for 180 days',
         icon: '🎖️',
-        category: 'time_based',
+        category: 'milestones',
         rarity: 'epic',
         points: 1000,
         check: (stats) => stats.daysActive >= 180
@@ -932,73 +925,73 @@ const ACHIEVEMENTS = {
     OLD_TIMER: {
         id: 'old_timer',
         name: 'Old Timer',
-        description: 'Active for 365 days',
+        description: 'Be active for 365 days',
         icon: '⌛',
-        category: 'time_based',
+        category: 'milestones',
         rarity: 'legendary',
         points: 2000,
         check: (stats) => stats.daysActive >= 365
     },
 
     // ============================================
-    // 💪 CHALLENGE ACHIEVEMENTS (COMMON-EPIC)
+    // 🎊 MEME / EASTER EGG ACHIEVEMENTS (LEGENDARY)
     // ============================================
-    CHALLENGE_STARTER: {
-        id: 'challenge_starter',
-        name: 'Challenge Starter',
-        description: 'Complete your first daily challenge',
-        icon: '🎯',
-        category: 'challenges',
-        rarity: 'common',
-        points: 50,
-        check: () => false // Implement challenge tracking
+    STONKS: {
+        id: 'stonks',
+        name: 'STONKS 📈',
+        description: 'Make a trade at exactly $420.69',
+        icon: '🚀',
+        category: 'easter_egg',
+        rarity: 'legendary',
+        points: 420,
+        check: (stats) => stats.memeTradePrice === true
     },
 
-    CHALLENGE_MASTER: {
-        id: 'challenge_master',
-        name: 'Challenge Master',
-        description: 'Complete 30 daily challenges',
-        icon: '🏆',
-        category: 'challenges',
-        rarity: 'rare',
-        points: 300,
-        check: () => false // Implement challenge tracking
-    },
-
-    CHALLENGE_LEGEND: {
-        id: 'challenge_legend',
-        name: 'Challenge Legend',
-        description: 'Complete 100 daily challenges',
-        icon: '⚡',
-        category: 'challenges',
-        rarity: 'epic',
+    TO_THE_MOON: {
+        id: 'to_the_moon',
+        name: 'To The Moon! 🚀',
+        description: 'Have a single trade gain over 100%',
+        icon: '🌙',
+        category: 'easter_egg',
+        rarity: 'legendary',
         points: 1000,
-        check: () => false // Implement challenge tracking
+        check: (stats) => stats.biggestWinPercent >= 100
     },
 
-    PERFECT_WEEK: {
-        id: 'perfect_week',
-        name: 'Perfect Week',
-        description: 'Complete all challenges for 7 days straight',
-        icon: '✨',
-        category: 'challenges',
-        rarity: 'epic',
-        points: 750,
-        check: () => false // Implement streak tracking
+    WSB_MEMBER: {
+        id: 'wsb_member',
+        name: 'WSB Member',
+        description: 'YOLO your entire balance on a single trade',
+        icon: '🦍',
+        category: 'easter_egg',
+        rarity: 'legendary',
+        points: 1000,
+        check: (stats) => stats.yoloTrade === true
+    },
+
+    HODL: {
+        id: 'hodl',
+        name: 'HODL',
+        description: 'Hold any position for 30+ days',
+        icon: '💪',
+        category: 'easter_egg',
+        rarity: 'rare',
+        points: 200,
+        check: (stats) => stats.longestHold >= 30
     },
 
     // ============================================
-    // 🎨 SOCIAL ACHIEVEMENTS (COMMON-RARE)
+    // 👥 SOCIAL ACHIEVEMENTS
     // ============================================
-    FIRST_FRIEND: {
-        id: 'first_friend',
+    FIRST_FOLLOW: {
+        id: 'first_follow',
         name: 'Making Friends',
         description: 'Follow your first trader',
         icon: '👥',
         category: 'social',
         rarity: 'common',
         points: 50,
-        check: () => false // Implement social tracking
+        check: (stats) => stats.followingCount >= 1
     },
 
     POPULAR: {
@@ -1009,7 +1002,7 @@ const ACHIEVEMENTS = {
         category: 'social',
         rarity: 'rare',
         points: 200,
-        check: () => false // Implement follower tracking
+        check: (stats) => stats.followersCount >= 10
     },
 
     INFLUENCER: {
@@ -1020,7 +1013,7 @@ const ACHIEVEMENTS = {
         category: 'social',
         rarity: 'epic',
         points: 500,
-        check: () => false // Implement follower tracking
+        check: (stats) => stats.followersCount >= 100
     },
 
     CELEBRITY: {
@@ -1031,66 +1024,31 @@ const ACHIEVEMENTS = {
         category: 'social',
         rarity: 'legendary',
         points: 2000,
-        check: () => false // Implement follower tracking
-    },
-
-    HELPFUL: {
-        id: 'helpful',
-        name: 'Helpful',
-        description: 'Share 10 trading tips',
-        icon: '💡',
-        category: 'social',
-        rarity: 'rare',
-        points: 150,
-        check: () => false // Implement sharing tracking
-    },
-
-    // ============================================
-    // 🏅 LEADERBOARD ACHIEVEMENTS (EPIC-LEGENDARY)
-    // ============================================
-    TOP_100: {
-        id: 'top_100',
-        name: 'Top 100',
-        description: 'Reach Top 100 on leaderboard',
-        icon: '🥉',
-        category: 'leaderboard',
-        rarity: 'epic',
-        points: 500,
-        check: () => false // Implement rank tracking
-    },
-
-    TOP_50: {
-        id: 'top_50',
-        name: 'Top 50',
-        description: 'Reach Top 50 on leaderboard',
-        icon: '🥈',
-        category: 'leaderboard',
-        rarity: 'epic',
-        points: 750,
-        check: () => false // Implement rank tracking
-    },
-
-    TOP_10: {
-        id: 'top_10',
-        name: 'Top 10',
-        description: 'Reach Top 10 on leaderboard',
-        icon: '🥇',
-        category: 'leaderboard',
-        rarity: 'legendary',
-        points: 1500,
-        check: () => false // Implement rank tracking
-    },
-
-    NUMBER_ONE: {
-        id: 'number_one',
-        name: '#1',
-        description: 'Reach #1 on leaderboard',
-        icon: '👑',
-        category: 'leaderboard',
-        rarity: 'legendary',
-        points: 5000,
-        check: () => false // Implement rank tracking
+        check: (stats) => stats.followersCount >= 1000
     }
 };
 
+// Helper function to get achievements by category
+const getAchievementsByCategory = (category) => {
+    return Object.values(ACHIEVEMENTS).filter(a => a.category === category);
+};
+
+// Helper function to get all categories
+const getAllCategories = () => {
+    const categories = new Set(Object.values(ACHIEVEMENTS).map(a => a.category));
+    return Array.from(categories);
+};
+
+// Helper to count achievements by rarity
+const countByRarity = () => {
+    const counts = { common: 0, rare: 0, epic: 0, legendary: 0 };
+    Object.values(ACHIEVEMENTS).forEach(a => {
+        counts[a.rarity]++;
+    });
+    return counts;
+};
+
 module.exports = ACHIEVEMENTS;
+module.exports.getAchievementsByCategory = getAchievementsByCategory;
+module.exports.getAllCategories = getAllCategories;
+module.exports.countByRarity = countByRarity;

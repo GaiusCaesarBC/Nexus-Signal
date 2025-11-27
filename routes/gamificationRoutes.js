@@ -1,9 +1,10 @@
-// server/routes/gamificationRoutes.js
+// server/routes/gamificationRoutes.js - UPDATED WITH ACHIEVEMENT INTEGRATION
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const Gamification = require('../models/Gamification');
 const GamificationService = require('../services/gamificationService');
+const AchievementService = require('../services/achievementService');
 const ACHIEVEMENTS = require('../config/achievements');
 
 // @route   GET /api/gamification/stats
@@ -13,7 +14,6 @@ router.get('/stats', authMiddleware, async (req, res) => {
     try {
         console.log('[Gamification] Fetching data for user:', req.user.id);
         
-        // ✅ Get BOTH Gamification data AND User stats
         let gamification = await Gamification.findOne({ user: req.user.id });
         
         if (!gamification) {
@@ -21,9 +21,58 @@ router.get('/stats', authMiddleware, async (req, res) => {
             gamification = await GamificationService.initializeUser(req.user.id);
         }
 
-        // ✅ Get real stats from User model (paper trading)
+        // Get real stats from User model (paper trading)
         const User = require('../models/User');
         const user = await User.findById(req.user.id).select('stats').lean();
+
+        // Also try to get paper trading account stats
+        let paperTradingStats = {};
+        try {
+            const PaperTradingAccount = require('../models/PaperTradingAccount');
+            const paperAccount = await PaperTradingAccount.findOne({ user: req.user.id }).lean();
+            if (paperAccount) {
+                paperTradingStats = {
+                    totalTrades: paperAccount.totalTrades || 0,
+                    profitableTrades: paperAccount.winningTrades || 0,
+                    losingTrades: paperAccount.losingTrades || 0,
+                    portfolioValue: paperAccount.portfolioValue || 100000,
+                    totalProfit: paperAccount.totalProfitLoss || 0,
+                    winRate: paperAccount.winRate || 0,
+                    stocksOwned: paperAccount.positions?.length || 0,
+                    biggestWin: paperAccount.biggestWin || 0,
+                    biggestLoss: paperAccount.biggestLoss || 0,
+                    currentStreak: paperAccount.currentStreak || 0,
+                    bestStreak: paperAccount.bestStreak || 0
+                };
+            }
+        } catch (err) {
+            console.log('[Gamification] No paper trading account found');
+        }
+
+        // Merge stats - prefer paper trading stats when available
+        const mergedStats = {
+            totalTrades: paperTradingStats.totalTrades || user?.stats?.totalTrades || gamification.stats.totalTrades || 0,
+            profitableTrades: paperTradingStats.profitableTrades || user?.stats?.winningTrades || gamification.stats.profitableTrades || 0,
+            losingTrades: paperTradingStats.losingTrades || gamification.stats.losingTrades || 0,
+            totalProfit: paperTradingStats.totalProfit || user?.stats?.totalReturn || gamification.stats.totalProfit || 0,
+            totalReturnPercent: user?.stats?.totalReturnPercent || 0,
+            winRate: paperTradingStats.winRate || user?.stats?.winRate || gamification.stats.winRate || 0,
+            predictionsCreated: user?.stats?.totalPredictions || gamification.stats.predictionsCreated || 0,
+            correctPredictions: user?.stats?.correctPredictions || gamification.stats.correctPredictions || 0,
+            predictionAccuracy: user?.stats?.predictionAccuracy || gamification.stats.predictionAccuracy || 0,
+            portfolioValue: paperTradingStats.portfolioValue || user?.stats?.currentValue || gamification.stats.portfolioValue || 100000,
+            daysActive: gamification.stats.daysActive || 0,
+            stocksOwned: paperTradingStats.stocksOwned || user?.stats?.openPositions || gamification.stats.stocksOwned || 0,
+            referrals: gamification.stats.referrals || 0,
+            // Paper trading specific
+            totalRefills: gamification.stats.totalRefills || 0,
+            leveragedTrades: gamification.stats.leveragedTrades || 0,
+            shortTrades: gamification.stats.shortTrades || 0,
+            maxProfitStreak: gamification.stats.maxProfitStreak || paperTradingStats.bestStreak || 0,
+            maxLossStreak: gamification.stats.maxLossStreak || 0,
+            followersCount: gamification.stats.followersCount || 0,
+            followingCount: gamification.stats.followingCount || 0
+        };
 
         // Calculate XP bounds for current level
         const xpForCurrentLevel = (gamification.level - 1) * 1000;
@@ -42,23 +91,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
                 profitStreak: gamification.profitStreak,
                 maxProfitStreak: gamification.maxProfitStreak,
                 achievements: gamification.achievements,
-                
-                // ✅ Use REAL stats from User model (calculated from paper trading)
-                stats: {
-                    totalTrades: user?.stats?.totalTrades || 0,
-                    profitableTrades: user?.stats?.winningTrades || 0,
-                    totalProfit: user?.stats?.totalReturn || 0,
-                    totalReturnPercent: user?.stats?.totalReturnPercent || 0,  // ✅ REAL DATA
-                    winRate: user?.stats?.winRate || 0,  // ✅ REAL DATA
-                    predictionsCreated: user?.stats?.totalPredictions || 0,
-                    correctPredictions: user?.stats?.correctPredictions || 0,
-                    predictionAccuracy: user?.stats?.predictionAccuracy || 0,
-                    portfolioValue: user?.stats?.currentValue || user?.stats?.portfolioValue || 0,
-                    daysActive: gamification.daysActive || 0,
-                    stocksOwned: user?.stats?.openPositions || 0,
-                    referrals: 0
-                },
-                
+                stats: mergedStats,
                 dailyChallenge: gamification.dailyChallenge,
                 lastLoginDate: gamification.lastLoginDate,
                 xpForCurrentLevel: xpForCurrentLevel,
@@ -72,7 +105,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
             }
         });
         
-        console.log('[Gamification] Returned stats with totalReturnPercent:', user?.stats?.totalReturnPercent);
+        console.log('[Gamification] Returned stats with totalReturnPercent:', mergedStats.totalReturnPercent);
     } catch (error) {
         console.error('[Gamification] Error fetching stats:', error);
         res.status(500).json({
@@ -89,30 +122,9 @@ router.get('/achievements', authMiddleware, async (req, res) => {
     try {
         const gamification = await Gamification.findOne({ user: req.user.id });
         
-        if (!gamification) {
-            // Return all achievements as locked if user has no gamification data
-            const allAchievements = Object.values(ACHIEVEMENTS).map(ach => ({
-                id: ach.id,
-                name: ach.name,
-                description: ach.description,
-                icon: ach.icon,
-                category: ach.category,
-                rarity: ach.rarity,
-                points: ach.points,
-                unlocked: false,
-                unlockedAt: null
-            }));
-
-            return res.json({
-                success: true,
-                achievements: allAchievements
-            });
-        }
-
         // Map all achievements with unlock status
         const allAchievements = Object.values(ACHIEVEMENTS).map(ach => {
-            // Find if this achievement is unlocked by the user
-            const userAchievement = gamification.achievements.find(ua => ua.id === ach.id);
+            const userAchievement = gamification?.achievements?.find(ua => ua.id === ach.id);
             
             return {
                 id: ach.id,
@@ -127,9 +139,18 @@ router.get('/achievements', authMiddleware, async (req, res) => {
             };
         });
 
+        // Sort: unlocked first, then by rarity (legendary first)
+        const rarityOrder = { legendary: 0, epic: 1, rare: 2, common: 3 };
+        allAchievements.sort((a, b) => {
+            if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
+            return rarityOrder[a.rarity] - rarityOrder[b.rarity];
+        });
+
         res.json({
             success: true,
-            achievements: allAchievements
+            achievements: allAchievements,
+            total: allAchievements.length,
+            unlocked: allAchievements.filter(a => a.unlocked).length
         });
 
     } catch (error) {
@@ -141,6 +162,51 @@ router.get('/achievements', authMiddleware, async (req, res) => {
     }
 });
 
+// @route   POST /api/gamification/check-achievements
+// @desc    Check and unlock any new achievements
+// @access  Private
+router.post('/check-achievements', authMiddleware, async (req, res) => {
+    try {
+        const result = await AchievementService.checkAllAchievements(req.user.id);
+        
+        res.json({
+            success: true,
+            newlyUnlocked: result.newlyUnlocked,
+            leveledUp: result.leveledUp,
+            newLevel: result.newLevel,
+            newRank: result.newRank
+        });
+
+    } catch (error) {
+        console.error('[Gamification] Check achievements error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to check achievements'
+        });
+    }
+});
+
+// @route   GET /api/gamification/achievement-progress
+// @desc    Get detailed achievement progress
+// @access  Private
+router.get('/achievement-progress', authMiddleware, async (req, res) => {
+    try {
+        const progress = await AchievementService.getAchievementProgress(req.user.id);
+        
+        res.json({
+            success: true,
+            progress
+        });
+
+    } catch (error) {
+        console.error('[Gamification] Achievement progress error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get achievement progress'
+        });
+    }
+});
+
 // @route   POST /api/gamification/login-streak
 // @desc    Update login streak
 // @access  Private
@@ -148,11 +214,15 @@ router.post('/login-streak', authMiddleware, async (req, res) => {
     try {
         const result = await GamificationService.updateLoginStreak(req.user.id);
         
+        // Check achievements after login streak update
+        const achievementResult = await AchievementService.checkAllAchievements(req.user.id);
+        
         res.json({
             success: true,
             streak: result.streak,
             isNew: result.isNew,
-            broken: result.broken || false
+            broken: result.broken || false,
+            newAchievements: achievementResult.newlyUnlocked
         });
     } catch (error) {
         console.error('[Gamification] Login streak error:', error);
@@ -200,6 +270,40 @@ router.post('/daily-challenge', authMiddleware, async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to generate daily challenge'
+        });
+    }
+});
+
+// @route   POST /api/gamification/sync-stats
+// @desc    Sync stats from paper trading and check achievements
+// @access  Private
+router.post('/sync-stats', authMiddleware, async (req, res) => {
+    try {
+        // Get paper trading account
+        const PaperTradingAccount = require('../models/PaperTradingAccount');
+        const paperAccount = await PaperTradingAccount.findOne({ user: req.user.id });
+        
+        if (paperAccount) {
+            const result = await AchievementService.updatePaperTradingStats(req.user.id, paperAccount);
+            
+            res.json({
+                success: true,
+                message: 'Stats synced successfully',
+                newAchievements: result.newlyUnlocked,
+                leveledUp: result.leveledUp
+            });
+        } else {
+            res.json({
+                success: true,
+                message: 'No paper trading account found',
+                newAchievements: []
+            });
+        }
+    } catch (error) {
+        console.error('[Gamification] Sync stats error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to sync stats'
         });
     }
 });

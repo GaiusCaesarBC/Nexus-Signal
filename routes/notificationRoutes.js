@@ -132,11 +132,14 @@ router.put('/:id/read', auth, async (req, res) => {
 // @access  Private
 router.post('/mark-all-read', auth, async (req, res) => {
     try {
-        const count = await Notification.markAllAsRead(req.user.id);
+        const result = await Notification.updateMany(
+            { user: req.user.id, read: false },
+            { $set: { read: true, readAt: new Date() } }
+        );
 
         res.json({
             success: true,
-            marked: count
+            marked: result.modifiedCount
         });
 
     } catch (error) {
