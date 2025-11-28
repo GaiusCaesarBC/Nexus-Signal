@@ -26,6 +26,10 @@ const upload = multer({
 // ============ REACTION TYPES ============
 const REACTION_TYPES = ['like', 'rocket', 'fire', 'diamond', 'bull', 'bear', 'money'];
 
+// ============ USER POPULATE FIELDS ============
+// Centralized user fields to populate (includes vault for badges)
+const USER_POPULATE_FIELDS = 'username profile gamification vault.equippedBadges vault.equippedBorder';
+
 // ============ HELPER FUNCTIONS ============
 
 // Extract @mentions from text
@@ -132,7 +136,7 @@ function formatPostResponse(post, currentUserId = null) {
         );
     }
 
-    // Format author
+    // Format author with vault data (badges + border)
     if (postObj.user) {
         postObj.author = {
             _id: postObj.user._id,
@@ -141,7 +145,10 @@ function formatPostResponse(post, currentUserId = null) {
             avatar: postObj.user.profile?.avatar || '',
             level: postObj.user.gamification?.level || 1,
             verified: postObj.user.profile?.verified || false,
-            badges: postObj.user.profile?.badges || []
+            badges: postObj.user.profile?.badges || [],
+            // 🔥 NEW: Include vault equipped items for display
+            equippedBadges: postObj.user.vault?.equippedBadges || [],
+            equippedBorder: postObj.user.vault?.equippedBorder || null
         };
     }
 
@@ -279,8 +286,8 @@ router.post('/', auth, upload.array('images', 4), async (req, res) => {
         // Create post
         const post = await Post.create(postData);
 
-        // Populate user data
-        await post.populate('user', 'username profile gamification');
+        // Populate user data including vault
+        await post.populate('user', USER_POPULATE_FIELDS);
 
         // 🔔 Send mention notifications
         for (const mentionedUserId of mentionedUserIds) {
@@ -336,7 +343,7 @@ router.get('/', auth, async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .populate('repostOf')
         .lean();
 
@@ -379,7 +386,7 @@ router.get('/discover', async (req, res) => {
             visibility: 'public',
             createdAt: { $gte: timeThreshold }
         })
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .populate('repostOf')
         .lean();
 
@@ -536,7 +543,7 @@ router.get('/hashtag/:tag', async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .lean();
 
         const formattedPosts = posts.map(p => formatPostResponse(p, currentUserId));
@@ -574,7 +581,7 @@ router.get('/symbol/:symbol', async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .lean();
 
         const formattedPosts = posts.map(p => formatPostResponse(p, currentUserId));
@@ -622,7 +629,7 @@ router.get('/user/:userId', async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(parseInt(skip))
             .limit(parseInt(limit))
-            .populate('user', 'username profile gamification')
+            .populate('user', USER_POPULATE_FIELDS)
             .populate('repostOf')
             .lean();
 
@@ -655,7 +662,7 @@ router.get('/bookmarks', auth, async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .lean();
 
         const formattedPosts = posts.map(p => formatPostResponse(p, req.user.id));
@@ -684,7 +691,7 @@ router.get('/:postId', async (req, res) => {
             _id: req.params.postId,
             deleted: { $ne: true }
         })
-        .populate('user', 'username profile gamification')
+        .populate('user', USER_POPULATE_FIELDS)
         .populate('comments.user', 'username profile.displayName profile.avatar')
         .populate('mentions', 'username profile.displayName')
         .populate('repostOf')
@@ -736,7 +743,7 @@ router.put('/:postId', auth, async (req, res) => {
         }
 
         await post.save();
-        await post.populate('user', 'username profile gamification');
+        await post.populate('user', USER_POPULATE_FIELDS);
 
         res.json({
             success: true,
@@ -1053,7 +1060,7 @@ router.post('/:postId/share', auth, async (req, res) => {
             }
         });
 
-        await repost.populate('user', 'username profile gamification');
+        await repost.populate('user', USER_POPULATE_FIELDS);
         await repost.populate('repostOf');
 
         // 🔔 Notification

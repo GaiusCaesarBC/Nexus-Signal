@@ -1,4 +1,4 @@
-// server/models/Gamification.js - UPDATED WITH PAPER TRADING STATS
+// server/models/Gamification.js - UPDATED WITH PREDICTION RESET DATE
 const mongoose = require('mongoose');
 
 const achievementSchema = new mongoose.Schema({
@@ -40,6 +40,9 @@ const gamificationSchema = new mongoose.Schema({
     maxProfitStreak: { type: Number, default: 0 },
     lossStreak: { type: Number, default: 0 },
     maxLossStreak: { type: Number, default: 0 },
+    
+    // 🔥 NEW: Prediction Reset Date - only count predictions after this date
+    predictionResetDate: { type: Date, default: null },
     
     // Achievements
     achievements: [achievementSchema],
@@ -83,7 +86,7 @@ const gamificationSchema = new mongoose.Schema({
         // Time stats
         daysActive: { type: Number, default: 0 },
         
-        // ============ NEW PAPER TRADING STATS ============
+        // ============ PAPER TRADING STATS ============
         // Refill tracking
         totalRefills: { type: Number, default: 0 },
         accountBlown: { type: Boolean, default: false },
@@ -378,6 +381,14 @@ gamificationSchema.methods.addAchievement = function(achievement) {
         return true;
     }
     return false;
+};
+
+// 🔥 NEW: Reset prediction tracking
+gamificationSchema.methods.resetPredictionTracking = function(resetDate = new Date()) {
+    this.predictionResetDate = resetDate;
+    this.stats.predictionsCreated = 0;
+    this.stats.correctPredictions = 0;
+    this.stats.predictionAccuracy = 0;
 };
 
 module.exports = mongoose.model('Gamification', gamificationSchema);

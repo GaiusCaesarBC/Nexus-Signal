@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
+const Gamification = require('../models/Gamification'); // 🔥 ADD THIS
 const { updateUserStats, updateAllUserStats } = require('../services/statsService');
 const NotificationService = require('../services/notificationService');
 
@@ -49,6 +50,55 @@ const getDateRangeForPeriod = (period) => {
     return startDate;
 };
 
+// ============ CURRENT USER STATS ============
+// @route   GET /api/social/me/stats
+// @desc    Get current user's stats
+// @access  Private
+router.get('/me/stats', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id)
+            .select('username profile stats gamification social vault');
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            username: user.username,
+            displayName: user.profile?.displayName || user.username,
+            avatar: user.profile?.avatar || '',
+            stats: {
+                totalReturnPercent: user.stats?.totalReturnPercent || 0,
+                winRate: user.stats?.winRate || 0,
+                totalTrades: user.stats?.totalTrades || 0,
+                currentStreak: user.stats?.currentStreak || 0,
+                longestStreak: user.stats?.longestStreak || 0,
+                avgTradeReturn: user.stats?.avgTradeReturn || 0,
+                bestTrade: user.stats?.bestTrade || 0,
+                worstTrade: user.stats?.worstTrade || 0
+            },
+            gamification: {
+                level: user.gamification?.level || 1,
+                xp: user.gamification?.xp || 0,
+                title: user.gamification?.title || 'Rookie Trader',
+                nexusCoins: user.gamification?.nexusCoins || 0
+            },
+            social: {
+                followersCount: user.social?.followersCount || 0,
+                followingCount: user.social?.followingCount || 0
+            },
+            vault: {
+                equippedBadges: user.vault?.equippedBadges || [],
+                equippedBorder: user.vault?.equippedBorder || null,
+                equippedTheme: user.vault?.equippedTheme || null
+            }
+        });
+    } catch (error) {
+        console.error('[Social] Error fetching user stats:', error);
+        res.status(500).json({ error: 'Failed to fetch user stats' });
+    }
+});
+
 // ============ ENHANCED LEADERBOARD ============
 // @route   GET /api/social/leaderboard
 // @desc    Get top traders with filtering and sorting options
@@ -92,9 +142,9 @@ router.get('/leaderboard', async (req, res) => {
             query['stats.lastTradeDate'] = { $gte: startDate };
         }
 
-        // Fetch users with all relevant fields
+        // Fetch users with all relevant fields including vault
         const users = await User.find(query)
-            .select('username profile stats gamification social createdAt')
+            .select('username profile stats gamification social vault createdAt')
             .sort({ [sortField]: -1 })
             .limit(parseInt(limit));
 
@@ -125,6 +175,10 @@ router.get('/leaderboard', async (req, res) => {
             // Social
             followersCount: user.social?.followersCount || 0,
             followingCount: user.social?.followingCount || 0,
+            
+            // 🔥 NEW: Vault equipped items
+            equippedBadges: user.vault?.equippedBadges || [],
+            equippedBorder: user.vault?.equippedBorder || null,
             
             // Meta
             memberSince: user.createdAt
@@ -188,7 +242,7 @@ router.get('/leaderboard/stats', async (req, res) => {
 router.get('/profile/:userId', optionalAuth, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId)
-            .select('username profile stats achievements gamification social')
+            .select('username profile stats achievements gamification social vault createdAt isFounder')
             .populate('social.followers', 'username profile.displayName profile.avatar')
             .populate('social.following', 'username profile.displayName profile.avatar');
 
@@ -206,18 +260,154 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             });
         }
 
+        // 🔥 FIXED: Get achievements from all possible sources
+        let achievements = [];
+        
+        // Source 1: Check User.achievements array (direct on user model)
+        if (user.achievements && user.achievements.length > 0) {
+            achievements = user.achievements;
+            console.log(`[Profile] Found ${achievements.length} achievements in User.achievements`);
+        }
+        
+        // Source 2: Check User.gamification.achievements (embedded in user)
+        if (achievements.length === 0 && user.gamification?.achievements?.length > 0) {
+            achievements = user.gamification.achievements.map(ach => ({
+                achievementId: ach.id || ach.achievementId,
+                id: ach.id || ach.achievementId,
+                name: ach.name,
+                description: ach.description,
+                icon: ach.icon,
+                xpReward: ach.points || ach.xpReward || 0,
+                points: ach.points || ach.xpReward || 0,
+                rarity: ach.rarity || 'common',
+                earnedAt: ach.unlockedAt || ach.earnedAt
+            }));
+            console.log(`[Profile] Found ${achievements.length} achievements in User.gamification.achievements`);
+        }
+        
+        // Source 3: Check separate Gamification document
+        let gamificationData = null;
+        try {
+            const gamificationDoc = await Gamification.findOne({ user: user._id });
+            if (gamificationDoc) {
+                gamificationData = gamificationDoc;
+                
+                if (achievements.length === 0 && gamificationDoc.achievements && gamificationDoc.achievements.length > 0) {
+                    achievements = gamificationDoc.achievements.map(ach => ({
+                        achievementId: ach.id || ach.achievementId,
+                        id: ach.id || ach.achievementId,
+                        name: ach.name,
+                        description: ach.description,
+                        icon: ach.icon,
+                        xpReward: ach.points || ach.xpReward || 0,
+                        points: ach.points || ach.xpReward || 0,
+                        rarity: ach.rarity || 'common',
+                        earnedAt: ach.unlockedAt || ach.earnedAt
+                    }));
+                    console.log(`[Profile] Found ${achievements.length} achievements in Gamification document`);
+                }
+            }
+        } catch (gamErr) {
+            console.error('[Profile] Could not fetch Gamification document:', gamErr.message);
+        }
+
+        // 🔥 GET REAL PREDICTION STATS FROM PREDICTION MODEL
+        let predictionStats = {
+            predictionsCreated: 0,
+            correctPredictions: 0,
+            predictionAccuracy: 0
+        };
+        
+        try {
+            const Prediction = require('../models/Prediction');
+            
+            // 🔥 Check for prediction reset date (only count predictions after this date)
+            const predictionResetDate = gamificationData?.predictionResetDate || null;
+            const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
+            
+            const totalPredictions = await Prediction.countDocuments({ 
+                user: user._id,
+                ...dateFilter
+            });
+            const correctPredictions = await Prediction.countDocuments({ 
+                user: user._id, 
+                status: 'correct',
+                ...dateFilter
+            });
+            const resolvedPredictions = await Prediction.countDocuments({
+                user: user._id,
+                status: { $in: ['correct', 'incorrect'] },
+                ...dateFilter
+            });
+            
+            const accuracy = resolvedPredictions > 0 
+                ? Math.round((correctPredictions / resolvedPredictions) * 100)
+                : 0;
+            
+            predictionStats = {
+                predictionsCreated: totalPredictions,
+                correctPredictions: correctPredictions,
+                predictionAccuracy: accuracy
+            };
+        } catch (predError) {
+            console.warn('[Profile] Could not fetch prediction stats:', predError.message);
+        }
+
+        // 🔥 MERGE stats from User.stats AND Gamification.stats
+        const mergedStats = {
+            totalReturnPercent: user.stats?.totalReturnPercent || 0,
+            winRate: user.stats?.winRate || gamificationData?.stats?.winRate || 0,
+            totalTrades: user.stats?.totalTrades || gamificationData?.stats?.totalTrades || 0,
+            currentStreak: user.stats?.currentStreak || gamificationData?.profitStreak || gamificationData?.loginStreak || 0,
+            longestStreak: user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
+            bestTrade: user.stats?.bestTrade || gamificationData?.stats?.biggestWinPercent || 0,
+            rank: user.stats?.rank || 0,
+            // 🔥 USE REAL PREDICTION STATS
+            totalPredictions: predictionStats.predictionsCreated,
+            correctPredictions: predictionStats.correctPredictions,
+            predictionAccuracy: predictionStats.predictionAccuracy,
+            profitStreak: gamificationData?.profitStreak || 0,
+            lossStreak: gamificationData?.lossStreak || 0,
+            loginStreak: gamificationData?.loginStreak || 0
+        };
+
+        // 🔥 PRIORITIZE Gamification document over User.gamification (which is often stale)
+        const mergedGamification = {
+            level: gamificationData?.level || user.gamification?.level || 1,
+            xp: gamificationData?.xp || user.gamification?.xp || 0,
+            title: gamificationData?.rank || user.gamification?.title || 'Rookie Trader',
+            rank: gamificationData?.rank || user.gamification?.rank || 'Rookie Trader',
+            nexusCoins: gamificationData?.nexusCoins || user.gamification?.nexusCoins || 0,
+            totalEarned: gamificationData?.totalEarned || 0,
+            loginStreak: gamificationData?.loginStreak || 0,
+            profitStreak: gamificationData?.profitStreak || 0,
+            stats: gamificationData?.stats || user.gamification?.stats || {},
+            achievementsCount: achievements.length
+        };
+
+        console.log(`[Profile] Gamification for ${user.username}: Level ${mergedGamification.level}, Title: ${mergedGamification.title}`);
+
         res.json({
+            userId: user._id,
+            _id: user._id,
             username: user.username,
             profile: user.profile,
-            stats: user.stats,
-            achievements: user.achievements,
-            gamification: user.gamification,
+            stats: mergedStats,
+            achievements: achievements,
+            gamification: mergedGamification,
             social: {
                 followersCount: user.social?.followersCount || 0,
                 followingCount: user.social?.followingCount || 0,
                 followers: user.social?.followers || [],
                 following: user.social?.following || []
             },
+            vault: {
+                equippedBadges: user.vault?.equippedBadges || [],
+                equippedBorder: user.vault?.equippedBorder || null,
+                equippedTheme: user.vault?.equippedTheme || null
+            },
+            isFounder: user.isFounder || false,
+            date: user.createdAt,
             isOwnProfile: isOwnProfile
         });
     } catch (error) {
@@ -242,7 +432,7 @@ router.get('/suggested', auth, async (req, res) => {
             _id: { $ne: req.user.id, $nin: followingIds },
             'profile.isPublic': { $ne: false }
         })
-        .select('username profile social.followersCount')
+        .select('username profile social.followersCount vault')
         .sort({ 'social.followersCount': -1 })
         .limit(parseInt(limit));
 
@@ -250,7 +440,8 @@ router.get('/suggested', auth, async (req, res) => {
             id: user._id,
             name: user.profile?.displayName || user.username,
             avatar: user.profile?.avatar || '',
-            mutuals: 0 // Could calculate mutual followers if needed
+            mutuals: 0, // Could calculate mutual followers if needed
+            equippedBorder: user.vault?.equippedBorder || null
         }));
 
         res.json(results);
@@ -268,7 +459,7 @@ router.get('/suggested', auth, async (req, res) => {
 router.get('/profile/username/:username', optionalAuth, async (req, res) => {
     try {
         const user = await User.findOne({ username: req.params.username })
-            .select('username profile stats achievements gamification social')
+            .select('username profile stats achievements gamification social vault createdAt isFounder')
             .populate('social.followers', 'username profile.displayName profile.avatar')
             .populate('social.following', 'username profile.displayName profile.avatar');
 
@@ -286,19 +477,183 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             });
         }
 
+        // 🔥 FIXED: Get achievements from all possible sources
+        let achievements = [];
+        
+        // Source 1: Check User.achievements array (direct on user model)
+        if (user.achievements && user.achievements.length > 0) {
+            achievements = user.achievements;
+            console.log(`[Profile] Found ${achievements.length} achievements in User.achievements`);
+        }
+        
+        // Source 2: Check User.gamification.achievements (embedded in user)
+        if (achievements.length === 0 && user.gamification?.achievements?.length > 0) {
+            achievements = user.gamification.achievements.map(ach => ({
+                achievementId: ach.id || ach.achievementId,
+                id: ach.id || ach.achievementId,
+                name: ach.name,
+                description: ach.description,
+                icon: ach.icon,
+                xpReward: ach.points || ach.xpReward || 0,
+                points: ach.points || ach.xpReward || 0,
+                rarity: ach.rarity || 'common',
+                earnedAt: ach.unlockedAt || ach.earnedAt
+            }));
+            console.log(`[Profile] Found ${achievements.length} achievements in User.gamification.achievements`);
+        }
+        
+        // Source 3: Check separate Gamification document
+        let gamificationData = null;
+        try {
+            const gamificationDoc = await Gamification.findOne({ user: user._id });
+            if (gamificationDoc) {
+                gamificationData = gamificationDoc;
+                
+                // Get achievements from Gamification doc if we don't have them yet
+                if (achievements.length === 0 && gamificationDoc.achievements && gamificationDoc.achievements.length > 0) {
+                    achievements = gamificationDoc.achievements.map(ach => ({
+                        achievementId: ach.id || ach.achievementId,
+                        id: ach.id || ach.achievementId,
+                        name: ach.name,
+                        description: ach.description,
+                        icon: ach.icon,
+                        xpReward: ach.points || ach.xpReward || 0,
+                        points: ach.points || ach.xpReward || 0,
+                        rarity: ach.rarity || 'common',
+                        earnedAt: ach.unlockedAt || ach.earnedAt
+                    }));
+                    console.log(`[Profile] Found ${achievements.length} achievements in Gamification document`);
+                }
+            }
+        } catch (gamErr) {
+            console.error('[Profile] Could not fetch Gamification document:', gamErr.message);
+        }
+        
+        console.log(`[Profile] Total achievements for ${user.username}: ${achievements.length}`);
+
+        // 🔥 GET REAL PREDICTION STATS FROM PREDICTION MODEL (like gamificationRoutes does)
+        let predictionStats = {
+            predictionsCreated: 0,
+            correctPredictions: 0,
+            predictionAccuracy: 0
+        };
+        
+        try {
+            const Prediction = require('../models/Prediction');
+            
+            // 🔥 Check for prediction reset date (only count predictions after this date)
+            const predictionResetDate = gamificationData?.predictionResetDate || null;
+            const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
+            
+            console.log(`[Profile] Prediction reset date for ${user.username}:`, predictionResetDate || 'None (counting all)');
+            
+            const totalPredictions = await Prediction.countDocuments({ 
+                user: user._id,
+                ...dateFilter
+            });
+            const correctPredictions = await Prediction.countDocuments({ 
+                user: user._id, 
+                status: 'correct',
+                ...dateFilter
+            });
+            const resolvedPredictions = await Prediction.countDocuments({
+                user: user._id,
+                status: { $in: ['correct', 'incorrect'] },
+                ...dateFilter
+            });
+            
+            const accuracy = resolvedPredictions > 0 
+                ? Math.round((correctPredictions / resolvedPredictions) * 100)
+                : 0;
+            
+            predictionStats = {
+                predictionsCreated: totalPredictions,
+                correctPredictions: correctPredictions,
+                predictionAccuracy: accuracy
+            };
+            
+            console.log(`[Profile] Real prediction stats for ${user.username}:`, predictionStats);
+        } catch (predError) {
+            console.warn('[Profile] Could not fetch prediction stats:', predError.message);
+        }
+
+        // 🔥 MERGE stats from User.stats AND Gamification.stats
+        const mergedStats = {
+            // From User.stats
+            totalReturnPercent: user.stats?.totalReturnPercent || 0,
+            winRate: user.stats?.winRate || gamificationData?.stats?.winRate || 0,
+            totalTrades: user.stats?.totalTrades || gamificationData?.stats?.totalTrades || 0,
+            currentStreak: user.stats?.currentStreak || gamificationData?.profitStreak || gamificationData?.loginStreak || 0,
+            longestStreak: user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
+            bestTrade: user.stats?.bestTrade || gamificationData?.stats?.biggestWinPercent || 0,
+            worstTrade: user.stats?.worstTrade || 0,
+            avgTradeReturn: user.stats?.avgTradeReturn || 0,
+            rank: user.stats?.rank || 0,
+            
+            // 🔥 USE REAL PREDICTION STATS FROM PREDICTION MODEL
+            totalPredictions: predictionStats.predictionsCreated,
+            correctPredictions: predictionStats.correctPredictions,
+            predictionAccuracy: predictionStats.predictionAccuracy,
+            
+            // Profit/loss streaks
+            profitStreak: gamificationData?.profitStreak || 0,
+            lossStreak: gamificationData?.lossStreak || 0,
+            loginStreak: gamificationData?.loginStreak || 0,
+            maxProfitStreak: gamificationData?.maxProfitStreak || 0,
+            maxLossStreak: gamificationData?.maxLossStreak || 0
+        };
+
+        // 🔥 MERGE gamification data - PRIORITIZE Gamification document over User.gamification
+        const mergedGamification = {
+            // Level & XP - prefer Gamification doc (where real data is)
+            level: gamificationData?.level || user.gamification?.level || 1,
+            xp: gamificationData?.xp || user.gamification?.xp || 0,
+            
+            // Title/Rank - prefer Gamification doc
+            title: gamificationData?.rank || user.gamification?.title || 'Rookie Trader',
+            rank: gamificationData?.rank || user.gamification?.rank || 'Rookie Trader',
+            
+            // Coins
+            nexusCoins: gamificationData?.nexusCoins || user.gamification?.nexusCoins || 0,
+            totalEarned: gamificationData?.totalEarned || 0,
+            
+            // Streaks
+            loginStreak: gamificationData?.loginStreak || 0,
+            profitStreak: gamificationData?.profitStreak || 0,
+            maxLoginStreak: gamificationData?.maxLoginStreak || 0,
+            maxProfitStreak: gamificationData?.maxProfitStreak || 0,
+            
+            // Stats object
+            stats: gamificationData?.stats || user.gamification?.stats || {},
+            
+            // Achievements count
+            achievementsCount: achievements.length
+        };
+
+        console.log(`[Profile] Gamification data for ${user.username}: Level ${mergedGamification.level}, XP ${mergedGamification.xp}, Title: ${mergedGamification.title}`);
+
         res.json({
             userId: user._id,
+            _id: user._id,
             username: user.username,
             profile: user.profile,
-            stats: user.stats,
-            achievements: user.achievements,
-            gamification: user.gamification,
+            stats: mergedStats, // 🔥 Use merged stats
+            achievements: achievements,
+            gamification: mergedGamification, // 🔥 Use merged gamification
             social: {
                 followersCount: user.social?.followersCount || 0,
                 followingCount: user.social?.followingCount || 0,
                 followers: user.social?.followers || [],
                 following: user.social?.following || []
             },
+            // 🔥 Include vault data for badges and borders
+            vault: {
+                equippedBadges: user.vault?.equippedBadges || [],
+                equippedBorder: user.vault?.equippedBorder || null,
+                equippedTheme: user.vault?.equippedTheme || null
+            },
+            isFounder: user.isFounder || false,
+            date: user.createdAt,
             isOwnProfile: isOwnProfile
         });
     } catch (error) {
@@ -435,7 +790,7 @@ router.get('/search', async (req, res) => {
                 { username: { $regex: q, $options: 'i' } }
             ]
         })
-        .select('username profile stats gamification social')
+        .select('username profile stats gamification social vault')
         .limit(20);
 
         const results = users.map(user => ({
@@ -450,7 +805,10 @@ router.get('/search', async (req, res) => {
             level: user.gamification?.level || 1,
             xp: user.gamification?.xp || 0,
             followersCount: user.social?.followersCount || 0,
-            badges: user.profile?.badges || []
+            badges: user.profile?.badges || [],
+            // 🔥 NEW: Include vault data
+            equippedBadges: user.vault?.equippedBadges || [],
+            equippedBorder: user.vault?.equippedBorder || null
         }));
 
         res.json(results);
@@ -602,6 +960,46 @@ router.post('/admin/migrate-gamification', async (req, res) => {
     }
 });
 
+// Migration: Initialize vault for all users
+router.post('/admin/migrate-vault', async (req, res) => {
+    try {
+        const users = await User.find({});
+        let updated = 0;
+        
+        for (const user of users) {
+            let needsUpdate = false;
+            
+            // Initialize vault if not present
+            if (!user.vault) {
+                user.vault = {
+                    ownedItems: [],
+                    equippedBadges: [],
+                    equippedBorder: null,
+                    equippedTheme: null,
+                    activePerks: []
+                };
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+                await user.save();
+                updated++;
+            }
+        }
+        
+        console.log(`[Migration] Initialized vault for ${updated} users`);
+        
+        res.json({ 
+            success: true, 
+            message: `Vault migration complete! Updated ${updated} users`,
+            total: users.length
+        });
+    } catch (error) {
+        console.error('[Migration] Error:', error);
+        res.status(500).json({ error: 'Migration failed', details: error.message });
+    }
+});
+
 // Update all user stats
 router.post('/admin/update-stats', async (req, res) => {
     try {
@@ -627,6 +1025,71 @@ router.post('/admin/update-stats/:userId', async (req, res) => {
     } catch (error) {
         console.error('[Admin] Error updating user stats:', error);
         res.status(500).json({ error: 'Failed to update user stats', details: error.message });
+    }
+});
+
+// 🔥 DEBUG: Check where achievements are stored for a user
+router.get('/debug/achievements/:username', async (req, res) => {
+    try {
+        // Find user
+        const user = await User.findOne({ username: req.params.username });
+        if (!user) {
+            return res.json({ error: 'User not found' });
+        }
+        
+        // Find separate gamification doc
+        let gamificationDoc = null;
+        try {
+            gamificationDoc = await Gamification.findOne({ user: user._id });
+        } catch (e) {
+            console.log('No separate Gamification collection');
+        }
+        
+        res.json({
+            username: user.username,
+            userId: user._id,
+            
+            // Check User.achievements array
+            userAchievements: {
+                location: 'User.achievements',
+                exists: !!user.achievements,
+                count: user.achievements?.length || 0,
+                sample: user.achievements?.slice(0, 3) || []
+            },
+            
+            // Check User.gamification.achievements (embedded)
+            embeddedGamificationAchievements: {
+                location: 'User.gamification.achievements',
+                exists: !!(user.gamification?.achievements),
+                count: user.gamification?.achievements?.length || 0,
+                sample: user.gamification?.achievements?.slice(0, 3) || []
+            },
+            
+            // Check separate Gamification document
+            separateGamificationDoc: {
+                location: 'Gamification collection (separate document)',
+                exists: !!gamificationDoc,
+                docId: gamificationDoc?._id || null,
+                count: gamificationDoc?.achievements?.length || 0,
+                sample: gamificationDoc?.achievements?.slice(0, 3) || []
+            },
+            
+            // Summary
+            summary: {
+                totalAchievementsFound: 
+                    (user.achievements?.length || 0) + 
+                    (user.gamification?.achievements?.length || 0) + 
+                    (gamificationDoc?.achievements?.length || 0),
+                recommendedSource: 
+                    user.achievements?.length > 0 ? 'User.achievements' :
+                    user.gamification?.achievements?.length > 0 ? 'User.gamification.achievements' :
+                    gamificationDoc?.achievements?.length > 0 ? 'Gamification document' :
+                    'NO ACHIEVEMENTS FOUND'
+            }
+        });
+    } catch (error) {
+        console.error('[Debug] Error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

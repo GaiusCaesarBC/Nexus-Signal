@@ -1,4 +1,4 @@
-// server/routes/gamificationRoutes.js - UPDATED WITH VAULT DATA
+// server/routes/gamificationRoutes.js - UPDATED WITH PREDICTION RESET DATE SUPPORT
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
@@ -35,14 +35,25 @@ router.get('/stats', authMiddleware, async (req, res) => {
         try {
             const Prediction = require('../models/Prediction');
             
-            const totalPredictions = await Prediction.countDocuments({ user: req.user.id });
+            // 🔥 Check for prediction reset date (only count predictions after this date)
+            const predictionResetDate = gamification.predictionResetDate || null;
+            const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
+            
+            console.log('[Gamification] Prediction reset date:', predictionResetDate || 'None (counting all)');
+            
+            const totalPredictions = await Prediction.countDocuments({ 
+                user: req.user.id,
+                ...dateFilter
+            });
             const correctPredictions = await Prediction.countDocuments({ 
                 user: req.user.id, 
-                status: 'correct' 
+                status: 'correct',
+                ...dateFilter
             });
             const resolvedPredictions = await Prediction.countDocuments({
                 user: req.user.id,
-                status: { $in: ['correct', 'incorrect'] }
+                status: { $in: ['correct', 'incorrect'] },
+                ...dateFilter
             });
             
             const accuracy = resolvedPredictions > 0 
@@ -92,7 +103,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
             totalProfit: paperTradingStats.totalProfit || user?.stats?.totalReturn || gamification.stats.totalProfit || 0,
             totalReturnPercent: user?.stats?.totalReturnPercent || 0,
             winRate: paperTradingStats.winRate || user?.stats?.winRate || gamification.stats.winRate || 0,
-            // ✅ USE REAL PREDICTION STATS
+            // ✅ USE REAL PREDICTION STATS (with reset date filter)
             predictionsCreated: predictionStats.predictionsCreated,
             correctPredictions: predictionStats.correctPredictions,
             predictionAccuracy: predictionStats.predictionAccuracy,
@@ -143,6 +154,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
                 lastLoginDate: gamification.lastLoginDate,
                 xpForCurrentLevel: xpForCurrentLevel,
                 xpForNextLevel: xpForNextLevel,
+                predictionResetDate: gamification.predictionResetDate || null,
                 
                 // Legacy equippedItems (keep for backward compatibility)
                 equippedItems: gamification.equippedItems || {
@@ -168,6 +180,74 @@ router.get('/stats', authMiddleware, async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to fetch gamification stats'
+        });
+    }
+});
+
+// @route   POST /api/gamification/reset-prediction-stats
+// @desc    Reset prediction stats by setting a new tracking start date
+// @access  Private
+router.post('/reset-prediction-stats', authMiddleware, async (req, res) => {
+    try {
+        const { resetDate } = req.body;
+        
+        // Use provided date or default to now
+        const newResetDate = resetDate ? new Date(resetDate) : new Date();
+        
+        const gamification = await Gamification.findOneAndUpdate(
+            { user: req.user.id },
+            { 
+                $set: { 
+                    predictionResetDate: newResetDate,
+                    // Also reset the stored stats to 0
+                    'stats.predictionsCreated': 0,
+                    'stats.correctPredictions': 0,
+                    'stats.predictionAccuracy': 0
+                }
+            },
+            { new: true, upsert: true }
+        );
+        
+        console.log(`[Gamification] Reset prediction stats for user ${req.user.id}. New tracking starts from: ${newResetDate}`);
+        
+        res.json({
+            success: true,
+            message: 'Prediction stats reset successfully',
+            predictionResetDate: newResetDate,
+            note: 'Only predictions created after this date will be counted'
+        });
+    } catch (error) {
+        console.error('[Gamification] Error resetting prediction stats:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to reset prediction stats'
+        });
+    }
+});
+
+// @route   DELETE /api/gamification/clear-prediction-reset
+// @desc    Clear the prediction reset date (count all predictions again)
+// @access  Private
+router.delete('/clear-prediction-reset', authMiddleware, async (req, res) => {
+    try {
+        const gamification = await Gamification.findOneAndUpdate(
+            { user: req.user.id },
+            { $unset: { predictionResetDate: 1 } },
+            { new: true }
+        );
+        
+        console.log(`[Gamification] Cleared prediction reset date for user ${req.user.id}. Now counting all predictions.`);
+        
+        res.json({
+            success: true,
+            message: 'Prediction reset date cleared. All predictions will now be counted.',
+            predictionResetDate: null
+        });
+    } catch (error) {
+        console.error('[Gamification] Error clearing prediction reset:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to clear prediction reset'
         });
     }
 });
@@ -445,20 +525,31 @@ router.get('/user/:userId', authMiddleware, async (req, res) => {
 router.post('/sync-predictions', authMiddleware, async (req, res) => {
     try {
         const Prediction = require('../models/Prediction');
+        const gamification = await Gamification.findOne({ user: req.user.id });
         
-        // Get actual counts from Prediction model
-        const totalPredictions = await Prediction.countDocuments({ user: req.user.id });
+        // 🔥 Check for prediction reset date
+        const predictionResetDate = gamification?.predictionResetDate || null;
+        const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
+        
+        // Get actual counts from Prediction model (respecting reset date)
+        const totalPredictions = await Prediction.countDocuments({ 
+            user: req.user.id,
+            ...dateFilter
+        });
         const correctPredictions = await Prediction.countDocuments({ 
             user: req.user.id, 
-            status: 'correct' 
+            status: 'correct',
+            ...dateFilter
         });
         const incorrectPredictions = await Prediction.countDocuments({ 
             user: req.user.id, 
-            status: 'incorrect' 
+            status: 'incorrect',
+            ...dateFilter
         });
         const pendingPredictions = await Prediction.countDocuments({ 
             user: req.user.id, 
-            status: 'pending' 
+            status: 'pending',
+            ...dateFilter
         });
         const resolvedPredictions = correctPredictions + incorrectPredictions;
         
@@ -468,7 +559,7 @@ router.post('/sync-predictions', authMiddleware, async (req, res) => {
             : 0;
         
         // Update gamification record
-        const gamification = await Gamification.findOneAndUpdate(
+        await Gamification.findOneAndUpdate(
             { user: req.user.id },
             {
                 $set: {
@@ -485,7 +576,8 @@ router.post('/sync-predictions', authMiddleware, async (req, res) => {
             correct: correctPredictions,
             incorrect: incorrectPredictions,
             pending: pendingPredictions,
-            accuracy: accuracy
+            accuracy: accuracy,
+            resetDate: predictionResetDate
         });
         
         res.json({
@@ -498,7 +590,8 @@ router.post('/sync-predictions', authMiddleware, async (req, res) => {
                 pendingPredictions,
                 resolvedPredictions,
                 accuracy
-            }
+            },
+            predictionResetDate: predictionResetDate
         });
     } catch (error) {
         console.error('[Gamification] Error syncing prediction stats:', error);
@@ -515,13 +608,24 @@ router.post('/sync-predictions', authMiddleware, async (req, res) => {
 router.get('/debug-predictions', authMiddleware, async (req, res) => {
     try {
         const Prediction = require('../models/Prediction');
+        const gamification = await Gamification.findOne({ user: req.user.id });
         
-        // Get counts
-        const total = await Prediction.countDocuments({ user: req.user.id });
-        const correct = await Prediction.countDocuments({ user: req.user.id, status: 'correct' });
-        const incorrect = await Prediction.countDocuments({ user: req.user.id, status: 'incorrect' });
-        const pending = await Prediction.countDocuments({ user: req.user.id, status: 'pending' });
-        const expired = await Prediction.countDocuments({ user: req.user.id, status: 'expired' });
+        // Check for reset date
+        const predictionResetDate = gamification?.predictionResetDate || null;
+        const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
+        
+        // Get counts (ALL predictions, ignoring reset date for comparison)
+        const totalAll = await Prediction.countDocuments({ user: req.user.id });
+        const correctAll = await Prediction.countDocuments({ user: req.user.id, status: 'correct' });
+        const incorrectAll = await Prediction.countDocuments({ user: req.user.id, status: 'incorrect' });
+        const pendingAll = await Prediction.countDocuments({ user: req.user.id, status: 'pending' });
+        const expiredAll = await Prediction.countDocuments({ user: req.user.id, status: 'expired' });
+        
+        // Get counts (FILTERED by reset date)
+        const totalFiltered = await Prediction.countDocuments({ user: req.user.id, ...dateFilter });
+        const correctFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'correct', ...dateFilter });
+        const incorrectFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'incorrect', ...dateFilter });
+        const pendingFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'pending', ...dateFilter });
         
         // Get recent predictions
         const recentPredictions = await Prediction.find({ user: req.user.id })
@@ -529,18 +633,24 @@ router.get('/debug-predictions', authMiddleware, async (req, res) => {
             .limit(10)
             .select('symbol direction status confidence createdAt expiresAt outcome');
         
-        // Get gamification stats
-        const gamification = await Gamification.findOne({ user: req.user.id });
-        
         res.json({
             success: true,
-            predictionModel: {
-                total,
-                correct,
-                incorrect,
-                pending,
-                expired,
-                accuracy: (correct + incorrect) > 0 ? ((correct / (correct + incorrect)) * 100).toFixed(1) + '%' : '0%'
+            predictionResetDate: predictionResetDate,
+            allTimePredictions: {
+                total: totalAll,
+                correct: correctAll,
+                incorrect: incorrectAll,
+                pending: pendingAll,
+                expired: expiredAll,
+                accuracy: (correctAll + incorrectAll) > 0 ? ((correctAll / (correctAll + incorrectAll)) * 100).toFixed(1) + '%' : '0%'
+            },
+            filteredPredictions: {
+                note: predictionResetDate ? `Only counting predictions after ${predictionResetDate}` : 'No reset date set, counting all',
+                total: totalFiltered,
+                correct: correctFiltered,
+                incorrect: incorrectFiltered,
+                pending: pendingFiltered,
+                accuracy: (correctFiltered + incorrectFiltered) > 0 ? ((correctFiltered / (correctFiltered + incorrectFiltered)) * 100).toFixed(1) + '%' : '0%'
             },
             gamificationStats: {
                 predictionsCreated: gamification?.stats?.predictionsCreated || 0,
@@ -556,7 +666,11 @@ router.get('/debug-predictions', authMiddleware, async (req, res) => {
                 expiresAt: p.expiresAt,
                 wasCorrect: p.outcome?.wasCorrect
             })),
-            note: 'If predictionModel counts differ from gamificationStats, call POST /api/gamification/sync-predictions'
+            actions: {
+                resetStats: 'POST /api/gamification/reset-prediction-stats',
+                clearReset: 'DELETE /api/gamification/clear-prediction-reset',
+                syncStats: 'POST /api/gamification/sync-predictions'
+            }
         });
     } catch (error) {
         console.error('[Gamification] Debug error:', error);

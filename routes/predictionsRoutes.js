@@ -381,6 +381,67 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
+
+// @route   GET /api/predictions/user
+// @desc    Get current user's predictions summary (for profile/dashboard)
+// @access  Private
+router.get('/user', auth, async (req, res) => {
+    try {
+        const { limit = 5 } = req.query;
+        
+        // Get user's recent predictions
+        const predictions = await Prediction.find({ user: req.user.id })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit));
+        
+        // Get user's stats
+        const stats = await Prediction.getUserAccuracy(req.user.id);
+        
+        // Count by status
+        const statusCounts = await Prediction.aggregate([
+            { $match: { user: req.user.id } },
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]);
+        
+        const counts = {
+            pending: 0,
+            correct: 0,
+            incorrect: 0,
+            total: 0
+        };
+        
+        statusCounts.forEach(item => {
+            counts[item._id] = item.count;
+            counts.total += item.count;
+        });
+        
+        res.json({
+            success: true,
+            predictions,
+            stats: {
+                accuracy: stats.accuracy || 0,
+                totalPredictions: stats.totalPredictions || counts.total,
+                correctPredictions: stats.correctPredictions || counts.correct,
+                pendingPredictions: counts.pending
+            }
+        });
+    } catch (error) {
+        console.error('[Predictions] Error fetching user predictions:', error.message);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch user predictions',
+            predictions: [],
+            stats: {
+                accuracy: 0,
+                totalPredictions: 0,
+                correctPredictions: 0,
+                pendingPredictions: 0
+            }
+        });
+    }
+});
+
+
 // @route   GET /api/predictions/platform-stats
 // @desc    Get platform-wide prediction statistics (PUBLIC - no auth needed)
 // @access  Public
