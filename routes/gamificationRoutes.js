@@ -184,6 +184,82 @@ router.get('/stats', authMiddleware, async (req, res) => {
     }
 });
 
+// @route   POST /api/gamification/sync-level
+// @desc    Recalculate and sync level with current XP
+// @access  Private
+router.post('/sync-level', authMiddleware, async (req, res) => {
+    try {
+        const gamification = await Gamification.findOne({ user: req.user.id });
+        
+        if (!gamification) {
+            return res.status(404).json({
+                success: false,
+                error: 'Gamification data not found'
+            });
+        }
+        
+        const oldLevel = gamification.level;
+        const oldRank = gamification.rank;
+        
+        // Recalculate level based on XP (1000 XP per level)
+        const correctLevel = Math.floor(gamification.xp / 1000) + 1;
+        
+        // Get correct rank for the level
+        const getRankForLevel = (level) => {
+            if (level >= 100) return 'Wall Street Titan';
+            if (level >= 75) return 'Market Mogul';
+            if (level >= 50) return 'Trading Legend';
+            if (level >= 40) return 'Master Trader';
+            if (level >= 30) return 'Expert Trader';
+            if (level >= 20) return 'Veteran Trader';
+            if (level >= 15) return 'Advanced Trader';
+            if (level >= 10) return 'Skilled Trader';
+            if (level >= 5) return 'Apprentice Trader';
+            if (level >= 2) return 'Novice Trader';
+            return 'Rookie Trader';
+        };
+        
+        const correctRank = getRankForLevel(correctLevel);
+        
+        // Update if different
+        if (correctLevel !== oldLevel || correctRank !== oldRank) {
+            gamification.level = correctLevel;
+            gamification.rank = correctRank;
+            await gamification.save();
+            
+            console.log(`[Gamification] Synced level for user ${req.user.id}: Level ${oldLevel} → ${correctLevel}, Rank: ${oldRank} → ${correctRank}`);
+            
+            return res.json({
+                success: true,
+                message: 'Level synced successfully',
+                changes: {
+                    xp: gamification.xp,
+                    oldLevel,
+                    newLevel: correctLevel,
+                    oldRank,
+                    newRank: correctRank
+                }
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Level already in sync',
+            data: {
+                xp: gamification.xp,
+                level: gamification.level,
+                rank: gamification.rank
+            }
+        });
+    } catch (error) {
+        console.error('[Gamification] Error syncing level:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to sync level'
+        });
+    }
+});
+
 // @route   POST /api/gamification/reset-prediction-stats
 // @desc    Reset prediction stats by setting a new tracking start date
 // @access  Private
