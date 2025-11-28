@@ -371,18 +371,55 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             loginStreak: gamificationData?.loginStreak || 0
         };
 
+        // 🔥 AUTO-FIX: Recalculate level from XP if out of sync
+        let finalLevel = gamificationData?.level || user.gamification?.level || 1;
+        let finalXp = gamificationData?.xp || user.gamification?.xp || 0;
+        let finalRank = gamificationData?.rank || user.gamification?.rank || 'Rookie Trader';
+        
+        const correctLevel = Math.floor(finalXp / 1000) + 1;
+        
+        if (correctLevel !== finalLevel && gamificationData) {
+            console.log(`[Profile] Auto-fixing level: ${finalLevel} → ${correctLevel} (XP: ${finalXp})`);
+            finalLevel = correctLevel;
+            
+            // Update rank based on level
+            const getRankForLevel = (level) => {
+                if (level >= 100) return 'Wall Street Titan';
+                if (level >= 75) return 'Market Mogul';
+                if (level >= 50) return 'Trading Legend';
+                if (level >= 40) return 'Master Trader';
+                if (level >= 30) return 'Expert Trader';
+                if (level >= 20) return 'Veteran Trader';
+                if (level >= 15) return 'Advanced Trader';
+                if (level >= 10) return 'Skilled Trader';
+                if (level >= 5) return 'Apprentice Trader';
+                if (level >= 2) return 'Novice Trader';
+                return 'Rookie Trader';
+            };
+            finalRank = getRankForLevel(correctLevel);
+            
+            // Save the fix to database
+            gamificationData.level = correctLevel;
+            gamificationData.rank = finalRank;
+            await gamificationData.save();
+        }
+        
         // 🔥 PRIORITIZE Gamification document over User.gamification (which is often stale)
         const mergedGamification = {
-            level: gamificationData?.level || user.gamification?.level || 1,
-            xp: gamificationData?.xp || user.gamification?.xp || 0,
-            title: gamificationData?.rank || user.gamification?.title || 'Rookie Trader',
-            rank: gamificationData?.rank || user.gamification?.rank || 'Rookie Trader',
+            level: finalLevel,
+            xp: finalXp,
+            totalXpEarned: finalXp,  // Add this for profile page
+            title: finalRank,
+            rank: finalRank,
             nexusCoins: gamificationData?.nexusCoins || user.gamification?.nexusCoins || 0,
             totalEarned: gamificationData?.totalEarned || 0,
             loginStreak: gamificationData?.loginStreak || 0,
             profitStreak: gamificationData?.profitStreak || 0,
             stats: gamificationData?.stats || user.gamification?.stats || {},
-            achievementsCount: achievements.length
+            achievementsCount: achievements.length,
+            // Add XP bounds for progress bar
+            xpForCurrentLevel: (finalLevel - 1) * 1000,
+            xpForNextLevel: finalLevel * 1000
         };
 
         console.log(`[Profile] Gamification for ${user.username}: Level ${mergedGamification.level}, Title: ${mergedGamification.title}`);

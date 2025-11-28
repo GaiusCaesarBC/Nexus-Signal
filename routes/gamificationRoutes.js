@@ -122,8 +122,34 @@ router.get('/stats', authMiddleware, async (req, res) => {
         };
 
         // Calculate XP bounds for current level
-        const xpForCurrentLevel = (gamification.level - 1) * 1000;
-        const xpForNextLevel = gamification.level * 1000;
+        // Level is calculated as: Math.floor(xp / 1000) + 1
+        // So for level 14, xp should be between 13000-13999
+        const correctLevel = Math.floor(gamification.xp / 1000) + 1;
+        const xpForCurrentLevel = (correctLevel - 1) * 1000;
+        const xpForNextLevel = correctLevel * 1000;
+        
+        // Auto-fix level if out of sync
+        if (gamification.level !== correctLevel) {
+            console.log(`[Gamification] Auto-fixing level: ${gamification.level} → ${correctLevel} (XP: ${gamification.xp})`);
+            gamification.level = correctLevel;
+            
+            // Update rank based on level
+            const getRankForLevel = (level) => {
+                if (level >= 100) return 'Wall Street Titan';
+                if (level >= 75) return 'Market Mogul';
+                if (level >= 50) return 'Trading Legend';
+                if (level >= 40) return 'Master Trader';
+                if (level >= 30) return 'Expert Trader';
+                if (level >= 20) return 'Veteran Trader';
+                if (level >= 15) return 'Advanced Trader';
+                if (level >= 10) return 'Skilled Trader';
+                if (level >= 5) return 'Apprentice Trader';
+                if (level >= 2) return 'Novice Trader';
+                return 'Rookie Trader';
+            };
+            gamification.rank = getRankForLevel(correctLevel);
+            await gamification.save();
+        }
 
         // Build vault data from User model
         const vaultData = {
@@ -140,8 +166,8 @@ router.get('/stats', authMiddleware, async (req, res) => {
             success: true,
             data: {
                 xp: gamification.xp,
-                level: gamification.level,
-                rank: gamification.rank,
+                level: gamification.level,  // Now auto-corrected
+                rank: gamification.rank,    // Now auto-corrected
                 nexusCoins: gamification.nexusCoins,
                 totalEarned: gamification.totalEarned,
                 loginStreak: gamification.loginStreak,
