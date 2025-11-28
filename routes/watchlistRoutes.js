@@ -1,29 +1,119 @@
-// server/routes/watchlistRoutes.js - UPDATED: Supports Stocks AND Crypto
+// server/routes/watchlistRoutes.js - FIXED: Real CoinGecko Pro + Stock API Integration
 
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
 
-// In-memory watchlist storage (you can replace with database later)
-// Format: { userId: [{ symbol, type, addedAt, name }] }
+// In-memory watchlist storage (replace with database in production)
 const watchlists = {};
+
+// CoinGecko Pro API config
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
+const COINGECKO_BASE_URL = 'https://pro-api.coingecko.com/api/v3';
+
+// Stock API config (using your existing stock API - adjust as needed)
+const STOCK_API_KEY = process.env.ALPHA_VANTAGE_API_KEY || process.env.FINNHUB_API_KEY;
+
+// Crypto symbol to CoinGecko ID mapping
+const CRYPTO_ID_MAP = {
+    'BTC': 'bitcoin',
+    'ETH': 'ethereum',
+    'USDT': 'tether',
+    'BNB': 'binancecoin',
+    'XRP': 'ripple',
+    'USDC': 'usd-coin',
+    'ADA': 'cardano',
+    'DOGE': 'dogecoin',
+    'SOL': 'solana',
+    'TRX': 'tron',
+    'DOT': 'polkadot',
+    'MATIC': 'matic-network',
+    'SHIB': 'shiba-inu',
+    'LTC': 'litecoin',
+    'AVAX': 'avalanche-2',
+    'UNI': 'uniswap',
+    'LINK': 'chainlink',
+    'XLM': 'stellar',
+    'ATOM': 'cosmos',
+    'ETC': 'ethereum-classic',
+    'XMR': 'monero',
+    'BCH': 'bitcoin-cash',
+    'APT': 'aptos',
+    'FIL': 'filecoin',
+    'NEAR': 'near',
+    'VET': 'vechain',
+    'ALGO': 'algorand',
+    'ICP': 'internet-computer',
+    'HBAR': 'hedera-hashgraph',
+    'APE': 'apecoin',
+    'QNT': 'quant-network',
+    'LDO': 'lido-dao',
+    'ARB': 'arbitrum',
+    'OP': 'optimism',
+    'STX': 'blockstack',
+    'IMX': 'immutable-x',
+    'MKR': 'maker',
+    'AAVE': 'aave',
+    'GRT': 'the-graph',
+    'SNX': 'havven',
+    'CRV': 'curve-dao-token',
+    'SAND': 'the-sandbox',
+    'MANA': 'decentraland',
+    'AXS': 'axie-infinity',
+    'FTM': 'fantom',
+    'THETA': 'theta-token',
+    'EGLD': 'elrond-erd-2',
+    'EOS': 'eos',
+    'CAKE': 'pancakeswap-token',
+    'RUNE': 'thorchain',
+    'ZEC': 'zcash',
+    'NEO': 'neo',
+    'KCS': 'kucoin-shares',
+    'KLAY': 'klay-token',
+    'XTZ': 'tezos',
+    'FLOW': 'flow',
+    'CHZ': 'chiliz',
+    'ENJ': 'enjincoin',
+    'BAT': 'basic-attention-token',
+    'ZIL': 'zilliqa',
+    'MINA': 'mina-protocol',
+    'ONE': 'harmony',
+    'HOT': 'holotoken',
+    'GALA': 'gala',
+    'GMT': 'stepn',
+    'PEPE': 'pepe',
+    'WLD': 'worldcoin-wld',
+    'SUI': 'sui',
+    'SEI': 'sei-network',
+    'TIA': 'celestia',
+    'JUP': 'jupiter-exchange-solana',
+    'BONK': 'bonk',
+    'WIF': 'dogwifcoin'
+};
+
+// Crypto names
+const CRYPTO_NAMES = {
+    'BTC': 'Bitcoin', 'ETH': 'Ethereum', 'USDT': 'Tether', 'BNB': 'BNB',
+    'XRP': 'XRP', 'USDC': 'USD Coin', 'ADA': 'Cardano', 'DOGE': 'Dogecoin',
+    'SOL': 'Solana', 'TRX': 'TRON', 'DOT': 'Polkadot', 'MATIC': 'Polygon',
+    'SHIB': 'Shiba Inu', 'LTC': 'Litecoin', 'AVAX': 'Avalanche', 'UNI': 'Uniswap',
+    'LINK': 'Chainlink', 'XLM': 'Stellar', 'ATOM': 'Cosmos', 'ETC': 'Ethereum Classic',
+    'XMR': 'Monero', 'BCH': 'Bitcoin Cash', 'APT': 'Aptos', 'FIL': 'Filecoin',
+    'NEAR': 'NEAR Protocol', 'VET': 'VeChain', 'ALGO': 'Algorand', 'ICP': 'Internet Computer',
+    'HBAR': 'Hedera', 'APE': 'ApeCoin', 'QNT': 'Quant', 'ARB': 'Arbitrum',
+    'OP': 'Optimism', 'MKR': 'Maker', 'AAVE': 'Aave', 'GRT': 'The Graph',
+    'SAND': 'The Sandbox', 'MANA': 'Decentraland', 'AXS': 'Axie Infinity',
+    'FTM': 'Fantom', 'PEPE': 'Pepe', 'WLD': 'Worldcoin', 'SUI': 'Sui',
+    'SEI': 'Sei', 'TIA': 'Celestia', 'JUP': 'Jupiter', 'BONK': 'Bonk', 'WIF': 'dogwifhat'
+};
 
 // Helper function to detect if symbol is crypto or stock
 const detectAssetType = (symbol) => {
-    const cryptoSymbols = [
-        'BTC', 'BITCOIN', 'ETH', 'ETHEREUM', 'USDT', 'BNB', 'XRP', 'USDC', 
-        'ADA', 'CARDANO', 'DOGE', 'DOGECOIN', 'SOL', 'SOLANA', 'TRX', 'TRON',
-        'DOT', 'POLKADOT', 'MATIC', 'POLYGON', 'SHIB', 'LTC', 'LITECOIN',
-        'AVAX', 'AVALANCHE', 'UNI', 'UNISWAP', 'LINK', 'CHAINLINK', 'XLM',
-        'ATOM', 'COSMOS', 'ETC', 'XMR', 'MONERO', 'BCH', 'APT', 'FIL',
-        'NEAR', 'VET', 'ALGO', 'ALGORAND', 'ICP', 'HBAR', 'APE', 'QNT',
-        'LDO', 'ARB', 'ARBITRUM', 'OP', 'OPTIMISM', 'STX', 'IMX', 'MKR'
-    ];
-    
     const upperSymbol = symbol.toUpperCase();
     
-    // Check if it's a known crypto
-    if (cryptoSymbols.includes(upperSymbol)) {
+    // Check if it's in our crypto map
+    if (CRYPTO_ID_MAP[upperSymbol]) {
         return 'crypto';
     }
     
@@ -37,43 +127,191 @@ const detectAssetType = (symbol) => {
     return 'stock';
 };
 
+// Fetch crypto prices from CoinGecko Pro
+const fetchCryptoPrices = async (symbols) => {
+    try {
+        // Convert symbols to CoinGecko IDs
+        const ids = symbols
+            .map(s => CRYPTO_ID_MAP[s.toUpperCase()])
+            .filter(Boolean);
+        
+        if (ids.length === 0) return {};
+        
+        const response = await axios.get(`${COINGECKO_BASE_URL}/simple/price`, {
+            params: {
+                ids: ids.join(','),
+                vs_currencies: 'usd',
+                include_24hr_change: true,
+                include_24hr_vol: true,
+                include_market_cap: true
+            },
+            headers: {
+                'x-cg-pro-api-key': COINGECKO_API_KEY
+            }
+        });
+        
+        // Map back to symbols
+        const priceData = {};
+        for (const [symbol, geckoId] of Object.entries(CRYPTO_ID_MAP)) {
+            if (response.data[geckoId]) {
+                const data = response.data[geckoId];
+                priceData[symbol] = {
+                    currentPrice: data.usd || 0,
+                    change: (data.usd * (data.usd_24h_change || 0)) / 100,
+                    changePercent: data.usd_24h_change || 0,
+                    volume24h: data.usd_24h_vol || 0,
+                    marketCap: data.usd_market_cap || 0
+                };
+            }
+        }
+        
+        return priceData;
+    } catch (error) {
+        console.error('CoinGecko API error:', error.message);
+        return {};
+    }
+};
+
+// Fetch stock prices (using your existing stock API)
+const fetchStockPrices = async (symbols) => {
+    try {
+        // If you have a stock API configured, use it here
+        // For now, we'll use a simple implementation
+        // You can replace this with Alpha Vantage, Finnhub, Polygon, etc.
+        
+        const priceData = {};
+        
+        // Try to use your existing stock API
+        // This is a placeholder - replace with your actual stock API calls
+        for (const symbol of symbols) {
+            try {
+                // Option 1: If you have Finnhub
+                if (process.env.FINNHUB_API_KEY) {
+                    const response = await axios.get(`https://finnhub.io/api/v1/quote`, {
+                        params: {
+                            symbol: symbol,
+                            token: process.env.FINNHUB_API_KEY
+                        }
+                    });
+                    
+                    if (response.data && response.data.c) {
+                        priceData[symbol] = {
+                            currentPrice: response.data.c,
+                            change: response.data.d || 0,
+                            changePercent: response.data.dp || 0,
+                            high: response.data.h || 0,
+                            low: response.data.l || 0,
+                            open: response.data.o || 0,
+                            previousClose: response.data.pc || 0
+                        };
+                    }
+                }
+                // Option 2: If you have Alpha Vantage
+                else if (process.env.ALPHA_VANTAGE_API_KEY) {
+                    const response = await axios.get(`https://www.alphavantage.co/query`, {
+                        params: {
+                            function: 'GLOBAL_QUOTE',
+                            symbol: symbol,
+                            apikey: process.env.ALPHA_VANTAGE_API_KEY
+                        }
+                    });
+                    
+                    const quote = response.data['Global Quote'];
+                    if (quote) {
+                        priceData[symbol] = {
+                            currentPrice: parseFloat(quote['05. price']) || 0,
+                            change: parseFloat(quote['09. change']) || 0,
+                            changePercent: parseFloat(quote['10. change percent']?.replace('%', '')) || 0,
+                            high: parseFloat(quote['03. high']) || 0,
+                            low: parseFloat(quote['04. low']) || 0,
+                            open: parseFloat(quote['02. open']) || 0,
+                            previousClose: parseFloat(quote['08. previous close']) || 0
+                        };
+                    }
+                }
+                // Option 3: Use your existing /api/stocks/:symbol endpoint
+                else {
+                    // You can call your own API internally
+                    // For now, return placeholder data
+                    priceData[symbol] = {
+                        currentPrice: 0,
+                        change: 0,
+                        changePercent: 0,
+                        needsRefresh: true
+                    };
+                }
+            } catch (err) {
+                console.error(`Error fetching stock ${symbol}:`, err.message);
+                priceData[symbol] = {
+                    currentPrice: 0,
+                    change: 0,
+                    changePercent: 0,
+                    error: true
+                };
+            }
+        }
+        
+        return priceData;
+    } catch (error) {
+        console.error('Stock API error:', error.message);
+        return {};
+    }
+};
+
 // @route   GET /api/watchlist
-// @desc    Get user's watchlist (stocks AND crypto)
+// @desc    Get user's watchlist with REAL prices
 // @access  Private
 router.get('/', auth, async (req, res) => {
     try {
         const userId = req.user.id;
-        
-        // Get watchlist for this user
         const userWatchlist = watchlists[userId] || [];
         
-        // In a real app, you'd fetch live data from APIs
-        // For now, return mock data
+        if (userWatchlist.length === 0) {
+            return res.json({
+                success: true,
+                watchlist: [],
+                totalStocks: 0,
+                totalCrypto: 0
+            });
+        }
+        
+        // Separate crypto and stocks
+        const cryptoItems = userWatchlist.filter(item => item.type === 'crypto');
+        const stockItems = userWatchlist.filter(item => item.type === 'stock');
+        
+        // Fetch real prices
+        const cryptoSymbols = cryptoItems.map(item => item.symbol);
+        const stockSymbols = stockItems.map(item => item.symbol);
+        
+        const [cryptoPrices, stockPrices] = await Promise.all([
+            cryptoSymbols.length > 0 ? fetchCryptoPrices(cryptoSymbols) : {},
+            stockSymbols.length > 0 ? fetchStockPrices(stockSymbols) : {}
+        ]);
+        
+        // Build response with real data
         const watchlistWithData = userWatchlist.map(item => {
-            const isStock = item.type === 'stock';
             const isCrypto = item.type === 'crypto';
+            const priceData = isCrypto ? cryptoPrices[item.symbol] : stockPrices[item.symbol];
             
             return {
                 symbol: item.symbol,
                 type: item.type,
-                name: item.name || `${item.symbol} ${isCrypto ? 'Token' : 'Inc.'}`,
-                currentPrice: isCrypto ? 
-                    Math.random() * 50000 + 100 :  // Crypto prices (higher)
-                    Math.random() * 500 + 50,       // Stock prices
-                change: (Math.random() - 0.5) * (isCrypto ? 1000 : 20),
-                changePercent: (Math.random() - 0.5) * 10,
+                name: isCrypto ? 
+                    (CRYPTO_NAMES[item.symbol] || `${item.symbol} Token`) : 
+                    (item.name || `${item.symbol}`),
+                currentPrice: priceData?.currentPrice || 0,
+                change: priceData?.change || 0,
+                changePercent: priceData?.changePercent || 0,
                 addedAt: item.addedAt,
-                // Crypto-specific fields
+                // Additional data if available
                 ...(isCrypto && {
-                    marketCap: Math.random() * 1000000000000,
-                    volume24h: Math.random() * 10000000000,
-                    circulatingSupply: Math.random() * 1000000000
+                    marketCap: priceData?.marketCap || 0,
+                    volume24h: priceData?.volume24h || 0
                 }),
-                // Stock-specific fields
-                ...(isStock && {
-                    marketCap: Math.random() * 1000000000000,
-                    pe: Math.random() * 30 + 5,
-                    eps: Math.random() * 10
+                ...((!isCrypto) && {
+                    high: priceData?.high || 0,
+                    low: priceData?.low || 0,
+                    open: priceData?.open || 0
                 })
             };
         });
@@ -81,8 +319,8 @@ router.get('/', auth, async (req, res) => {
         res.json({
             success: true,
             watchlist: watchlistWithData,
-            totalStocks: watchlistWithData.filter(w => w.type === 'stock').length,
-            totalCrypto: watchlistWithData.filter(w => w.type === 'crypto').length
+            totalStocks: stockItems.length,
+            totalCrypto: cryptoItems.length
         });
     } catch (error) {
         console.error('Get watchlist error:', error);
@@ -140,14 +378,17 @@ router.post('/', auth, async (req, res) => {
             });
         }
         
-        // Add to watchlist
+        // Get the proper name
         const assetType = type.toLowerCase() === 'crypto' ? 'crypto' : 'stock';
+        const name = assetType === 'crypto' ? 
+            (CRYPTO_NAMES[upperSymbol] || `${upperSymbol} Token`) : 
+            `${upperSymbol}`;
+        
+        // Add to watchlist
         watchlists[userId].push({
             symbol: upperSymbol,
             type: assetType,
-            name: assetType === 'crypto' ? 
-                `${upperSymbol} Token` : 
-                `${upperSymbol} Inc.`,
+            name: name,
             addedAt: new Date()
         });
         
@@ -155,6 +396,7 @@ router.post('/', auth, async (req, res) => {
             success: true,
             message: `${upperSymbol} (${assetType}) added to watchlist`,
             type: assetType,
+            name: name,
             watchlist: watchlists[userId]
         });
     } catch (error) {
@@ -278,6 +520,69 @@ router.get('/crypto', auth, async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to fetch crypto'
+        });
+    }
+});
+
+// @route   GET /api/watchlist/refresh
+// @desc    Force refresh all prices
+// @access  Private
+router.get('/refresh', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const userWatchlist = watchlists[userId] || [];
+        
+        if (userWatchlist.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No items to refresh',
+                watchlist: []
+            });
+        }
+        
+        // Separate crypto and stocks
+        const cryptoItems = userWatchlist.filter(item => item.type === 'crypto');
+        const stockItems = userWatchlist.filter(item => item.type === 'stock');
+        
+        // Fetch fresh prices
+        const cryptoSymbols = cryptoItems.map(item => item.symbol);
+        const stockSymbols = stockItems.map(item => item.symbol);
+        
+        const [cryptoPrices, stockPrices] = await Promise.all([
+            cryptoSymbols.length > 0 ? fetchCryptoPrices(cryptoSymbols) : {},
+            stockSymbols.length > 0 ? fetchStockPrices(stockSymbols) : {}
+        ]);
+        
+        // Build response
+        const watchlistWithData = userWatchlist.map(item => {
+            const isCrypto = item.type === 'crypto';
+            const priceData = isCrypto ? cryptoPrices[item.symbol] : stockPrices[item.symbol];
+            
+            return {
+                symbol: item.symbol,
+                type: item.type,
+                name: isCrypto ? 
+                    (CRYPTO_NAMES[item.symbol] || `${item.symbol} Token`) : 
+                    (item.name || `${item.symbol}`),
+                currentPrice: priceData?.currentPrice || 0,
+                change: priceData?.change || 0,
+                changePercent: priceData?.changePercent || 0,
+                addedAt: item.addedAt,
+                refreshedAt: new Date()
+            };
+        });
+        
+        res.json({
+            success: true,
+            message: 'Prices refreshed',
+            watchlist: watchlistWithData,
+            refreshedAt: new Date()
+        });
+    } catch (error) {
+        console.error('Refresh watchlist error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to refresh prices'
         });
     }
 });

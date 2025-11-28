@@ -1,4 +1,4 @@
-// server/services/coinGeckoService.js - CoinGecko Pro Service
+// server/services/coinGeckoService.js - CoinGecko Pro Service (FIXED)
 
 const axios = require('axios');
 
@@ -15,14 +15,15 @@ class CoinGeckoService {
     async makeRequest(endpoint, params = {}) {
         try {
             const response = await axios.get(`${COINGECKO_BASE_URL}${endpoint}`, {
-                params: {
-                    ...params,
-                    x_cg_pro_api_key: COINGECKO_API_KEY
+                params: params,
+                headers: {
+                    'x-cg-pro-api-key': COINGECKO_API_KEY,  // ✅ API key goes in HEADER, not params
+                    'Accept': 'application/json'
                 }
             });
             return response.data;
         } catch (error) {
-            console.error(`[CoinGecko] Error on ${endpoint}:`, error.message);
+            console.error(`[CoinGecko] Error on ${endpoint}:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -94,6 +95,27 @@ class CoinGeckoService {
         return data;
     }
 
+    // Get simple price for one or more coins
+    async getSimplePrice(ids, params = {}) {
+        const idsString = Array.isArray(ids) ? ids.join(',') : ids;
+        const cacheKey = `simple-price-${idsString}`;
+        const cached = this.getCached(cacheKey);
+        if (cached) return cached;
+
+        const defaultParams = {
+            ids: idsString,
+            vs_currencies: 'usd',
+            include_24hr_change: true,
+            include_24hr_vol: true,
+            include_market_cap: true,
+            ...params
+        };
+
+        const data = await this.makeRequest('/simple/price', defaultParams);
+        this.setCache(cacheKey, data);
+        return data;
+    }
+
     // Get market chart data
     async getMarketChart(coinId, days = 30) {
         const cacheKey = `chart-${coinId}-${days}`;
@@ -154,11 +176,6 @@ class CoinGeckoService {
             price_change_percentage: '24h'
         });
 
-        // Sort by 24h change
-        const sorted = markets.sort((a, b) => 
-            Math.abs(b.price_change_percentage_24h || 0) - Math.abs(a.price_change_percentage_24h || 0)
-        );
-
         const gainers = markets
             .filter(coin => (coin.price_change_percentage_24h || 0) > 0)
             .sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h)
@@ -184,6 +201,53 @@ class CoinGeckoService {
         }
 
         return await this.getCoin(coin.id);
+    }
+
+    // Get prices for multiple symbols at once
+    async getPricesForSymbols(symbols) {
+        // Symbol to CoinGecko ID mapping
+        const symbolToId = {
+            'BTC': 'bitcoin', 'ETH': 'ethereum', 'USDT': 'tether', 'BNB': 'binancecoin',
+            'XRP': 'ripple', 'USDC': 'usd-coin', 'ADA': 'cardano', 'DOGE': 'dogecoin',
+            'SOL': 'solana', 'TRX': 'tron', 'DOT': 'polkadot', 'MATIC': 'matic-network',
+            'SHIB': 'shiba-inu', 'LTC': 'litecoin', 'AVAX': 'avalanche-2', 'UNI': 'uniswap',
+            'LINK': 'chainlink', 'XLM': 'stellar', 'ATOM': 'cosmos', 'ETC': 'ethereum-classic',
+            'XMR': 'monero', 'BCH': 'bitcoin-cash', 'APT': 'aptos', 'FIL': 'filecoin',
+            'NEAR': 'near', 'VET': 'vechain', 'ALGO': 'algorand', 'ICP': 'internet-computer',
+            'HBAR': 'hedera-hashgraph', 'APE': 'apecoin', 'QNT': 'quant-network',
+            'ARB': 'arbitrum', 'OP': 'optimism', 'MKR': 'maker', 'AAVE': 'aave',
+            'GRT': 'the-graph', 'SAND': 'the-sandbox', 'MANA': 'decentraland',
+            'AXS': 'axie-infinity', 'FTM': 'fantom', 'PEPE': 'pepe', 'WLD': 'worldcoin-wld',
+            'SUI': 'sui', 'SEI': 'sei-network', 'TIA': 'celestia', 'JUP': 'jupiter-exchange-solana',
+            'BONK': 'bonk', 'WIF': 'dogwifcoin', 'THETA': 'theta-token', 'EOS': 'eos'
+        };
+
+        // Convert symbols to IDs
+        const ids = symbols
+            .map(s => symbolToId[s.toUpperCase()])
+            .filter(Boolean);
+
+        if (ids.length === 0) {
+            return {};
+        }
+
+        const priceData = await this.getSimplePrice(ids);
+
+        // Map back to symbols
+        const result = {};
+        for (const [symbol, id] of Object.entries(symbolToId)) {
+            if (priceData[id]) {
+                result[symbol] = {
+                    currentPrice: priceData[id].usd || 0,
+                    change: (priceData[id].usd * (priceData[id].usd_24h_change || 0)) / 100,
+                    changePercent: priceData[id].usd_24h_change || 0,
+                    volume24h: priceData[id].usd_24h_vol || 0,
+                    marketCap: priceData[id].usd_market_cap || 0
+                };
+            }
+        }
+
+        return result;
     }
 }
 
