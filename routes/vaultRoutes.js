@@ -11,6 +11,8 @@ const Gamification = require('../models/Gamification');
 let VAULT_ITEMS;
 try {
     VAULT_ITEMS = require('../data/vaultItems').VAULT_ITEMS;
+    console.log('[Vault] FIRST THEME NAME:', VAULT_ITEMS.profileThemes?.[0]?.name);
+console.log('[Vault] LAST THEME NAME:', VAULT_ITEMS.profileThemes?.[VAULT_ITEMS.profileThemes.length - 1]?.name);
     console.log('[Vault] Loaded vault items successfully');
     console.log('[Vault] Borders:', VAULT_ITEMS.avatarBorders?.length || 0);
     console.log('[Vault] Themes:', VAULT_ITEMS.profileThemes?.length || 0);
@@ -141,6 +143,8 @@ const initializeUserVault = (user) => {
 router.get('/items', auth, async (req, res) => {
     try {
         console.log('[Vault] GET /items called');
+        console.log('[Vault] RUNTIME CHECK - Themes count:', VAULT_ITEMS.profileThemes?.length);
+console.log('[Vault] RUNTIME CHECK - First theme:', VAULT_ITEMS.profileThemes?.[0]?.name);
         
         const user = await User.findById(req.user._id);
         if (!user) {
