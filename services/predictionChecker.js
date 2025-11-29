@@ -1,14 +1,173 @@
-// server/services/predictionChecker.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE + GAMIFICATION
+// server/services/predictionChecker.js - SELF-CONTAINED VERSION
+// All price fetching logic is inline to avoid circular dependency issues
 
 const cron = require('node-cron');
+const axios = require('axios');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
 const GamificationService = require('./gamificationService');
 
-// ✅ USE CENTRALIZED PRICE SERVICE
-const priceService = require('./priceService');
+// ============ INLINE PRICE CACHE ============
+const priceCache = new Map();
+const CACHE_DURATION = 60000; // 60 seconds cache
 
-// ✅ Track checker statistics
+// ============ CRYPTO DETECTION ============
+const CRYPTO_SYMBOLS = new Set([
+    'BTC', 'ETH', 'XRP', 'SOL', 'ADA', 'DOGE', 'DOT', 'MATIC', 'SHIB', 'AVAX',
+    'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL', 'AAVE',
+    'SAND', 'MANA', 'AXS', 'THETA', 'XTZ', 'EOS', 'CAKE', 'RUNE', 'ZEC', 'DASH',
+    'NEO', 'WAVES', 'BAT', 'ENJ', 'CHZ', 'COMP', 'SNX', 'YFI', 'SUSHI', 'CRV',
+    'BNB', 'TRX', 'BCH', 'NEAR', 'APT', 'ARB', 'OP', 'SUI', 'SEI', 'TIA',
+    'PEPE', 'WIF', 'BONK', 'FLOKI', 'RENDER', 'FET', 'TAO', 'INJ', 'RNDR', 'GRT',
+    'IMX', 'STX', 'MKR', 'EGLD', 'HBAR', 'QNT', 'FTM', 'KAVA', 'FLOW', 'MINA',
+    'TRUMP', 'BITCOIN', 'ETHEREUM', 'RIPPLE', 'SOLANA', 'CARDANO', 'DOGECOIN'
+]);
+
+const CRYPTO_ID_MAP = {
+    'BTC': 'bitcoin', 'BITCOIN': 'bitcoin',
+    'ETH': 'ethereum', 'ETHEREUM': 'ethereum',
+    'XRP': 'ripple', 'RIPPLE': 'ripple',
+    'SOL': 'solana', 'SOLANA': 'solana',
+    'ADA': 'cardano', 'CARDANO': 'cardano',
+    'DOGE': 'dogecoin', 'DOGECOIN': 'dogecoin',
+    'DOT': 'polkadot', 'MATIC': 'matic-network',
+    'SHIB': 'shiba-inu', 'AVAX': 'avalanche-2',
+    'LINK': 'chainlink', 'UNI': 'uniswap',
+    'ATOM': 'cosmos', 'LTC': 'litecoin',
+    'ETC': 'ethereum-classic', 'XLM': 'stellar',
+    'ALGO': 'algorand', 'VET': 'vechain',
+    'FIL': 'filecoin', 'AAVE': 'aave',
+    'SAND': 'the-sandbox', 'MANA': 'decentraland',
+    'AXS': 'axie-infinity', 'THETA': 'theta-token',
+    'BNB': 'binancecoin', 'TRX': 'tron',
+    'BCH': 'bitcoin-cash', 'NEAR': 'near',
+    'APT': 'aptos', 'ARB': 'arbitrum',
+    'OP': 'optimism', 'SUI': 'sui',
+    'SEI': 'sei-network', 'TIA': 'celestia',
+    'PEPE': 'pepe', 'WIF': 'dogwifcoin',
+    'BONK': 'bonk', 'FLOKI': 'floki',
+    'TRUMP': 'official-trump',
+    'RENDER': 'render-token', 'RNDR': 'render-token',
+    'FET': 'fetch-ai', 'TAO': 'bittensor',
+    'INJ': 'injective-protocol', 'GRT': 'the-graph',
+    'MKR': 'maker', 'HBAR': 'hedera-hashgraph',
+    'FTM': 'fantom', 'KAVA': 'kava',
+    'FLOW': 'flow', 'MINA': 'mina-protocol'
+};
+
+function isCryptoSymbol(symbol) {
+    if (!symbol) return false;
+    // Clean the symbol
+    let clean = symbol.toUpperCase().trim();
+    // Remove common suffixes
+    clean = clean.replace(/[/-]USD[T]?$/, '').replace(/USD$/, '');
+    return CRYPTO_SYMBOLS.has(clean) || CRYPTO_ID_MAP[clean] !== undefined;
+}
+
+function getCleanSymbol(symbol) {
+    if (!symbol) return '';
+    let clean = symbol.toUpperCase().trim();
+    // Remove /USD, -USD, USDT suffixes for crypto
+    clean = clean.replace(/[/-]USD[T]?$/, '').replace(/USD$/, '');
+    return clean;
+}
+
+// ============ INLINE PRICE FETCHING ============
+
+async function fetchStockPrice(symbol) {
+    const cleanSymbol = symbol.toUpperCase().trim();
+    
+    // Check cache
+    const cached = priceCache.get(`stock-${cleanSymbol}`);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return { price: cached.price, source: 'cache' };
+    }
+    
+    try {
+        // Yahoo Finance API
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?interval=1d&range=1d`;
+        const response = await axios.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 10000
+        });
+        
+        const result = response.data?.chart?.result?.[0];
+        const price = result?.meta?.regularMarketPrice || result?.indicators?.quote?.[0]?.close?.slice(-1)[0];
+        
+        if (price && !isNaN(price)) {
+            priceCache.set(`stock-${cleanSymbol}`, { price, timestamp: Date.now() });
+            return { price, source: 'yahoo' };
+        }
+        
+        throw new Error('No price data');
+    } catch (error) {
+        console.log(`[PriceCheck] Yahoo failed for ${cleanSymbol}: ${error.message}`);
+        return { price: null, source: 'error', error: error.message };
+    }
+}
+
+async function fetchCryptoPrice(symbol) {
+    const cleanSymbol = getCleanSymbol(symbol);
+    const coinId = CRYPTO_ID_MAP[cleanSymbol] || cleanSymbol.toLowerCase();
+    
+    // Check cache
+    const cached = priceCache.get(`crypto-${cleanSymbol}`);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return { price: cached.price, source: 'cache' };
+    }
+    
+    try {
+        // CoinGecko API
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+        const response = await axios.get(url, { timeout: 10000 });
+        const price = response.data?.[coinId]?.usd;
+        
+        if (price && !isNaN(price)) {
+            priceCache.set(`crypto-${cleanSymbol}`, { price, timestamp: Date.now() });
+            return { price, source: 'coingecko' };
+        }
+        
+        throw new Error('No price from CoinGecko');
+    } catch (error) {
+        console.log(`[PriceCheck] CoinGecko failed for ${cleanSymbol}: ${error.message}`);
+        
+        // Fallback: Try Yahoo Finance with -USD suffix
+        try {
+            const yahooSymbol = `${cleanSymbol}-USD`;
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`;
+            const response = await axios.get(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                timeout: 10000
+            });
+            
+            const result = response.data?.chart?.result?.[0];
+            const price = result?.meta?.regularMarketPrice;
+            
+            if (price && !isNaN(price)) {
+                priceCache.set(`crypto-${cleanSymbol}`, { price, timestamp: Date.now() });
+                return { price, source: 'yahoo-crypto' };
+            }
+        } catch (yahooError) {
+            console.log(`[PriceCheck] Yahoo crypto fallback failed for ${cleanSymbol}`);
+        }
+        
+        return { price: null, source: 'error', error: error.message };
+    }
+}
+
+async function getCurrentPrice(symbol, assetType) {
+    if (!symbol) return { price: null, source: 'error', error: 'No symbol' };
+    
+    const isCrypto = assetType === 'crypto' || isCryptoSymbol(symbol);
+    
+    if (isCrypto) {
+        return await fetchCryptoPrice(symbol);
+    } else {
+        return await fetchStockPrice(symbol);
+    }
+}
+
+// ============ CHECKER STATISTICS ============
 const checkerStats = {
     lastRun: null,
     totalChecked: 0,
@@ -18,16 +177,14 @@ const checkerStats = {
     incorrectPredictions: 0
 };
 
-// Check a single prediction
+// ============ CHECK SINGLE PREDICTION ============
 async function checkPrediction(prediction) {
     try {
-        // ✅ Use centralized detection
-        const isCrypto = priceService.isCryptoSymbol(prediction.symbol);
-        const typeLabel = isCrypto ? 'crypto' : prediction.assetType;
+        const isCrypto = prediction.assetType === 'crypto' || isCryptoSymbol(prediction.symbol);
+        const typeLabel = isCrypto ? 'crypto' : 'stock';
         console.log(`[PredictionChecker] Checking ${prediction.symbol} (${typeLabel})`);
 
-        // ✅ Use centralized price fetching
-        const priceResult = await priceService.getCurrentPrice(prediction.symbol, prediction.assetType);
+        const priceResult = await getCurrentPrice(prediction.symbol, prediction.assetType);
 
         if (priceResult.price === null) {
             console.log(`[PredictionChecker] ❌ Could not fetch price for ${prediction.symbol}, skipping...`);
@@ -46,10 +203,10 @@ async function checkPrediction(prediction) {
         
         if (prediction.status === 'correct') {
             checkerStats.correctPredictions++;
-            console.log(`[PredictionChecker] ✅ ${prediction.symbol}: CORRECT (${prediction.outcome.accuracy.toFixed(1)}% accurate)`);
+            console.log(`[PredictionChecker] ✅ ${prediction.symbol}: CORRECT (predicted ${prediction.direction}, actual change: ${prediction.outcome.actualChangePercent.toFixed(2)}%)`);
         } else {
             checkerStats.incorrectPredictions++;
-            console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (${prediction.outcome.accuracy.toFixed(1)}% accurate)`);
+            console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (predicted ${prediction.direction}, actual change: ${prediction.outcome.actualChangePercent.toFixed(2)}%)`);
         }
 
         return { success: true, prediction };
@@ -61,7 +218,7 @@ async function checkPrediction(prediction) {
     }
 }
 
-// Main function to check all expired predictions
+// ============ MAIN CHECK FUNCTION ============
 async function checkExpiredPredictions() {
     try {
         const startTime = Date.now();
@@ -83,16 +240,8 @@ async function checkExpiredPredictions() {
 
         console.log(`[PredictionChecker] Found ${expiredPredictions.length} expired predictions to check`);
         
-        // Log what symbols we're checking
         const symbols = [...new Set(expiredPredictions.map(p => p.symbol))];
         console.log(`[PredictionChecker] Unique symbols: ${symbols.join(', ')}`);
-
-        // ✅ Batch fetch crypto prices for efficiency
-        const cryptoSymbols = symbols.filter(s => priceService.isCryptoSymbol(s));
-        if (cryptoSymbols.length > 0) {
-            console.log(`[PredictionChecker] Pre-fetching ${cryptoSymbols.length} crypto prices in batch...`);
-            await priceService.fetchCoinGeckoPricesBatch(cryptoSymbols);
-        }
 
         // Reset run statistics
         const runStats = {
@@ -103,10 +252,10 @@ async function checkExpiredPredictions() {
             incorrect: 0
         };
 
-        // ✅ Track which users need gamification updates
-        const userResults = new Map(); // userId -> { correct: number, incorrect: number }
+        // Track which users need gamification updates
+        const userResults = new Map();
 
-        // Check each prediction with a delay to respect API rate limits
+        // Check each prediction
         for (const prediction of expiredPredictions) {
             const result = await checkPrediction(prediction);
 
@@ -131,17 +280,17 @@ async function checkExpiredPredictions() {
 
             runStats.checked++;
 
-            // Add delay between API calls (reduced since we have caching now)
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
 
         // Update global statistics
         checkerStats.lastRun = new Date();
 
-        // ✅ Update gamification for affected users
+        // Update gamification for affected users
         await updateGamificationStats(userResults);
 
-        // Update user stats for affected users
+        // Update user stats
         const affectedUserIds = [...new Set(expiredPredictions.map(p => p.user.toString()))];
         await updateUserStats(affectedUserIds);
 
@@ -154,54 +303,37 @@ async function checkExpiredPredictions() {
         console.log(`  ⚠️  Incorrect: ${runStats.incorrect}`);
         console.log(`  ⏱️  Duration: ${duration}s`);
         console.log(`  👥 Users affected: ${affectedUserIds.length}`);
-        console.log(`  💾 Cache size: ${priceService.getCacheStats().size} entries`);
+        console.log(`  💾 Cache size: ${priceCache.size} entries`);
         console.log('================================\n');
 
     } catch (error) {
         console.error('[PredictionChecker] ❌ Error in checkExpiredPredictions:', error.message);
+        console.error(error.stack);
     }
 }
 
-// ✅ NEW: Update gamification stats when predictions are resolved
+// ============ GAMIFICATION UPDATES ============
 async function updateGamificationStats(userResults) {
     console.log(`[PredictionChecker] 🎮 Updating gamification for ${userResults.size} users...`);
     
     for (const [userId, results] of userResults) {
         try {
-            // Award XP and track correct predictions
             if (results.correct > 0) {
-                // Award XP for each correct prediction
-                const xpAmount = results.correct * 50; // 50 XP per correct prediction
-                await GamificationService.awardXP(
-                    userId, 
-                    xpAmount, 
-                    `${results.correct} correct prediction(s)`
-                );
+                const xpAmount = results.correct * 50;
+                await GamificationService.awardXP(userId, xpAmount, `${results.correct} correct prediction(s)`);
                 
-                // Award bonus coins for correct predictions
-                const coinAmount = results.correct * 25; // 25 coins per correct prediction
-                await GamificationService.awardCoins(
-                    userId,
-                    coinAmount,
-                    `${results.correct} correct prediction(s)`
-                );
+                const coinAmount = results.correct * 25;
+                await GamificationService.awardCoins(userId, coinAmount, `${results.correct} correct prediction(s)`);
                 
                 console.log(`[PredictionChecker]   🎯 User ${userId}: +${xpAmount} XP, +${coinAmount} coins for ${results.correct} correct`);
             }
             
             if (results.incorrect > 0) {
-                // Small consolation XP for participation
-                const xpAmount = results.incorrect * 5; // 5 XP per incorrect (still participated)
-                await GamificationService.awardXP(
-                    userId,
-                    xpAmount,
-                    `${results.incorrect} prediction(s) resolved`
-                );
-                
+                const xpAmount = results.incorrect * 5;
+                await GamificationService.awardXP(userId, xpAmount, `${results.incorrect} prediction(s) resolved`);
                 console.log(`[PredictionChecker]   📉 User ${userId}: +${xpAmount} XP for ${results.incorrect} incorrect`);
             }
             
-            // Check achievements after updating
             await GamificationService.checkAchievements(userId);
             
         } catch (error) {
@@ -210,7 +342,7 @@ async function updateGamificationStats(userResults) {
     }
 }
 
-// Update stats for users who had predictions checked
+// ============ USER STATS UPDATES ============
 async function updateUserStats(userIds) {
     try {
         console.log(`[PredictionChecker] 🔄 Updating stats for ${userIds.length} users...`);
@@ -218,38 +350,48 @@ async function updateUserStats(userIds) {
         for (const userId of userIds) {
             try {
                 const user = await User.findById(userId);
-                if (!user) {
-                    console.log(`[PredictionChecker] User ${userId} not found`);
-                    continue;
-                }
+                if (!user) continue;
+
+                if (!user.stats) user.stats = {};
 
                 const accuracy = await Prediction.getUserAccuracy(userId);
+                const totalPredictionsCount = await Prediction.countDocuments({ user: userId });
+                const resolvedCount = await Prediction.countDocuments({ 
+                    user: userId, 
+                    status: { $in: ['correct', 'incorrect'] } 
+                });
 
-                // Update user's prediction stats
-                user.stats.totalTrades = accuracy.totalPredictions || user.stats.totalTrades || 0;
-                user.stats.winRate = accuracy.accuracy || user.stats.winRate || 0;
+                user.stats.totalPredictions = totalPredictionsCount;
+                user.stats.correctPredictions = accuracy.correctPredictions || 0;
+                user.stats.predictionAccuracy = accuracy.accuracy || 0;
+                user.stats.totalTrades = resolvedCount;
+                user.stats.winRate = accuracy.accuracy || 0;
 
                 // Calculate streak
                 const recentPredictions = await Prediction.find({
                     user: userId,
                     status: { $in: ['correct', 'incorrect'] }
-                }).sort({ 'outcome.checkedAt': -1 }).limit(10);
+                }).sort({ 'outcome.checkedAt': -1 }).limit(20);
 
                 let currentStreak = 0;
                 for (const pred of recentPredictions) {
-                    if (pred.status === 'correct') {
-                        currentStreak++;
-                    } else {
-                        break;
-                    }
+                    if (pred.status === 'correct') currentStreak++;
+                    else break;
                 }
 
                 user.stats.currentStreak = currentStreak;
                 user.stats.longestStreak = Math.max(user.stats.longestStreak || 0, currentStreak);
+                user.stats.lastPredictionDate = new Date();
                 user.stats.lastUpdated = Date.now();
 
                 await user.save();
-                console.log(`[PredictionChecker]   ✅ Updated user ${userId} - ${accuracy.accuracy.toFixed(1)}% accuracy`);
+                
+                console.log(`[PredictionChecker]   ✅ Updated user ${userId}:`);
+                console.log(`      - Total Predictions: ${totalPredictionsCount}`);
+                console.log(`      - Resolved: ${resolvedCount}`);
+                console.log(`      - Correct: ${accuracy.correctPredictions}`);
+                console.log(`      - Accuracy: ${accuracy.accuracy.toFixed(1)}%`);
+                console.log(`      - Current Streak: ${currentStreak}`);
                 
             } catch (userError) {
                 console.error(`[PredictionChecker]   ❌ Error updating user ${userId}:`, userError.message);
@@ -263,7 +405,7 @@ async function updateUserStats(userIds) {
     }
 }
 
-// Mark very old pending predictions as expired (cleanup)
+// ============ CLEANUP ============
 async function markStaleAsExpired() {
     try {
         console.log('[PredictionChecker] 🧹 Running daily cleanup...');
@@ -272,13 +414,8 @@ async function markStaleAsExpired() {
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         const result = await Prediction.updateMany(
-            {
-                status: 'pending',
-                expiresAt: { $lte: thirtyDaysAgo }
-            },
-            {
-                $set: { status: 'expired' }
-            }
+            { status: 'pending', expiresAt: { $lte: thirtyDaysAgo } },
+            { $set: { status: 'expired' } }
         );
 
         if (result.modifiedCount > 0) {
@@ -287,8 +424,8 @@ async function markStaleAsExpired() {
             console.log(`[PredictionChecker] No stale predictions found`);
         }
         
-        // ✅ Clear price cache during daily cleanup
-        priceService.clearCache();
+        // Clear cache
+        priceCache.clear();
         console.log(`[PredictionChecker] 🗑️  Cleared price cache`);
         
     } catch (error) {
@@ -296,7 +433,7 @@ async function markStaleAsExpired() {
     }
 }
 
-// Get checker statistics
+// ============ STATISTICS ============
 function getCheckerStats() {
     return {
         ...checkerStats,
@@ -306,15 +443,23 @@ function getCheckerStats() {
         uptime: checkerStats.lastRun 
             ? `Last run: ${new Date(checkerStats.lastRun).toLocaleString()}`
             : 'Not run yet',
-        priceCache: priceService.getCacheStats()
+        cacheSize: priceCache.size
     };
 }
 
-// Schedule the cron jobs
+// ============ STARTUP ============
+let isStarted = false;
+
 function startPredictionChecker() {
+    if (isStarted) {
+        console.log('[PredictionChecker] ⚠️ Already started, skipping duplicate initialization');
+        return;
+    }
+    isStarted = true;
+
     console.log('\n🚀 ================================');
     console.log('[PredictionChecker] Starting prediction checker service...');
-    console.log('[PredictionChecker] Using centralized price service');
+    console.log('[PredictionChecker] Self-contained price fetching (no external dependencies)');
     console.log('[PredictionChecker] Gamification integration enabled');
     console.log('================================\n');
 
@@ -324,7 +469,7 @@ function startPredictionChecker() {
         await checkExpiredPredictions();
     });
 
-    // Mark stale predictions as expired once per day at 2 AM
+    // Daily cleanup at 2 AM
     cron.schedule('0 2 * * *', async () => {
         console.log('[PredictionChecker] ⏰ Daily cleanup triggered...');
         await markStaleAsExpired();
@@ -335,7 +480,7 @@ function startPredictionChecker() {
     console.log('  • Mark stale as expired: Daily at 2 AM (0 2 * * *)');
     console.log('');
 
-    // Optional: Run immediately on startup for testing
+    // Run immediately on startup if enabled
     if (process.env.CHECK_PREDICTIONS_ON_STARTUP === 'true') {
         console.log('[PredictionChecker] 🏃 Running initial check on startup...');
         setTimeout(async () => {
@@ -344,20 +489,18 @@ function startPredictionChecker() {
     }
 }
 
-// Manual trigger function (for testing or admin endpoints)
+// Manual trigger
 async function manualCheck() {
     console.log('[PredictionChecker] 🔧 Manual check triggered');
     await checkExpiredPredictions();
 }
 
-// ✅ Export everything including price service helpers for backward compatibility
+// ============ EXPORTS ============
 module.exports = {
     startPredictionChecker,
     checkExpiredPredictions,
     manualCheck,
     getCheckerStats,
-    
-    // Re-export from priceService for backward compatibility
-    fetchCurrentPrice: priceService.getPrice,
-    isCryptoSymbol: priceService.isCryptoSymbol
+    isCryptoSymbol,
+    getCurrentPrice
 };

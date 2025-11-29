@@ -776,4 +776,76 @@ router.get('/price/:symbol', auth, async (req, res) => {
     }
 });
 
+// ADD THIS to server/routes/predictionsRoutes.js
+// GET /api/predictions/stats - Get prediction statistics (public, no auth)
+router.get('/stats', async (req, res) => {
+    try {
+        // Count all predictions
+        const totalPredictions = await Prediction.countDocuments();
+        
+        // Count resolved predictions (correct + incorrect)
+        const resolvedPredictions = await Prediction.countDocuments({
+            status: { $in: ['correct', 'incorrect'] }
+        });
+        
+        // Count correct predictions
+        const correctPredictions = await Prediction.countDocuments({
+            status: 'correct'
+        });
+        
+        // Calculate accuracy
+        const accuracy = resolvedPredictions > 0 
+            ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 
+            : 0;
+        
+        res.json({
+            success: true,
+            totalPredictions,
+            resolvedPredictions,
+            correctPredictions,
+            accuracy
+        });
+        
+    } catch (error) {
+        console.error('[Predictions] Stats error:', error.message);
+        res.status(500).json({ success: false, totalPredictions: 0, resolvedPredictions: 0, correctPredictions: 0, accuracy: 0 });
+    }
+});
+
+// ADD THIS to server/routes/predictionsRoutes.js
+// GET /api/predictions/stats - Get prediction statistics (public, no auth)
+router.get('/stats', async (req, res) => {
+    try {
+        // Count all predictions
+        const totalPredictions = await Prediction.countDocuments();
+        
+        // Count resolved predictions (correct + incorrect)
+        const resolvedPredictions = await Prediction.countDocuments({
+            status: { $in: ['correct', 'incorrect'] }
+        });
+        
+        // Count correct predictions
+        const correctPredictions = await Prediction.countDocuments({
+            status: 'correct'
+        });
+        
+        // Calculate accuracy
+        const accuracy = resolvedPredictions > 0 
+            ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 
+            : 0;
+        
+        res.json({
+            success: true,
+            totalPredictions,
+            resolvedPredictions,
+            correctPredictions,
+            accuracy
+        });
+        
+    } catch (error) {
+        console.error('[Predictions] Stats error:', error.message);
+        res.status(500).json({ success: false, totalPredictions: 0, resolvedPredictions: 0, correctPredictions: 0, accuracy: 0 });
+    }
+});
+
 module.exports = router;

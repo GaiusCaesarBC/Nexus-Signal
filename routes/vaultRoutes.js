@@ -724,4 +724,33 @@ router.post('/check-badges', auth, async (req, res) => {
     }
 });
 
+
+
+
+// ADD THIS ROUTE - Get user's currently equipped items (for theme loading)
+router.get('/equipped', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('vault');
+        
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const vault = user.vault || {};
+        
+        res.json({
+            success: true,
+            equipped: {
+                theme: vault.equippedTheme || 'theme-default',
+                border: vault.equippedBorder || null,
+                badges: vault.equippedBadges || [],
+                perks: vault.activePerks || []
+            }
+        });
+    } catch (error) {
+        console.error('[Vault] Error fetching equipped items:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch equipped items' });
+    }
+});
+
 module.exports = router;

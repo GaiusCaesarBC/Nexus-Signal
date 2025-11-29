@@ -21,6 +21,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const vaultRoutes = require('./routes/vaultRoutes');
 const whaleRoutes = require('./routes/whaleRoutes');
 const searchRoutes = require('./routes/searchRoutes');
+const publicStatsRoutes = require('./routes/publicStats');
 
 // --- Database Connection Setup ---
 const connectDB = async () => {
@@ -151,6 +152,8 @@ app.use('/api/stats', statsRoutes); // ✅ ADDED - Platform Stats
 app.use('/api', statsRoutes); // ✅ ADDED - Handles /api/waitlist
 app.use('/api/whale', whaleRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/public', publicStatsRoutes);
+
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
