@@ -112,7 +112,7 @@ const alertRoutes = require('./routes/alertRoutes'); // ✅ ADDED - Price Alerts
 const patternRoutes = require('./routes/patternRoutes'); // ✅ ADDED - AI Pattern Recognition
 const statsRoutes = require('./routes/statsRoutes'); // ✅ ADDED - Platform Stats for Landing Page
 const onboardingRoutes = require('./routes/onboardingRoutes'); // ✅ ADDED - Onboarding Flow
-const leaderboardRoutes = require('./routes/leaderboardRoutes');
+const leaderboardRoutes = require('./routes/leaderboardRoutes')
 
 
 // Basic root route for health check
