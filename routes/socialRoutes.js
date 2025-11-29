@@ -88,9 +88,10 @@ router.get('/me/stats', auth, async (req, res) => {
                 followingCount: user.social?.followingCount || 0
             },
             vault: {
-                equippedBadges: user.vault?.equippedBadges || [],
-                equippedBorder: user.vault?.equippedBorder || null,
-                equippedTheme: user.vault?.equippedTheme || null
+               // 🔥 NEW: Vault equipped items
+equippedBadges: user.vault?.equippedBadges || [],
+equippedBorder: user.vault?.equippedBorder || null,
+equippedTheme: user.vault?.equippedTheme || 'default',
             }
         });
     } catch (error) {
@@ -176,9 +177,10 @@ router.get('/leaderboard', async (req, res) => {
             followersCount: user.social?.followersCount || 0,
             followingCount: user.social?.followingCount || 0,
             
-            // 🔥 NEW: Vault equipped items
+            // 🔥 NEW: Vault equipped items (INCLUDING equippedTheme!)
             equippedBadges: user.vault?.equippedBadges || [],
             equippedBorder: user.vault?.equippedBorder || null,
+            equippedTheme: user.vault?.equippedTheme || 'default',
             
             // Meta
             memberSince: user.createdAt
@@ -441,7 +443,7 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             vault: {
                 equippedBadges: user.vault?.equippedBadges || [],
                 equippedBorder: user.vault?.equippedBorder || null,
-                equippedTheme: user.vault?.equippedTheme || null
+                equippedTheme: user.vault?.equippedTheme || 'default'
             },
             isFounder: user.isFounder || false,
             date: user.createdAt,
@@ -476,9 +478,11 @@ router.get('/suggested', auth, async (req, res) => {
         const results = suggestedUsers.map(user => ({
             id: user._id,
             name: user.profile?.displayName || user.username,
+            username: user.username,
             avatar: user.profile?.avatar || '',
-            mutuals: 0, // Could calculate mutual followers if needed
-            equippedBorder: user.vault?.equippedBorder || null
+            mutuals: 0,
+            equippedBorder: user.vault?.equippedBorder || null,
+            equippedTheme: user.vault?.equippedTheme || 'default'
         }));
 
         res.json(results);
@@ -687,7 +691,7 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             vault: {
                 equippedBadges: user.vault?.equippedBadges || [],
                 equippedBorder: user.vault?.equippedBorder || null,
-                equippedTheme: user.vault?.equippedTheme || null
+                equippedTheme: user.vault?.equippedTheme || 'default'
             },
             isFounder: user.isFounder || false,
             date: user.createdAt,
@@ -843,9 +847,10 @@ router.get('/search', async (req, res) => {
             xp: user.gamification?.xp || 0,
             followersCount: user.social?.followersCount || 0,
             badges: user.profile?.badges || [],
-            // 🔥 NEW: Include vault data
+           // 🔥 NEW: Include vault data
             equippedBadges: user.vault?.equippedBadges || [],
-            equippedBorder: user.vault?.equippedBorder || null
+            equippedBorder: user.vault?.equippedBorder || null,
+            equippedTheme: user.vault?.equippedTheme || 'default'
         }));
 
         res.json(results);

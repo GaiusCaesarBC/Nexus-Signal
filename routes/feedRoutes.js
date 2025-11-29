@@ -28,7 +28,7 @@ const REACTION_TYPES = ['like', 'rocket', 'fire', 'diamond', 'bull', 'bear', 'mo
 
 // ============ USER POPULATE FIELDS ============
 // Centralized user fields to populate (includes vault for badges)
-const USER_POPULATE_FIELDS = 'username profile gamification vault.equippedBadges vault.equippedBorder';
+const USER_POPULATE_FIELDS = 'username profile gamification vault.equippedBadges vault.equippedBorder vault.equippedTheme';
 
 // ============ HELPER FUNCTIONS ============
 
@@ -136,7 +136,8 @@ function formatPostResponse(post, currentUserId = null) {
         );
     }
 
-    // Format author with vault data (badges + border)
+    // Format author with vault data (badges + border + theme)
+    // 🔥 FIXED: Use 'default' fallback instead of null for equippedTheme
     if (postObj.user) {
         postObj.author = {
             _id: postObj.user._id,
@@ -146,10 +147,30 @@ function formatPostResponse(post, currentUserId = null) {
             level: postObj.user.gamification?.level || 1,
             verified: postObj.user.profile?.verified || false,
             badges: postObj.user.profile?.badges || [],
-            // 🔥 NEW: Include vault equipped items for display
+            // 🔥 Include vault equipped items for display
             equippedBadges: postObj.user.vault?.equippedBadges || [],
-            equippedBorder: postObj.user.vault?.equippedBorder || null
+            equippedBorder: postObj.user.vault?.equippedBorder || null,
+            equippedTheme: postObj.user.vault?.equippedTheme || 'default'  // 🔥 Changed from null to 'default'
         };
+    }
+
+    // 🔥 Also format comment authors with equippedTheme
+    if (postObj.comments && postObj.comments.length > 0) {
+        postObj.comments = postObj.comments.map(comment => {
+            if (comment.user && typeof comment.user === 'object') {
+                return {
+                    ...comment,
+                    author: {
+                        _id: comment.user._id,
+                        username: comment.user.username,
+                        displayName: comment.user.profile?.displayName || comment.user.username,
+                        avatar: comment.user.profile?.avatar || '',
+                        equippedTheme: comment.user.vault?.equippedTheme || 'default'
+                    }
+                };
+            }
+            return comment;
+        });
     }
 
     return postObj;
@@ -692,7 +713,7 @@ router.get('/:postId', async (req, res) => {
             deleted: { $ne: true }
         })
         .populate('user', USER_POPULATE_FIELDS)
-        .populate('comments.user', 'username profile.displayName profile.avatar')
+        .populate('comments.user', 'username profile.displayName profile.avatar vault.equippedTheme')
         .populate('mentions', 'username profile.displayName')
         .populate('repostOf')
         .lean();
@@ -1207,11 +1228,11 @@ router.post('/:postId/comment', auth, async (req, res) => {
         post.commentsCount = post.comments.length;
         await post.save();
 
-        // Get the saved comment with populated user
-        await post.populate('comments.user', 'username profile.displayName profile.avatar');
+        // Get the saved comment with populated user (including vault for theme)
+        await post.populate('comments.user', 'username profile.displayName profile.avatar vault.equippedTheme');
         const savedComment = post.comments[post.comments.length - 1];
 
-        // Format comment for response
+        // Format comment for response with equippedTheme
         const formattedComment = {
             _id: savedComment._id,
             text: savedComment.text,
@@ -1221,7 +1242,8 @@ router.post('/:postId/comment', auth, async (req, res) => {
                 _id: savedComment.user._id,
                 username: savedComment.user.username,
                 displayName: savedComment.user.profile?.displayName || savedComment.user.username,
-                avatar: savedComment.user.profile?.avatar || ''
+                avatar: savedComment.user.profile?.avatar || '',
+                equippedTheme: savedComment.user.vault?.equippedTheme || 'default'
             }
         };
 
