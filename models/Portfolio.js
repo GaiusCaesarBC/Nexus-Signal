@@ -136,6 +136,7 @@ HoldingSchema.methods.updateValues = function() {
 
 // Calculate all portfolio totals
 PortfolioSchema.methods.calculateTotals = function() {
+    const startingBalance = 10000; // Starting paper trading balance
     let totalInvested = 0;
     let currentValue = 0;
 
@@ -148,10 +149,8 @@ PortfolioSchema.methods.calculateTotals = function() {
 
     this.totalInvested = totalInvested;
     this.totalValue = currentValue + this.cashBalance;
-    this.totalChange = currentValue - totalInvested;
-    this.totalChangePercent = totalInvested > 0 
-        ? (this.totalChange / totalInvested) * 100 
-        : 0;
+    this.totalChange = this.totalValue - startingBalance;
+    this.totalChangePercent = ((this.totalValue - startingBalance) / startingBalance) * 100;
     
     this.lastUpdatedAt = Date.now();
 
@@ -170,7 +169,6 @@ PortfolioSchema.methods.calculateTotals = function() {
         };
     }
 };
-
 // ============================================
 // METHODS - Buy/Sell Assets
 // ============================================
