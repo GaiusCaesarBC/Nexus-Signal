@@ -112,7 +112,7 @@ const alertRoutes = require('./routes/alertRoutes'); // ✅ ADDED - Price Alerts
 const patternRoutes = require('./routes/patternRoutes'); // ✅ ADDED - AI Pattern Recognition
 const statsRoutes = require('./routes/statsRoutes'); // ✅ ADDED - Platform Stats for Landing Page
 const onboardingRoutes = require('./routes/onboardingRoutes'); // ✅ ADDED - Onboarding Flow
-
+const leaderboardRoutes = require('./routes/leaderboardRoutes');
 
 
 // Basic root route for health check
@@ -153,7 +153,7 @@ app.use('/api', statsRoutes); // ✅ ADDED - Handles /api/waitlist
 app.use('/api/whale', whaleRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/public', publicStatsRoutes);
-
+app.use('/api/leaderboard', leaderboardRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
