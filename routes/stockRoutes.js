@@ -138,9 +138,10 @@ async function fetchAlphaVantageData(symbol, range) {
 }
 
 // ============================================
-// ✅ NEW: GET STOCK QUOTE (for Key Statistics)
+// ✅ FIXED: GET STOCK QUOTE (for Key Statistics)
+// Route: /api/stocks/:symbol/quote
 // ============================================
-router.get('/quote/:symbol', async (req, res) => {
+router.get('/:symbol/quote', async (req, res) => {
     try {
         const { symbol } = req.params;
         const upperSymbol = symbol.toUpperCase();
@@ -267,7 +268,51 @@ router.get('/quote/:symbol', async (req, res) => {
 
 // ============================================
 // GET HISTORICAL DATA
+// Route: /api/stocks/:symbol/historical OR /api/stocks/historical/:symbol
 // ============================================
+router.get('/:symbol/historical', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const { range = '6M' } = req.query;
+
+        const cacheKey = `hist-${symbol}-${range}`;
+        if (stockCache[cacheKey] && (Date.now() - stockCache[cacheKey].timestamp < CACHE_DURATION)) {
+            console.log(`[CACHE HIT] Historical data for ${symbol}`);
+            return res.json(stockCache[cacheKey].data);
+        }
+
+        console.log(`Fetching historical data for ${symbol} - Range: ${range}`);
+
+        const historicalData = await fetchAlphaVantageData(symbol, range);
+
+        if (historicalData.length === 0) {
+            return res.status(404).json({ 
+                msg: `No historical data found for ${symbol}` 
+            });
+        }
+
+        const responseData = {
+            symbol,
+            historicalData,
+        };
+
+        stockCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: responseData
+        };
+
+        res.json(responseData);
+
+    } catch (error) {
+        console.error('Error fetching historical stock data:', error.message);
+        res.status(500).json({ 
+            msg: 'Failed to fetch historical data', 
+            error: error.message 
+        });
+    }
+});
+
+// Also support the old route pattern for backwards compatibility
 router.get('/historical/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -312,7 +357,67 @@ router.get('/historical/:symbol', async (req, res) => {
 
 // ============================================
 // GET PREDICTION
+// Route: /api/stocks/:symbol/prediction OR /api/stocks/prediction/:symbol
 // ============================================
+router.get('/:symbol/prediction', async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const { range = '6M' } = req.query;
+
+        const cacheKey = `pred-${symbol}-${range}`;
+        if (stockCache[cacheKey] && (Date.now() - stockCache[cacheKey].timestamp < CACHE_DURATION)) {
+            console.log(`[CACHE HIT] Prediction for ${symbol}`);
+            return res.json(stockCache[cacheKey].data);
+        }
+
+        console.log(`Getting prediction for ${symbol} - Range: ${range}`);
+
+        const historicalData = await fetchAlphaVantageData(symbol, range);
+
+        if (historicalData.length === 0) {
+            return res.status(404).json({ 
+                msg: `No data available for ${symbol}` 
+            });
+        }
+
+        const lastClosePrice = historicalData[historicalData.length - 1].close;
+        
+        console.log(`[Sentiment] Analyzing news for ${symbol}...`);
+        const sentimentData = await getSentimentSignal(symbol);
+        console.log(`[Sentiment] Result: ${sentimentData.label} (${sentimentData.signal.toFixed(2)})`);
+        
+        const prediction = calculateStockPrediction(historicalData, lastClosePrice, sentimentData);
+
+        const responseData = {
+            symbol,
+            currentPrice: lastClosePrice,
+            historicalData,
+            ...prediction,
+            sentiment: {
+                score: sentimentData.signal,
+                label: sentimentData.label,
+                confidence: sentimentData.confidence,
+                summary: sentimentData.summary
+            }
+        };
+
+        stockCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: responseData
+        };
+
+        res.json(responseData);
+
+    } catch (error) {
+        console.error('Error generating prediction:', error.message);
+        res.status(500).json({ 
+            msg: 'Failed to generate prediction', 
+            error: error.message 
+        });
+    }
+});
+
+// Also support the old route pattern for backwards compatibility
 router.get('/prediction/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
