@@ -1,4 +1,4 @@
-// server/routes/predictionsRoutes.js - REFACTORED TO USE CENTRALIZED PRICE SERVICE
+// server/routes/predictionsRoutes.js - FIXED VERSION WITH BETTER FALLBACKS
 
 const express = require('express');
 const router = express.Router();
@@ -13,13 +13,16 @@ const priceService = require('../services/priceService');
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
 
-// Mock prediction generator
-function generateMockPrediction(symbol, days) {
-    const basePrice = Math.random() * 500 + 50;
+// Mock prediction generator - generates realistic predictions
+function generateMockPrediction(symbol, days, currentPrice = null) {
+    // Use provided price or generate a realistic one
+    const basePrice = currentPrice || (Math.random() * 500 + 50);
     const direction = Math.random() > 0.5 ? 'UP' : 'DOWN';
-    const changePercent = (Math.random() * 10 - 5).toFixed(2);
+    const changePercent = direction === 'UP' 
+        ? (Math.random() * 8 + 1).toFixed(2)  // 1-9% up
+        : -(Math.random() * 8 + 1).toFixed(2); // 1-9% down
     const targetPrice = basePrice * (1 + parseFloat(changePercent) / 100);
-    const confidence = (Math.random() * 30 + 70).toFixed(1);
+    const confidence = (Math.random() * 25 + 65).toFixed(1); // 65-90%
 
     return {
         symbol: symbol.toUpperCase(),
@@ -36,6 +39,12 @@ function generateMockPrediction(symbol, days) {
             trend: direction === 'UP' ? 'Bullish' : 'Bearish',
             volatility: 'Moderate',
             risk_level: 'Medium'
+        },
+        indicators: {
+            RSI: { value: (Math.random() * 40 + 30).toFixed(1), signal: direction === 'UP' ? 'BUY' : 'SELL' },
+            MACD: { value: (Math.random() * 2 - 1).toFixed(2), signal: direction === 'UP' ? 'BUY' : 'SELL' },
+            'Moving Avg': { value: basePrice.toFixed(2), signal: direction === 'UP' ? 'BUY' : 'SELL' },
+            Volume: { value: 'Above Avg', signal: 'NEUTRAL' }
         },
         timestamp: new Date().toISOString()
     };
@@ -93,64 +102,85 @@ router.post('/predict', auth, async (req, res) => {
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
+        symbol = symbol.toUpperCase().trim();
+
         // ✅ AUTO-DETECT using centralized service
         if (!assetType) {
             assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
             console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
         }
 
-        console.log(`[Predictions] Getting prediction for ${symbol} (${assetType})`);
+        console.log(`[Predictions] Getting prediction for ${symbol} (${assetType}), days: ${days}`);
         
+        // ✅ STEP 1: Get current price first using priceService
+        let currentPrice = null;
+        try {
+            const priceResult = await priceService.getCurrentPrice(symbol, assetType);
+            currentPrice = priceResult.price;
+            console.log(`[Predictions] Got current price for ${symbol}: $${currentPrice} (source: ${priceResult.source})`);
+        } catch (priceError) {
+            console.log(`[Predictions] Could not get price for ${symbol}:`, priceError.message);
+        }
+
         let predictionData;
         
-        if (USE_MOCK_PREDICTIONS) {
-            console.log(`[Predictions] Using mock data for ${symbol}`);
-            predictionData = generateMockPrediction(symbol, days);
-        } else {
+        // ✅ STEP 2: Try ML service if not using mocks
+        if (!USE_MOCK_PREDICTIONS) {
             try {
-                const baseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
+                console.log(`[Predictions] Trying ML service at ${ML_SERVICE_URL}`);
                 
-                // Use correct endpoint based on asset type
-                const endpoint = assetType === 'crypto' 
-                    ? `/api/crypto/prediction/${symbol}?range=6M`
-                    : `/api/stocks/prediction/${symbol}?range=6M`;
+                const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
+                    symbol: symbol,
+                    days: days,
+                    type: assetType
+                }, {
+                    timeout: 30000 // 30 second timeout
+                });
                 
-                console.log(`[Predictions] Calling: ${baseUrl}${endpoint}`);
-                const response = await axios.get(`${baseUrl}${endpoint}`);
-                
-                predictionData = {
-                    symbol: response.data.symbol,
-                    current_price: response.data.currentPrice,
-                    prediction: {
-                        target_price: response.data.predictedPrice,
-                        direction: response.data.predictedDirection === 'Up' ? 'UP' : 'DOWN',
-                        price_change: response.data.predictedPrice - response.data.currentPrice,
-                        price_change_percent: response.data.percentageChange,
-                        confidence: response.data.confidence,
-                        days: days
-                    },
-                    analysis: {
-                        trend: response.data.predictedDirection === 'Up' ? 'Bullish' : 'Bearish',
-                        volatility: 'Moderate',
-                        risk_level: 'Medium',
-                        message: response.data.message
-                    },
-                    indicators: response.data.indicators
-                };
-                
+                if (mlResponse.data && mlResponse.data.prediction) {
+                    console.log(`[Predictions] ML service returned prediction for ${symbol}`);
+                    predictionData = {
+                        symbol: symbol,
+                        current_price: mlResponse.data.currentPrice || currentPrice,
+                        prediction: {
+                            target_price: mlResponse.data.prediction.targetPrice,
+                            direction: mlResponse.data.prediction.direction,
+                            price_change: mlResponse.data.prediction.priceChange,
+                            price_change_percent: mlResponse.data.prediction.percentageChange,
+                            confidence: mlResponse.data.prediction.confidence,
+                            days: days
+                        },
+                        analysis: mlResponse.data.analysis || {
+                            trend: mlResponse.data.prediction.direction === 'UP' ? 'Bullish' : 'Bearish',
+                            volatility: 'Moderate',
+                            risk_level: 'Medium'
+                        },
+                        indicators: mlResponse.data.indicators || {}
+                    };
+                }
             } catch (mlError) {
-                console.log(`[Predictions] API failed, using mock data:`, mlError.message);
-                predictionData = generateMockPrediction(symbol, days);
+                console.log(`[Predictions] ML service unavailable:`, mlError.message);
             }
         }
         
-        // Save prediction to database
+        // ✅ STEP 3: Fallback to mock prediction with real price
+        if (!predictionData) {
+            console.log(`[Predictions] Using generated prediction for ${symbol} (price: $${currentPrice || 'unknown'})`);
+            predictionData = generateMockPrediction(symbol, days, currentPrice);
+        }
+
+        // ✅ Ensure we have a current price
+        if (!predictionData.current_price && currentPrice) {
+            predictionData.current_price = currentPrice;
+        }
+        
+        // ✅ STEP 4: Save prediction to database
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + days);
         
         const prediction = new Prediction({
             user: req.user.id,
-            symbol: symbol.toUpperCase(),
+            symbol: symbol,
             assetType,
             currentPrice: predictionData.current_price,
             targetPrice: predictionData.prediction.target_price,
@@ -171,16 +201,18 @@ router.post('/predict', auth, async (req, res) => {
         
         await prediction.save();
         
-        console.log(`[Predictions] Saved prediction ${prediction._id} for ${symbol} (${assetType})`);
+        console.log(`[Predictions] ✅ Saved prediction ${prediction._id} for ${symbol} (${assetType})`);
+        console.log(`[Predictions] Direction: ${predictionData.prediction.direction}, Target: $${predictionData.prediction.target_price}, Confidence: ${predictionData.prediction.confidence}%`);
         
         // 🎮 GAMIFICATION: Track prediction creation
         try {
             await GamificationService.trackPrediction(req.user.id);
             await GamificationService.awardXP(req.user.id, 15, `Prediction created for ${symbol}`);
-        } catch (error) {
-            console.warn('Failed to track prediction in gamification:', error.message);
+        } catch (gamError) {
+            console.warn('[Predictions] Gamification error (non-fatal):', gamError.message);
         }
         
+        // ✅ Return prediction data
         res.json({
             ...predictionData,
             predictionId: prediction._id,
@@ -188,7 +220,8 @@ router.post('/predict', auth, async (req, res) => {
         });
         
     } catch (error) {
-        console.error('[Predictions] Error:', error.message);
+        console.error('[Predictions] ❌ Error:', error.message);
+        console.error('[Predictions] Stack:', error.stack);
         return res.status(500).json({
             error: 'Prediction service error',
             message: error.message
@@ -225,7 +258,7 @@ router.get('/live/:id', auth, async (req, res) => {
             currentPrice = priceResult.price;
             console.log(`[Live] Current price for ${prediction.symbol}: $${currentPrice} (source: ${priceResult.source})`);
         } catch (priceError) {
-            console.error('[Live] Error fetching price:', priceError);
+            console.error('[Live] Error fetching price:', priceError.message);
             currentPrice = null;
         }
 
@@ -290,15 +323,15 @@ router.post('/check-outcomes', auth, async (req, res) => {
         for (const prediction of predictions) {
             try {
                 // ✅ USE CENTRALIZED PRICE SERVICE
-                const currentPrice = await priceService.getPrice(prediction.symbol, prediction.assetType);
+                const priceResult = await priceService.getCurrentPrice(prediction.symbol, prediction.assetType);
 
-                if (!currentPrice) {
+                if (!priceResult.price) {
                     console.log(`[Check] Skipping ${prediction.symbol} - no price available`);
                     continue;
                 }
 
                 // Calculate outcome
-                await prediction.calculateOutcome(currentPrice);
+                await prediction.calculateOutcome(priceResult.price);
                 
                 results.push({
                     symbol: prediction.symbol,
@@ -309,7 +342,7 @@ router.post('/check-outcomes', auth, async (req, res) => {
                 // Small delay to avoid rate limiting
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (error) {
-                console.error(`[Check] Error checking ${prediction.symbol}:`, error);
+                console.error(`[Check] Error checking ${prediction.symbol}:`, error.message);
             }
         }
 
@@ -381,7 +414,6 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
-
 // @route   GET /api/predictions/user
 // @desc    Get current user's predictions summary (for profile/dashboard)
 // @access  Private
@@ -440,7 +472,6 @@ router.get('/user', auth, async (req, res) => {
         });
     }
 });
-
 
 // @route   GET /api/predictions/platform-stats
 // @desc    Get platform-wide prediction statistics (PUBLIC - no auth needed)
@@ -501,31 +532,26 @@ router.post('/batch', auth, async (req, res) => {
 
         console.log(`[Predictions] Batch prediction for ${symbols.length} symbols (${assetType})`);
         
-        let predictionsData;
+        const predictionsData = [];
         
-        if (USE_MOCK_PREDICTIONS) {
-            console.log(`[Predictions] Using mock data for batch`);
-            predictionsData = {
-                predictions: symbols.map(symbol => generateMockPrediction(symbol, days))
-            };
-        } else {
+        for (const sym of symbols) {
+            const symbol = sym.toUpperCase();
+            
+            // Get current price
+            let currentPrice = null;
             try {
-                const response = await axios.post(`${ML_SERVICE_URL}/predict/batch`, {
-                    symbols: symbols.map(s => s.toUpperCase()),
-                    days
-                }, {
-                    timeout: 60000
-                });
-                
-                predictionsData = response.data;
-                
-            } catch (mlError) {
-                console.log(`[Predictions] ML service failed for batch, using mock data`);
-                
-                predictionsData = {
-                    predictions: symbols.map(symbol => generateMockPrediction(symbol, days))
-                };
+                const priceResult = await priceService.getCurrentPrice(symbol, assetType);
+                currentPrice = priceResult.price;
+            } catch (e) {
+                console.log(`[Batch] Could not get price for ${symbol}`);
             }
+            
+            // Generate prediction
+            const pred = generateMockPrediction(symbol, days, currentPrice);
+            predictionsData.push(pred);
+            
+            // Small delay between symbols
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         const expiresAt = new Date();
@@ -533,7 +559,7 @@ router.post('/batch', auth, async (req, res) => {
         
         const savedPredictions = [];
         
-        for (const predData of predictionsData.predictions) {
+        for (const predData of predictionsData) {
             const prediction = new Prediction({
                 user: req.user.id,
                 symbol: predData.symbol,
@@ -545,6 +571,7 @@ router.post('/batch', auth, async (req, res) => {
                 priceChangePercent: predData.prediction.price_change_percent,
                 confidence: predData.prediction.confidence,
                 timeframe: days,
+                indicators: predData.indicators || {},
                 analysis: predData.analysis,
                 expiresAt
             });
@@ -564,7 +591,7 @@ router.post('/batch', auth, async (req, res) => {
         }
         
         res.json({
-            ...predictionsData,
+            predictions: predictionsData,
             predictionIds: savedPredictions
         });
         
@@ -654,29 +681,33 @@ router.post('/:id/comment', auth, async (req, res) => {
 // @access  Private
 router.get('/health', auth, async (req, res) => {
     try {
-        const response = await axios.get(`${ML_SERVICE_URL}/health`, {
-            timeout: 5000
-        });
+        let mlStatus = 'unknown';
+        let mlData = {};
+        
+        try {
+            const response = await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 5000 });
+            mlStatus = 'healthy';
+            mlData = response.data;
+        } catch (e) {
+            mlStatus = 'unhealthy';
+        }
         
         // ✅ Include price service cache stats
         const cacheStats = priceService.getCacheStats();
         
         res.json({
-            ml_service: 'healthy',
+            ml_service: mlStatus,
+            ml_url: ML_SERVICE_URL,
             mock_mode: USE_MOCK_PREDICTIONS,
             price_cache: cacheStats,
-            ...response.data
+            ...mlData
         });
         
     } catch (error) {
-        const cacheStats = priceService.getCacheStats();
-        
         res.json({
-            ml_service: 'unhealthy',
+            ml_service: 'error',
             mock_mode: USE_MOCK_PREDICTIONS,
-            price_cache: cacheStats,
-            error: error.message,
-            note: USE_MOCK_PREDICTIONS ? 'Using mock predictions as fallback' : 'ML service unavailable'
+            error: error.message
         });
     }
 });
@@ -747,7 +778,7 @@ router.post('/test/expire-all', auth, async (req, res) => {
     }
 });
 
-// ✅ NEW: Get current price for any symbol (utility endpoint)
+// ✅ Get current price for any symbol (utility endpoint)
 router.get('/price/:symbol', auth, async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -773,78 +804,6 @@ router.get('/price/:symbol', auth, async (req, res) => {
     } catch (error) {
         console.error('[Predictions] Price fetch error:', error.message);
         res.status(500).json({ error: 'Failed to fetch price' });
-    }
-});
-
-// ADD THIS to server/routes/predictionsRoutes.js
-// GET /api/predictions/stats - Get prediction statistics (public, no auth)
-router.get('/stats', async (req, res) => {
-    try {
-        // Count all predictions
-        const totalPredictions = await Prediction.countDocuments();
-        
-        // Count resolved predictions (correct + incorrect)
-        const resolvedPredictions = await Prediction.countDocuments({
-            status: { $in: ['correct', 'incorrect'] }
-        });
-        
-        // Count correct predictions
-        const correctPredictions = await Prediction.countDocuments({
-            status: 'correct'
-        });
-        
-        // Calculate accuracy
-        const accuracy = resolvedPredictions > 0 
-            ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 
-            : 0;
-        
-        res.json({
-            success: true,
-            totalPredictions,
-            resolvedPredictions,
-            correctPredictions,
-            accuracy
-        });
-        
-    } catch (error) {
-        console.error('[Predictions] Stats error:', error.message);
-        res.status(500).json({ success: false, totalPredictions: 0, resolvedPredictions: 0, correctPredictions: 0, accuracy: 0 });
-    }
-});
-
-// ADD THIS to server/routes/predictionsRoutes.js
-// GET /api/predictions/stats - Get prediction statistics (public, no auth)
-router.get('/stats', async (req, res) => {
-    try {
-        // Count all predictions
-        const totalPredictions = await Prediction.countDocuments();
-        
-        // Count resolved predictions (correct + incorrect)
-        const resolvedPredictions = await Prediction.countDocuments({
-            status: { $in: ['correct', 'incorrect'] }
-        });
-        
-        // Count correct predictions
-        const correctPredictions = await Prediction.countDocuments({
-            status: 'correct'
-        });
-        
-        // Calculate accuracy
-        const accuracy = resolvedPredictions > 0 
-            ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 
-            : 0;
-        
-        res.json({
-            success: true,
-            totalPredictions,
-            resolvedPredictions,
-            correctPredictions,
-            accuracy
-        });
-        
-    } catch (error) {
-        console.error('[Predictions] Stats error:', error.message);
-        res.status(500).json({ success: false, totalPredictions: 0, resolvedPredictions: 0, correctPredictions: 0, accuracy: 0 });
     }
 });
 
