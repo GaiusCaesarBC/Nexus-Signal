@@ -223,7 +223,7 @@ const VAULT_ITEMS = {
                 primary: '#00adef',
                 secondary: '#0891b2',
                 accent: '#06b6d4',
-                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                background: 'rgba(30, 41, 59, 0.9)',
                 pageBackground: 'linear-gradient(145deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%)',
                 navbarBackground: 'linear-gradient(180deg, rgba(10, 14, 39, 0.98) 0%, rgba(10, 14, 39, 0.95) 100%)'
             },
