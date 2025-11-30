@@ -431,7 +431,26 @@ unlockRequirement: { type: 'level', value: 100 }
             effects: { crownOfLight: true, royalAura: true, divineMandate: true, eternalFlame: true, cosmicThrone: true },
             unlockRequirement: { type: 'level', value: 200 }
         }
+            },
+        // ╔══════════════════════════════════════════════════════════════╗
+        // ║        🏛️ ORIGIN BORDERS - FOUNDERS ONLY 🏛️                  ║
+        // ╚══════════════════════════════════════════════════════════════╝
+        {
+            id: 'border-architects-ring',
+            name: "Architect's Ring",
+            description: 'Sacred geometry of the founders who built Nexus Signal. Unobtainable.',
+            type: 'avatar-border',
+            rarity: 'origin',
+            cost: null,
+            obtainable: false,
+            gradient: 'conic-gradient(from 0deg, #0a1628 0%, #d4af37 8%, #f8fafc 12%, #d4af37 16%, #0a1628 25%, #d4af37 33%, #f8fafc 37%, #d4af37 41%, #0a1628 50%, #d4af37 58%, #f8fafc 62%, #d4af37 66%, #0a1628 75%, #d4af37 83%, #f8fafc 87%, #d4af37 91%, #0a1628 100%)',
+            glowColor: 'rgba(212, 175, 55, 1)',
+            animation: 'architect',
+            effects: { sacredGeometry: true, blueprintGrid: true, signalPulse: true, counterRotate: true },
+            unlockRequirement: { type: 'founder', value: true }
+        }
     ],
+
 
     // ===== PERKS (6 items) =====
     perks: [
