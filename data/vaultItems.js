@@ -430,7 +430,7 @@ unlockRequirement: { type: 'level', value: 100 }
             animation: 'sovereign-aura',
             effects: { crownOfLight: true, royalAura: true, divineMandate: true, eternalFlame: true, cosmicThrone: true },
             unlockRequirement: { type: 'level', value: 200 }
-        }
+        
             },
         // ╔══════════════════════════════════════════════════════════════╗
         // ║        🏛️ ORIGIN BORDERS - FOUNDERS ONLY 🏛️                  ║
