@@ -162,7 +162,10 @@ PredictionSchema.methods.calculateOutcome = async function(currentPrice) {
     }
 
     const actualChange = currentPrice - this.currentPrice;
-    const actualChangePercent = ((currentPrice - this.currentPrice) / this.currentPrice) * 100;
+    // Prevent division by zero
+    const actualChangePercent = this.currentPrice > 0
+        ? ((currentPrice - this.currentPrice) / this.currentPrice) * 100
+        : 0;
 
     // Determine if prediction was correct
     let wasCorrect = false;

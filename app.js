@@ -12,6 +12,7 @@ const xss = require('xss-clean');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const app = express();
 const journalRoutes = require('./routes/journalRoutes');
 const screenerRoutes = require('./routes/screenerRoutes');
@@ -80,6 +81,23 @@ app.use(cors({
 }));
 app.options('*', cors());
 
+// --- Rate Limiting ---
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // 10 attempts per window
+    message: { error: 'Too many login attempts, please try again after 15 minutes' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // 100 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 // --- Middleware ---
 app.use(helmet());
 app.use(express.json({ limit: '10kb' }));
@@ -88,6 +106,11 @@ app.use(cookieParser());
 app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());
+
+// Apply rate limiting
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/', apiLimiter);
 
 // --- ROUTE IMPORTS ---
 const authRoutes = require('./routes/authRoutes');

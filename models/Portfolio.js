@@ -65,7 +65,7 @@ const PortfolioSchema = new mongoose.Schema({
     holdings: [HoldingSchema],
     cashBalance: {
         type: Number,
-        default: 10000.00,
+        default: 100000.00,
         min: 0
     },
     // Portfolio totals
@@ -136,7 +136,7 @@ HoldingSchema.methods.updateValues = function() {
 
 // Calculate all portfolio totals
 PortfolioSchema.methods.calculateTotals = function() {
-    const startingBalance = 10000; // Starting paper trading balance
+    const startingBalance = 100000; // Starting paper trading balance (matches PaperTradingAccount)
     let totalInvested = 0;
     let currentValue = 0;
 
@@ -154,15 +154,15 @@ PortfolioSchema.methods.calculateTotals = function() {
     
     this.lastUpdatedAt = Date.now();
 
-    // Update all-time high/low
-    if (!this.allTimeHigh.value || this.totalValue > this.allTimeHigh.value) {
+    // Update all-time high/low (with null safety)
+    if (!this.allTimeHigh || !this.allTimeHigh.value || this.totalValue > this.allTimeHigh.value) {
         this.allTimeHigh = {
             value: this.totalValue,
             date: Date.now()
         };
     }
-    
-    if (!this.allTimeLow.value || this.totalValue < this.allTimeLow.value) {
+
+    if (!this.allTimeLow || !this.allTimeLow.value || this.totalValue < this.allTimeLow.value) {
         this.allTimeLow = {
             value: this.totalValue,
             date: Date.now()
@@ -327,7 +327,7 @@ PortfolioSchema.statics.getOrCreate = async function(userId) {
         portfolio = await this.create({
             user: userId,
             holdings: [],
-            cashBalance: 10000.00
+            cashBalance: 100000.00
         });
     }
     

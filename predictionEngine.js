@@ -107,8 +107,11 @@ const calculateMACD = (data) => {
     const latestSignalLine = signalLineSeries[signalLineSeries.length - 1];
     const histogram = latestMacdLine - latestSignalLine; // Histogram is MACD - Signal
 
-    // Get the previous histogram value for crossover detection
-    const previousHistogram = macdLineSeries[macdLineSeries.length - 2] - signalLineSeries[signalLineSeries.length - 2];
+    // Get the previous histogram value for crossover detection (with bounds check)
+    let previousHistogram = 0;
+    if (macdLineSeries.length >= 2 && signalLineSeries.length >= 2) {
+        previousHistogram = macdLineSeries[macdLineSeries.length - 2] - signalLineSeries[signalLineSeries.length - 2];
+    }
 
     return {
         macdLine: latestMacdLine,

@@ -17,6 +17,18 @@ const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const stockCache = {};
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 const QUOTE_CACHE_DURATION = 60 * 1000; // 1 minute for quotes
+const MAX_CACHE_SIZE = 500; // Maximum cache entries to prevent memory leaks
+
+// Cache cleanup function to prevent memory leaks
+function cleanupStockCache() {
+    const keys = Object.keys(stockCache);
+    if (keys.length > MAX_CACHE_SIZE) {
+        const sortedKeys = keys.sort((a, b) => stockCache[a].timestamp - stockCache[b].timestamp);
+        const keysToRemove = sortedKeys.slice(0, keys.length - MAX_CACHE_SIZE);
+        keysToRemove.forEach(key => delete stockCache[key]);
+        console.log(`[Stock] Cleaned up ${keysToRemove.length} old cache entries`);
+    }
+}
 
 // Map frontend ranges to Alpha Vantage time series functions
 function getAlphaVantageFunction(range) {
@@ -60,15 +72,20 @@ async function fetchAlphaVantageData(symbol, range) {
     const interval = getAlphaVantageInterval(range);
     const outputsize = getOutputSize(range);
 
-    let url = `https://www.alphavantage.co/query?function=${func}&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}&outputsize=${outputsize}`;
-    
+    const params = {
+        function: func,
+        symbol: symbol,
+        apikey: ALPHA_VANTAGE_API_KEY,
+        outputsize: outputsize
+    };
+
     if (interval) {
-        url += `&interval=${interval}`;
+        params.interval = interval;
     }
 
     console.log(`Fetching from Alpha Vantage: ${symbol}, Function: ${func}`);
 
-    const response = await axios.get(url);
+    const response = await axios.get('https://www.alphavantage.co/query', { params, timeout: 15000 });
     const data = response.data;
 
     // Check for API errors
@@ -195,6 +212,7 @@ router.get('/:symbol', async (req, res, next) => {
                 };
 
                 stockCache[cacheKey] = { timestamp: Date.now(), data: stockData };
+                cleanupStockCache();
                 return res.json(stockData);
             }
         } catch (yahooError) {
@@ -255,6 +273,7 @@ router.get('/:symbol', async (req, res, next) => {
         };
 
         stockCache[cacheKey] = { timestamp: Date.now(), data: stockData };
+        cleanupStockCache();
         res.json(stockData);
 
     } catch (error) {

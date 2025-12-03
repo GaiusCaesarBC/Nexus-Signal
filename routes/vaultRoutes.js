@@ -332,8 +332,9 @@ router.post('/purchase/:itemId', auth, async (req, res) => {
         const coinsUpdated = await updateUserCoins(user._id, newCoinBalance);
         if (!coinsUpdated) {
             console.error('[Vault] Failed to update coins!');
+            return res.status(500).json({ error: 'Failed to process payment. Please try again.' });
         }
-        
+
         // Add item to owned items
         vault.ownedItems.push(itemId);
         user.vault = vault;

@@ -18,9 +18,15 @@ module.exports = async (req, res, next) => {
     }
 
     try {
+        // Validate JWT_SECRET exists
+        if (!process.env.JWT_SECRET) {
+            console.error("[AuthMiddleware] JWT_SECRET not configured");
+            return res.status(500).json({ msg: 'Server configuration error' });
+        }
+
         // 2. Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log("[AuthMiddleware] Token decoded:", decoded);
+        // Note: Removed token logging for security
 
         // 3. Attach user to request
         req.user = await User.findById(decoded.user.id).select('-password');
@@ -30,7 +36,7 @@ module.exports = async (req, res, next) => {
             return res.status(401).json({ msg: 'Authorization denied: User not found' });
         }
 
-        console.log("[AuthMiddleware] User authenticated:", req.user.email);
+        // User authenticated successfully
         next();
     } catch (err) {
         console.error("[AuthMiddleware] Token verification failed:", err.message);

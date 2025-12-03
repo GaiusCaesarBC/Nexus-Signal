@@ -17,8 +17,21 @@ const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for historical
 const QUOTE_CACHE_DURATION = 60 * 1000; // 1 minute for quotes
+const AXIOS_TIMEOUT = 10000; // 10 second timeout for API calls
+const MAX_CACHE_SIZE = 500; // Maximum cache entries to prevent memory leaks
 const cryptoCache = {};
 const quoteCache = {};
+
+// Cache cleanup function to prevent memory leaks
+function cleanupCache(cache, maxSize) {
+    const keys = Object.keys(cache);
+    if (keys.length > maxSize) {
+        const sortedKeys = keys.sort((a, b) => cache[a].timestamp - cache[b].timestamp);
+        const keysToRemove = sortedKeys.slice(0, keys.length - maxSize);
+        keysToRemove.forEach(key => delete cache[key]);
+        console.log(`[Crypto] Cleaned up ${keysToRemove.length} old cache entries`);
+    }
+}
 
 const cryptoSymbolMap = {
     BTC: 'bitcoin', ETH: 'ethereum', XRP: 'ripple', LTC: 'litecoin', 
@@ -89,7 +102,7 @@ router.get('/test-api/:symbol?', async (req, res) => {
         };
 
         console.log('\n--- Test 1: Simple Price ---');
-        const priceResponse = await axios.get(priceUrl, { params: priceParams });
+        const priceResponse = await axios.get(priceUrl, { params: priceParams, timeout: AXIOS_TIMEOUT });
         const priceData = priceResponse.data[coinGeckoId];
 
         console.log('✅ Price Response:', JSON.stringify(priceData, null, 2));
@@ -103,7 +116,7 @@ router.get('/test-api/:symbol?', async (req, res) => {
         };
 
         console.log('\n--- Test 2: Market Chart ---');
-        const chartResponse = await axios.get(chartUrl, { params: chartParams });
+        const chartResponse = await axios.get(chartUrl, { params: chartParams, timeout: AXIOS_TIMEOUT });
         const prices = chartResponse.data.prices || [];
 
         console.log('✅ Data Points:', prices.length);
@@ -165,7 +178,7 @@ router.get('/quote/:symbol', async (req, res) => {
             x_cg_pro_api_key: COINGECKO_API_KEY
         };
 
-        const response = await axios.get(url, { params });
+        const response = await axios.get(url, { params, timeout: AXIOS_TIMEOUT });
         const data = response.data;
         const market = data.market_data;
 
@@ -195,8 +208,9 @@ router.get('/quote/:symbol', async (req, res) => {
             image: data.image?.small || null
         };
 
-        // Cache the result
+        // Cache the result and cleanup if needed
         quoteCache[cacheKey] = { timestamp: Date.now(), data: quoteData };
+        cleanupCache(quoteCache, MAX_CACHE_SIZE);
 
         res.json(quoteData);
 
@@ -245,8 +259,8 @@ async function fetchCryptoData(symbol, range) {
     console.log(`[Crypto] Has API Key:`, !!COINGECKO_API_KEY);
 
     try {
-        const response = await axios.get(url, { params });
-        
+        const response = await axios.get(url, { params, timeout: AXIOS_TIMEOUT });
+
         console.log(`[Crypto] ✅ Response status: ${response.status}`);
         
         const prices = response.data.prices || [];
@@ -310,6 +324,7 @@ async function fetchCryptoData(symbol, range) {
         console.log(`[Crypto] ✅ Final current price for ${symbol}: $${finalPrice.toFixed(2)}`);
 
         cryptoCache[cacheKey] = { timestamp: Date.now(), data: historicalData };
+        cleanupCache(cryptoCache, MAX_CACHE_SIZE);
         return historicalData;
 
     } catch (error) {

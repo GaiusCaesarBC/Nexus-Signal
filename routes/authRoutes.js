@@ -43,10 +43,14 @@ router.get('/me', auth, async (req, res) => {
 // @route   POST api/auth/register
 router.post(
     '/register',
+    strictBotProtection,
     [
-        body('email', 'Please include a valid email').isEmail(),
-        body('password', 'Password must be 6 or more characters').isLength({ min: 6 }),
-        body('username', 'Username is required').notEmpty().isLength({ min: 3 })
+        body('email', 'Please include a valid email').isEmail().normalizeEmail(),
+        body('password', 'Password must be 8 or more characters').isLength({ min: 8 }),
+        body('username', 'Username must be 3-20 characters with letters, numbers, and underscores only')
+            .notEmpty()
+            .isLength({ min: 3, max: 20 })
+            .matches(/^[a-zA-Z0-9_]+$/)
     ],
     async (req, res) => {
         const errors = validationResult(req);
@@ -184,9 +188,10 @@ router.post('/daily-login', auth, async (req, res) => {
 // @route   POST api/auth/login
 router.post(
     '/login',
+    strictBotProtection,
     [
-        body('email', 'Please include a valid email').isEmail(),
-        body('password', 'Password is required').exists()
+        body('email', 'Please include a valid email').isEmail().normalizeEmail(),
+        body('password', 'Password is required').exists().isLength({ min: 1 })
     ],
     async (req, res) => {
         const errors = validationResult(req);
