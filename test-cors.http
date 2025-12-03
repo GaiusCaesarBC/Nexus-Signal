@@ -1,0 +1,5 @@
+### Test CORS Preflight for Login Route
+OPTIONS https://refactored-robot-r456x9xvgqw7cpgjv-5000.app.github.dev/api/auth/login
+Origin: https://refactored-robot-r456x9xvgqw7cpgjv-3000.app.github.dev
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type, Authorization, X-Requested-With, x-auth-token

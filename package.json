@@ -1,0 +1,50 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Backend server for Nexus Signal AI",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "server": "nodemon app.js",
+    "seed-vault": "node scripts/seedVault.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
+    "@vercel/analytics": "^1.5.0",
+    "axios": "^1.13.2",
+    "bcryptjs": "^2.4.3",
+    "cheerio": "^1.1.2",
+    "cloudinary": "^1.41.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-async-handler": "^1.2.0",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^5.5.1",
+    "express-validator": "^7.3.0",
+    "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
+    "jsonwebtoken": "^9.0.2",
+    "lru-cache": "^11.2.2",
+    "mongodb": "^6.8.0",
+    "mongoose": "^8.19.2",
+    "multer": "^2.0.2",
+    "multer-storage-cloudinary": "^4.0.0",
+    "natural": "^8.1.0",
+    "node-cron": "^4.2.1",
+    "openai": "^6.9.1",
+    "sentiment": "^5.0.2",
+    "stripe": "^17.0.0",
+    "technicalindicators": "^3.1.0",
+    "twitter-api-v2": "^1.28.0",
+    "xss-clean": "^0.1.1",
+    "yahoo-finance2": "^3.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.12"
+  }
+}
