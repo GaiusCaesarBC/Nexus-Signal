@@ -505,17 +505,17 @@ router.post('/predict', auth, async (req, res) => {
                     }
                     
                     if (finalCurrentPrice && finalTargetPrice) {
-                        predictionData = {
-                            symbol: symbol,
-                            current_price: parseFloat(finalCurrentPrice),
-                            prediction: {
-                                target_price: parseFloat(finalTargetPrice.toFixed(2)),
-                                direction: validDirection,
-                                price_change: parseFloat(finalPriceChange.toFixed(2)),
-                                price_change_percent: parseFloat(finalPercentChange.toFixed(2)),
-                                confidence: parseFloat(mlConfidence),
-                                days: days
-                            },
+    predictionData = {
+        symbol: symbol,
+        current_price: parseFloat(finalCurrentPrice),
+        prediction: {
+            target_price: parseFloat(finalTargetPrice),  // ✅ FIXED: Preserves all decimals
+            direction: validDirection,
+            price_change: parseFloat(finalPriceChange),  // ✅ FIXED: Preserves all decimals
+            price_change_percent: parseFloat(finalPercentChange.toFixed(2)),
+            confidence: parseFloat(mlConfidence),
+            days: days
+        },
                             analysis: ml.analysis || {
                                 trend: validDirection === 'UP' ? 'Bullish' : 'Bearish',
                                 volatility: 'Moderate',
