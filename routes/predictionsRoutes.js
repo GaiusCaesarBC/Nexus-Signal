@@ -509,9 +509,9 @@ router.post('/predict', auth, async (req, res) => {
         symbol: symbol,
         current_price: parseFloat(finalCurrentPrice),
         prediction: {
-            target_price: parseFloat(finalTargetPrice),  // ✅ FIXED: Preserves all decimals
-            direction: validDirection,
-            price_change: parseFloat(finalPriceChange),  // ✅ FIXED: Preserves all decimals
+           target_price: parseFloat(finalTargetPrice),
+direction: validDirection,
+price_change: parseFloat(finalPriceChange),
             price_change_percent: parseFloat(finalPercentChange.toFixed(2)),
             confidence: parseFloat(mlConfidence),
             days: days
