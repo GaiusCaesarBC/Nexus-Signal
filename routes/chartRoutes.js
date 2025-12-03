@@ -150,7 +150,7 @@ entries.forEach(([time, values]) => {
 // Convert Map to array and sort by timestamp
 const chartData = Array.from(uniqueData.values())
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-200); // Take last 200 candles
+    .slice(-500); // Take last 500 candles
 
 
             // Cache the data
@@ -278,7 +278,7 @@ entries.forEach(([time, values]) => {
 // Convert Map to array and sort by timestamp
 const chartData = Array.from(uniqueData.values())
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-200); // Take last 200 candles
+    .slice(-500); // Take last 500 candles
             
             // Cache the data
             chartDataCache.set(cacheKey, {
