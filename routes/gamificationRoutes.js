@@ -334,11 +334,11 @@ router.get('/stats', authMiddleware, async (req, res) => {
             followingCount: gamification.stats?.followingCount || 0
         };
 
-        // Calculate XP bounds for current level
+        // ✅ FIXED: Calculate XP bounds using LEVEL_THRESHOLDS (not level * 1000)
         const level = gamification.level || 1;
         const xp = gamification.xp || 0;
-        const xpForCurrentLevel = (level - 1) * 1000;
-        const xpForNextLevel = level * 1000;
+        const xpForCurrentLevel = LEVEL_THRESHOLDS[level - 1] || 0;
+        const xpForNextLevel = LEVEL_THRESHOLDS[level] || LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
 
         // Build vault data from User model
         const vaultData = {
@@ -369,6 +369,10 @@ router.get('/stats', authMiddleware, async (req, res) => {
                 lastLoginDate: gamification.lastLoginDate || null,
                 xpForCurrentLevel: xpForCurrentLevel,
                 xpForNextLevel: xpForNextLevel,
+                // ✅ Pre-calculated progress percent for client convenience
+                progressPercent: xpForNextLevel > xpForCurrentLevel
+                    ? Math.min(100, ((xp - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100)
+                    : 100,
                 predictionResetDate: gamification.predictionResetDate || null,
                 
                 // Legacy equippedItems (keep for backward compatibility)

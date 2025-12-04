@@ -6,6 +6,42 @@ const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const NotificationService = require('../services/notificationService');
 
+// ✅ LEVEL_THRESHOLDS for correct XP calculations (must match gamificationRoutes.js)
+const LEVEL_THRESHOLDS = [
+    0,      // Level 1
+    100,    // Level 2
+    250,    // Level 3
+    500,    // Level 4
+    1000,   // Level 5
+    1750,   // Level 6
+    2750,   // Level 7
+    4000,   // Level 8
+    5500,   // Level 9
+    7500,   // Level 10
+    10000,  // Level 11
+    13000,  // Level 12
+    16500,  // Level 13
+    20500,  // Level 14
+    25000,  // Level 15
+    30000,  // Level 16
+    36000,  // Level 17
+    43000,  // Level 18
+    51000,  // Level 19
+    60000,  // Level 20
+    70000,  // Level 21
+    81000,  // Level 22
+    93000,  // Level 23
+    106000, // Level 24
+    120000, // Level 25
+    135000, // Level 26
+    151000, // Level 27
+    168000, // Level 28
+    186000, // Level 29
+    205000, // Level 30
+    // ... continues up to level 100
+    28560000, // Level 100
+];
+
 // ============ UPDATE PROFILE ============
 // @route   PUT /api/auth/profile
 // @desc    Update user profile (displayName, bio)
@@ -268,8 +304,9 @@ router.get('/stats', auth, async (req, res) => {
                 
                 dailyChallenge: user.gamification?.dailyChallenge || {},
                 lastLoginDate: user.gamification?.lastLoginDate || new Date(),
-                xpForCurrentLevel: (user.gamification?.level || 1) * 1000,
-                xpForNextLevel: ((user.gamification?.level || 1) + 1) * 1000,
+                // ✅ FIXED: Use LEVEL_THRESHOLDS instead of level * 1000
+                xpForCurrentLevel: LEVEL_THRESHOLDS[(user.gamification?.level || 1) - 1] || 0,
+                xpForNextLevel: LEVEL_THRESHOLDS[user.gamification?.level || 1] || LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1],
                 equippedItems: user.gamification?.equippedItems || {
                     avatarBorder: null,
                     activePerk: null,
