@@ -5,6 +5,7 @@ const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const stocktwitsService = require('../services/stocktwitsService');
 const sentimentTracker = require('../utils/sentimentTracker');
+const priceService = require('../services/priceService');
 const axios = require('axios');
 
 // ============ ML SERVICE CONFIG ============
@@ -23,7 +24,7 @@ async function getPrediction(symbol, token) {
             {
                 symbol: symbol.toUpperCase(),
                 days: 7,
-                type: isCrypto(symbol) ? 'crypto' : 'stock'
+                type: priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock'
             },
             {
                 headers: {
@@ -83,17 +84,6 @@ async function getPrediction(symbol, token) {
     }
 }
 
-// Detect if symbol is crypto
-function isCrypto(symbol) {
-    const cryptoSymbols = [
-        'BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'DOT', 'MATIC', 'SHIB',
-        'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL',
-        'THETA', 'XMR', 'AAVE', 'EOS', 'MKR', 'XTZ', 'NEO', 'CAKE', 'COMP', 'SNX'
-    ];
-    const upperSymbol = symbol.toUpperCase().replace('.X', '');
-    return cryptoSymbols.includes(upperSymbol) || symbol.toUpperCase().endsWith('.X');
-}
-
 // ============ ROUTES ============
 
 // @route   GET /api/sentiment/search/:symbol
@@ -101,9 +91,16 @@ function isCrypto(symbol) {
 // @access  Private
 router.get('/search/:symbol', auth, async (req, res) => {
     try {
-        const { symbol } = req.params;
-        
-        console.log(`\n[Sentiment] ===== Analyzing ${symbol.toUpperCase()} with REAL DATA + REAL AI =====`);
+        let { symbol } = req.params;
+
+        // Normalize symbol (handles BTC-USD, BTCUSD, etc.)
+        const originalSymbol = symbol.toUpperCase().trim();
+        symbol = priceService.normalizeSymbol(originalSymbol);
+        if (originalSymbol !== symbol) {
+            console.log(`[Sentiment] Symbol normalized: ${originalSymbol} -> ${symbol}`);
+        }
+
+        console.log(`\n[Sentiment] ===== Analyzing ${symbol} with REAL DATA + REAL AI =====`);
         
         // Get real messages from StockTwits AND real prediction in parallel
         const [messages, prediction] = await Promise.all([
@@ -118,7 +115,7 @@ router.get('/search/:symbol', auth, async (req, res) => {
             return res.json({
                 success: true,
                 symbol: symbol.toUpperCase(),
-                type: isCrypto(symbol) ? 'crypto' : 'stock',
+                type: priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock',
                 sentiment: {
                     overall: 'neutral',
                     distribution: { bullish: 0, neutral: 100, bearish: 0 },
