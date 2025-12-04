@@ -240,11 +240,11 @@ function generateMockPrediction(symbol, days, currentPrice = null) {
 
     return {
         symbol: symbol.toUpperCase(),
-        current_price: parseFloat(basePrice.toFixed(2)),
+        current_price: parseFloat(basePrice),
         prediction: {
-            target_price: parseFloat(targetPrice.toFixed(2)),
+            target_price: parseFloat(targetPrice),
             direction: direction,
-            price_change: parseFloat((targetPrice - basePrice).toFixed(2)),
+            price_change: parseFloat(targetPrice - basePrice),
             price_change_percent: parseFloat(changePercent),
             confidence: parseFloat(confidence),
             days: days
@@ -545,8 +545,8 @@ price_change: parseFloat(finalPriceChange),
             const newTargetPrice = currentPrice * (1 + percentChange / 100);
             
             predictionData.current_price = currentPrice;
-            predictionData.prediction.target_price = parseFloat(newTargetPrice.toFixed(2));
-            predictionData.prediction.price_change = parseFloat((newTargetPrice - currentPrice).toFixed(2));
+            predictionData.prediction.target_price = parseFloat(newTargetPrice);
+            predictionData.prediction.price_change = parseFloat(newTargetPrice - currentPrice);
         }
         
         // Guarantee indicators
