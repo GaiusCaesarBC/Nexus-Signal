@@ -623,6 +623,14 @@ const ACHIEVEMENT_PROGRESS_MAP = {
     'login_streak_3': { statKey: 'loginStreak', threshold: 3 },
     'login_streak_7': { statKey: 'loginStreak', threshold: 7 },
     'login_streak_30': { statKey: 'loginStreak', threshold: 30 },
+
+    // Level achievements (use special 'level' statKey)
+    'level_5': { statKey: 'level', threshold: 5 },
+    'level_10': { statKey: 'level', threshold: 10 },
+    'level_25': { statKey: 'level', threshold: 25 },
+    'level_50': { statKey: 'level', threshold: 50 },
+    'level_75': { statKey: 'level', threshold: 75 },
+    'level_100': { statKey: 'level', threshold: 100 },
 };
 
 // @route   GET /api/gamification/achievements
@@ -644,7 +652,12 @@ router.get('/achievements', authMiddleware, async (req, res) => {
 
             if (!userAchievement && progressInfo) {
                 threshold = progressInfo.threshold;
-                progress = userStats[progressInfo.statKey] || 0;
+                // Special handling for level - it's in gamification.level, not stats
+                if (progressInfo.statKey === 'level') {
+                    progress = user?.gamification?.level || 1;
+                } else {
+                    progress = userStats[progressInfo.statKey] || 0;
+                }
                 // Cap progress at threshold (100%)
                 progress = Math.min(progress, threshold);
             }
