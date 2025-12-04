@@ -638,7 +638,30 @@ const ACHIEVEMENT_PROGRESS_MAP = {
 // @access  Private
 router.get('/achievements', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('gamification').lean();
+        // First fetch user (non-lean) so we can auto-sync if needed
+        let userDoc = await User.findById(req.user.id).select('gamification');
+
+        if (!userDoc?.gamification) {
+            return res.status(404).json({ success: false, error: 'User gamification data not found' });
+        }
+
+        // ✅ FIXED: Calculate correct level from totalXpEarned (not stored level which may be stale)
+        const totalXpEarned = userDoc.gamification.totalXpEarned || 0;
+        const correctLevel = calculateLevelFromXp(totalXpEarned);
+        const storedLevel = userDoc.gamification.level || 1;
+
+        console.log(`[Achievements] User level: stored=${storedLevel}, calculated=${correctLevel}, totalXP=${totalXpEarned}`);
+
+        // ✅ AUTO-SYNC: If stored level doesn't match calculated level, fix it
+        if (storedLevel !== correctLevel) {
+            console.log(`[Achievements] Auto-syncing level: ${storedLevel} → ${correctLevel}`);
+            userDoc.gamification.level = correctLevel;
+            userDoc.gamification.title = getTitleForLevel(correctLevel);
+            await userDoc.save();
+        }
+
+        // Convert to lean object for processing
+        const user = userDoc.toObject();
         const userStats = user?.gamification?.stats || {};
 
         // Map all achievements with unlock status and progress
@@ -652,9 +675,9 @@ router.get('/achievements', authMiddleware, async (req, res) => {
 
             if (!userAchievement && progressInfo) {
                 threshold = progressInfo.threshold;
-                // Special handling for level - it's in gamification.level, not stats
+                // Special handling for level - use calculated level from totalXpEarned
                 if (progressInfo.statKey === 'level') {
-                    progress = user?.gamification?.level || 1;
+                    progress = correctLevel;
                 } else {
                     progress = userStats[progressInfo.statKey] || 0;
                 }
