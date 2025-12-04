@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
                 avatar: user.avatar || user.profile?.avatar,
                 level: user.level || 1,
                 xp: user.xp || 0,
-                equippedBorder: user.vault?.equippedBorder || 'border-default',
+                equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 equippedTheme: user.profile?.equippedTheme || 'theme-default',
                 totalValue: totalValue,
                 totalReturn: totalReturn,
@@ -129,7 +129,7 @@ router.get('/top', async (req, res) => {
                 displayName: user.displayName || user.username,
                 avatar: user.avatar || user.profile?.avatar,
                 level: user.level || 1,
-                equippedBorder: user.vault?.equippedBorder || 'border-default',
+                equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 totalReturnPercent: totalReturnPercent
             };
         })
@@ -191,7 +191,7 @@ router.get('/winners', async (req, res) => {
                     displayName: user.displayName || user.username,
                     avatar: user.avatar || user.profile?.avatar,
                     level: user.level || 1,
-                    equippedBorder: user.vault?.equippedBorder || 'border-default',
+                    equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                     totalReturnPercent: portfolio.totalChangePercent || 0,
                     updatedAt: portfolio.updatedAt || user.updatedAt
                 };
