@@ -23,6 +23,119 @@ function appendDebugLog(label, obj) {
     }
 }
 
+
+// @route   GET /api/predictions/symbols/search
+// @desc    Search for valid stock/crypto symbols
+// @access  Public
+router.get('/symbols/search', async (req, res) => {
+    try {
+        const { q, type } = req.query;
+        const query = (q || '').toUpperCase().trim();
+
+        if (!query || query.length < 1) {
+            return res.json({ symbols: [] });
+        }
+
+        const results = [];
+
+        // Search crypto symbols
+        if (!type || type === 'crypto' || type === 'all') {
+            const cryptoSymbols = Array.from(priceService.CRYPTO_SYMBOLS);
+            const matchingCrypto = cryptoSymbols.filter(s =>
+                s.startsWith(query) || s.includes(query)
+            ).slice(0, 20).map(s => ({
+                symbol: s,
+                name: priceService.COINGECKO_IDS[s] ?
+                    priceService.COINGECKO_IDS[s].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : s,
+                type: 'crypto'
+            }));
+            results.push(...matchingCrypto);
+        }
+
+        // Search popular stocks (hardcoded list for quick search)
+        if (!type || type === 'stock' || type === 'all') {
+            const popularStocks = [
+                { symbol: 'AAPL', name: 'Apple Inc.' },
+                { symbol: 'MSFT', name: 'Microsoft Corporation' },
+                { symbol: 'GOOGL', name: 'Alphabet Inc.' },
+                { symbol: 'AMZN', name: 'Amazon.com Inc.' },
+                { symbol: 'TSLA', name: 'Tesla Inc.' },
+                { symbol: 'META', name: 'Meta Platforms Inc.' },
+                { symbol: 'NVDA', name: 'NVIDIA Corporation' },
+                { symbol: 'AMD', name: 'Advanced Micro Devices' },
+                { symbol: 'NFLX', name: 'Netflix Inc.' },
+                { symbol: 'DIS', name: 'Walt Disney Co.' },
+                { symbol: 'BA', name: 'Boeing Company' },
+                { symbol: 'JPM', name: 'JPMorgan Chase & Co.' },
+                { symbol: 'V', name: 'Visa Inc.' },
+                { symbol: 'MA', name: 'Mastercard Inc.' },
+                { symbol: 'WMT', name: 'Walmart Inc.' },
+                { symbol: 'JNJ', name: 'Johnson & Johnson' },
+                { symbol: 'PG', name: 'Procter & Gamble' },
+                { symbol: 'UNH', name: 'UnitedHealth Group' },
+                { symbol: 'HD', name: 'Home Depot Inc.' },
+                { symbol: 'INTC', name: 'Intel Corporation' },
+                { symbol: 'CRM', name: 'Salesforce Inc.' },
+                { symbol: 'PYPL', name: 'PayPal Holdings' },
+                { symbol: 'COIN', name: 'Coinbase Global' },
+                { symbol: 'SQ', name: 'Block Inc.' },
+                { symbol: 'PLTR', name: 'Palantir Technologies' },
+                { symbol: 'GME', name: 'GameStop Corp.' },
+                { symbol: 'AMC', name: 'AMC Entertainment' },
+                { symbol: 'SPY', name: 'SPDR S&P 500 ETF' },
+                { symbol: 'QQQ', name: 'Invesco QQQ Trust' },
+                { symbol: 'ARKK', name: 'ARK Innovation ETF' }
+            ];
+
+            const matchingStocks = popularStocks.filter(s =>
+                s.symbol.startsWith(query) || s.symbol.includes(query) ||
+                s.name.toUpperCase().includes(query)
+            ).slice(0, 20).map(s => ({ ...s, type: 'stock' }));
+            results.push(...matchingStocks);
+        }
+
+        // Sort by exact match first, then alphabetically
+        results.sort((a, b) => {
+            if (a.symbol === query) return -1;
+            if (b.symbol === query) return 1;
+            if (a.symbol.startsWith(query) && !b.symbol.startsWith(query)) return -1;
+            if (!a.symbol.startsWith(query) && b.symbol.startsWith(query)) return 1;
+            return a.symbol.localeCompare(b.symbol);
+        });
+
+        res.json({
+            symbols: results.slice(0, 30),
+            query: query
+        });
+
+    } catch (error) {
+        console.error('[Predictions] Symbol search error:', error.message);
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+
+// @route   GET /api/predictions/symbols/all
+// @desc    Get all available symbols for predictions
+// @access  Public
+router.get('/symbols/all', (req, res) => {
+    try {
+        const cryptoSymbols = Array.from(priceService.CRYPTO_SYMBOLS).map(s => ({
+            symbol: s,
+            name: priceService.COINGECKO_IDS[s] || s,
+            type: 'crypto'
+        }));
+
+        res.json({
+            crypto: cryptoSymbols,
+            cryptoCount: cryptoSymbols.length,
+            note: 'Stocks can use any valid ticker symbol'
+        });
+    } catch (error) {
+        console.error('[Predictions] Symbols list error:', error.message);
+        res.status(500).json({ error: 'Failed to get symbols' });
+    }
+});
+
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
 
@@ -371,7 +484,12 @@ router.post('/predict', auth, async (req, res) => {
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
-        symbol = symbol.toUpperCase().trim();
+        // Normalize symbol (handles BTC-USD, BTCUSD -> BTC for crypto)
+        const originalSymbol = symbol.toUpperCase().trim();
+        symbol = priceService.normalizeSymbol(originalSymbol);
+        if (originalSymbol !== symbol) {
+            console.log(`[Predictions] Symbol normalized: ${originalSymbol} -> ${symbol}`);
+        }
 
         // Auto-detect asset type
         if (!assetType) {

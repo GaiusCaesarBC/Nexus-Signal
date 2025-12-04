@@ -76,12 +76,49 @@ const COINGECKO_IDS = {
 // ============ HELPER FUNCTIONS ============
 
 /**
+ * Normalize symbol - handles BTC-USD, BTC/USD, BTCUSD -> BTC
+ * Allows users to enter crypto in any common format
+ */
+function normalizeSymbol(symbol) {
+    if (!symbol) return '';
+    let upper = symbol.toUpperCase().trim();
+
+    // Remove common crypto pair suffixes
+    const suffixes = ['-USD', '-USDT', '-BUSD', '-EUR', '-GBP', '/USD', '/USDT'];
+    for (const suffix of suffixes) {
+        if (upper.endsWith(suffix)) {
+            const base = upper.slice(0, -suffix.length);
+            // Only strip if the base is a known crypto
+            if (CRYPTO_SYMBOLS.has(base) || COINGECKO_IDS.hasOwnProperty(base)) {
+                return base;
+            }
+        }
+    }
+
+    // Handle BTCUSD, ETHUSD format (4+ char base + USD/USDT)
+    if (upper.endsWith('USDT') && upper.length > 4) {
+        const base = upper.slice(0, -4);
+        if (CRYPTO_SYMBOLS.has(base) || COINGECKO_IDS.hasOwnProperty(base)) {
+            return base;
+        }
+    }
+    if (upper.endsWith('USD') && upper.length > 3) {
+        const base = upper.slice(0, -3);
+        if (CRYPTO_SYMBOLS.has(base) || COINGECKO_IDS.hasOwnProperty(base)) {
+            return base;
+        }
+    }
+
+    return upper;
+}
+
+/**
  * Check if a symbol is a cryptocurrency
  */
 function isCryptoSymbol(symbol) {
     if (!symbol) return false;
-    const upper = symbol.toUpperCase().trim();
-    return CRYPTO_SYMBOLS.has(upper) || COINGECKO_IDS.hasOwnProperty(upper);
+    const normalized = normalizeSymbol(symbol);
+    return CRYPTO_SYMBOLS.has(normalized) || COINGECKO_IDS.hasOwnProperty(normalized);
 }
 
 /**
@@ -89,8 +126,8 @@ function isCryptoSymbol(symbol) {
  */
 function getCoinGeckoId(symbol) {
     if (!symbol) return null;
-    const upper = symbol.toUpperCase().trim();
-    return COINGECKO_IDS[upper] || upper.toLowerCase();
+    const normalized = normalizeSymbol(symbol);
+    return COINGECKO_IDS[normalized] || normalized.toLowerCase();
 }
 
 /**
@@ -373,6 +410,7 @@ module.exports = {
     getBatchPrices,
     
     // Helper functions
+    normalizeSymbol,
     isCryptoSymbol,
     getCoinGeckoId,
     
