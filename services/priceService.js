@@ -260,35 +260,56 @@ function setCache(key, price, source) {
 
 /**
  * Fetch crypto price from CoinGecko
+ * @param {string} symbol - The crypto symbol (e.g., BTC, ETH)
+ * @param {string} coinGeckoId - Optional: The exact CoinGecko ID if known
  */
-async function fetchCryptoPrice(symbol) {
-    const coinId = getCoinGeckoId(symbol);
-    
+async function fetchCryptoPrice(symbol, coinGeckoId = null) {
+    // Use provided coinGeckoId if available, otherwise derive from symbol
+    const coinId = coinGeckoId || getCoinGeckoId(symbol);
+
     try {
         const headers = {};
         if (COINGECKO_API_KEY) {
             headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
         }
-        
-        const baseUrl = COINGECKO_API_KEY 
+
+        const baseUrl = COINGECKO_API_KEY
             ? 'https://pro-api.coingecko.com/api/v3'
             : 'https://api.coingecko.com/api/v3';
-        
+
         const response = await axios.get(
             `${baseUrl}/simple/price?ids=${coinId}&vs_currencies=usd`,
             { headers, timeout: 10000 }
         );
-        
+
         if (response.data && response.data[coinId] && response.data[coinId].usd) {
             return {
                 price: response.data[coinId].usd,
-                source: 'coingecko'
+                source: 'coingecko',
+                coinGeckoId: coinId
             };
         }
+
+        // If the provided/derived ID failed and we have a coinGeckoId, try symbol-based lookup as fallback
+        if (coinGeckoId && coinId !== getCoinGeckoId(symbol)) {
+            const fallbackId = getCoinGeckoId(symbol);
+            const fallbackResponse = await axios.get(
+                `${baseUrl}/simple/price?ids=${fallbackId}&vs_currencies=usd`,
+                { headers, timeout: 10000 }
+            );
+
+            if (fallbackResponse.data && fallbackResponse.data[fallbackId] && fallbackResponse.data[fallbackId].usd) {
+                return {
+                    price: fallbackResponse.data[fallbackId].usd,
+                    source: 'coingecko',
+                    coinGeckoId: fallbackId
+                };
+            }
+        }
     } catch (error) {
-        console.log(`[PriceService] CoinGecko failed for ${symbol}:`, error.message);
+        console.log(`[PriceService] CoinGecko failed for ${symbol} (${coinId}):`, error.message);
     }
-    
+
     return { price: null, source: null };
 }
 
@@ -383,31 +404,35 @@ async function fetchStockPriceFinnhub(symbol) {
  * Get current price for any symbol (crypto or stock)
  * @param {string} symbol - The symbol to get price for
  * @param {string} assetType - Optional: 'crypto' or 'stock'
+ * @param {object} options - Optional: { coinGeckoId: string } for crypto
  * @returns {Promise<{price: number|null, source: string|null, cached: boolean}>}
  */
-async function getCurrentPrice(symbol, assetType = null) {
+async function getCurrentPrice(symbol, assetType = null, options = {}) {
     if (!symbol) {
         return { price: null, source: null, cached: false };
     }
-    
+
     const upperSymbol = symbol.toUpperCase().trim();
-    const cacheKey = `price_${upperSymbol}`;
-    
+    const { coinGeckoId } = options;
+
+    // Use coinGeckoId in cache key if provided for uniqueness
+    const cacheKey = coinGeckoId ? `price_crypto_${coinGeckoId}` : `price_${upperSymbol}`;
+
     // Check cache first
     const cached = getFromCache(cacheKey);
     if (cached) {
         console.log(`[PriceService] Cache hit for ${upperSymbol}: $${cached.price}`);
         return { price: cached.price, source: cached.source, cached: true };
     }
-    
+
     // Determine asset type
     const isCrypto = assetType === 'crypto' || isCryptoSymbol(upperSymbol);
-    
+
     let result = { price: null, source: null };
-    
+
     if (isCrypto) {
-        // Try CoinGecko for crypto
-        result = await fetchCryptoPrice(upperSymbol);
+        // Try CoinGecko for crypto - pass coinGeckoId if available
+        result = await fetchCryptoPrice(upperSymbol, coinGeckoId);
     } else {
         // Try Yahoo first for stocks
         result = await fetchStockPriceYahoo(upperSymbol);
@@ -422,13 +447,13 @@ async function getCurrentPrice(symbol, assetType = null) {
             result = await fetchStockPriceFinnhub(upperSymbol);
         }
     }
-    
+
     // Cache successful results
     if (result.price !== null) {
         setCache(cacheKey, result.price, result.source);
         console.log(`[PriceService] Fetched ${upperSymbol}: $${result.price} (${result.source})`);
     }
-    
+
     return { ...result, cached: false };
 }
 

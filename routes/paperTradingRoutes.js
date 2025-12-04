@@ -1387,12 +1387,16 @@ router.get('/price/:symbol/:type?', auth, async (req, res) => {
 
 // @route   GET /api/paper-trading/validate/:symbol/:type?
 // @desc    Quick check if a symbol is tradeable (has available price)
+// @query   coinGeckoId - Optional: CoinGecko ID for crypto (improves accuracy)
 router.get('/validate/:symbol/:type?', auth, async (req, res) => {
     try {
         const { symbol, type } = req.params;
+        const { coinGeckoId } = req.query;
         const detectedType = type || (priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock');
 
-        const priceResult = await priceService.getCurrentPrice(symbol, detectedType);
+        // Pass coinGeckoId for crypto to improve price lookup accuracy
+        const options = coinGeckoId ? { coinGeckoId } : {};
+        const priceResult = await priceService.getCurrentPrice(symbol, detectedType, options);
 
         if (priceResult.price === null) {
             return res.json({
@@ -1410,7 +1414,8 @@ router.get('/validate/:symbol/:type?', auth, async (req, res) => {
             symbol: symbol.toUpperCase(),
             type: detectedType,
             price: safeNumber(priceResult.price, 0),
-            source: priceResult.source
+            source: priceResult.source,
+            coinGeckoId: priceResult.coinGeckoId || coinGeckoId
         });
     } catch (error) {
         console.error('[Paper Trading] Validate error:', error);
