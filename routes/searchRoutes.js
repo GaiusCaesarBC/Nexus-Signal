@@ -9,6 +9,8 @@ const axios = require('axios');
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const COINGECKO_BASE_URL = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
+const THE_GRAPH_API_KEY = process.env.THE_GRAPH_API_KEY;
+const PANCAKESWAP_V3_SUBGRAPH_ID = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
 
 // Cache for search results (short TTL since search is dynamic)
 const searchCache = new Map();
@@ -239,6 +241,68 @@ async function searchCrypto(query) {
         .slice(0, 8);
 }
 
+// Search PancakeSwap for BSC tokens via The Graph
+async function searchPancakeSwap(query) {
+    if (!THE_GRAPH_API_KEY) {
+        return [];
+    }
+
+    try {
+        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
+
+        const graphQuery = `
+            query SearchTokens($query: String!) {
+                tokens(
+                    first: 10,
+                    where: { symbol_contains_nocase: $query },
+                    orderBy: totalValueLockedUSD,
+                    orderDirection: desc
+                ) {
+                    id
+                    symbol
+                    name
+                    derivedUSD
+                    totalValueLockedUSD
+                }
+            }
+        `;
+
+        const response = await axios.post(
+            endpoint,
+            { query: graphQuery, variables: { query: query.toUpperCase() } },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 10000
+            }
+        );
+
+        if (response.data.errors) {
+            console.error('[Search] PancakeSwap GraphQL error:', response.data.errors[0]?.message);
+            return [];
+        }
+
+        const tokens = response.data?.data?.tokens || [];
+
+        // Filter tokens with valid prices and TVL > $1000 (to avoid dust tokens)
+        return tokens
+            .filter(t => t.derivedUSD && parseFloat(t.derivedUSD) > 0 && parseFloat(t.totalValueLockedUSD) > 1000)
+            .map(token => ({
+                symbol: token.symbol.toUpperCase(),
+                name: token.name,
+                type: 'crypto',
+                source: 'pancakeswap',
+                tokenAddress: token.id,
+                price: parseFloat(token.derivedUSD),
+                tvl: parseFloat(token.totalValueLockedUSD),
+                matchScore: parseFloat(token.totalValueLockedUSD) / 1000000 // Score by TVL in millions
+            }))
+            .slice(0, 8);
+    } catch (error) {
+        console.error('[Search] PancakeSwap search failed:', error.message);
+        return [];
+    }
+}
+
 // Determine if query is likely crypto
 function isLikelyCrypto(query) {
     const upper = query.toUpperCase();
@@ -286,6 +350,7 @@ router.get('/', async (req, res) => {
         // Run searches in parallel
         // Use Yahoo Finance as PRIMARY for stocks (more reliable for pricing)
         const promises = [];
+        let pancakeSwapResults = [];
 
         if (searchStocksFlag) {
             promises.push(
@@ -296,14 +361,33 @@ router.get('/', async (req, res) => {
         }
 
         if (searchCryptoFlag) {
+            // Search both CoinGecko and PancakeSwap in parallel
             promises.push(
                 searchCrypto(query)
                     .then(results => { crypto = results; })
                     .catch(() => { crypto = []; })
             );
+            promises.push(
+                searchPancakeSwap(query)
+                    .then(results => { pancakeSwapResults = results; })
+                    .catch(() => { pancakeSwapResults = []; })
+            );
         }
 
         await Promise.all(promises);
+
+        // Merge PancakeSwap results with CoinGecko results (avoid duplicates)
+        if (pancakeSwapResults.length > 0) {
+            const existingSymbols = new Set(crypto.map(c => c.symbol.toUpperCase()));
+            for (const token of pancakeSwapResults) {
+                if (!existingSymbols.has(token.symbol.toUpperCase())) {
+                    crypto.push(token);
+                }
+            }
+            // Re-sort by match score
+            crypto.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+            crypto = crypto.slice(0, 12); // Limit to 12 results
+        }
 
         // If Yahoo failed for stocks, try Alpha Vantage as backup
         if (searchStocksFlag && stocks.length === 0) {
@@ -314,6 +398,7 @@ router.get('/', async (req, res) => {
             query,
             stocks,
             crypto,
+            pancakeSwapCount: pancakeSwapResults.length,
             timestamp: Date.now()
         };
 
@@ -468,6 +553,116 @@ router.get('/validate/:symbol', async (req, res) => {
     } catch (error) {
         console.error('[Search] Validate error:', error.message);
         res.status(500).json({ error: 'Validation failed', valid: false });
+    }
+});
+
+// GET /api/search/pancakeswap?q=CAKE - PancakeSwap BSC token search
+router.get('/pancakeswap', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q || q.trim().length < 1) {
+            return res.json({ results: [], query: '', source: 'pancakeswap' });
+        }
+
+        if (!THE_GRAPH_API_KEY) {
+            return res.status(503).json({
+                error: 'PancakeSwap search not configured',
+                message: 'THE_GRAPH_API_KEY is not set'
+            });
+        }
+
+        const query = q.trim();
+        const cacheKey = `pancakeswap-search-${query.toLowerCase()}`;
+
+        const cached = getCachedResult(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const results = await searchPancakeSwap(query);
+        const response = {
+            results,
+            query,
+            source: 'pancakeswap',
+            count: results.length,
+            timestamp: Date.now()
+        };
+
+        setCacheResult(cacheKey, response);
+        res.json(response);
+    } catch (error) {
+        console.error('[Search] PancakeSwap search error:', error.message);
+        res.status(500).json({ error: 'PancakeSwap search failed', results: [] });
+    }
+});
+
+// GET /api/search/pancakeswap/top - Get top PancakeSwap tokens by TVL
+router.get('/pancakeswap/top', async (req, res) => {
+    try {
+        if (!THE_GRAPH_API_KEY) {
+            return res.status(503).json({ error: 'PancakeSwap not configured' });
+        }
+
+        const cacheKey = 'pancakeswap-top-tokens';
+        const cached = getCachedResult(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
+
+        const query = `
+            query TopTokens {
+                tokens(
+                    first: 50,
+                    orderBy: totalValueLockedUSD,
+                    orderDirection: desc,
+                    where: { totalValueLockedUSD_gt: "10000" }
+                ) {
+                    id
+                    symbol
+                    name
+                    derivedUSD
+                    totalValueLockedUSD
+                }
+            }
+        `;
+
+        const response = await axios.post(
+            endpoint,
+            { query },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
+        );
+
+        if (response.data.errors) {
+            throw new Error(response.data.errors[0]?.message || 'GraphQL error');
+        }
+
+        const tokens = (response.data?.data?.tokens || [])
+            .filter(t => t.derivedUSD && parseFloat(t.derivedUSD) > 0)
+            .map(token => ({
+                symbol: token.symbol.toUpperCase(),
+                name: token.name,
+                type: 'crypto',
+                source: 'pancakeswap',
+                tokenAddress: token.id,
+                price: parseFloat(token.derivedUSD),
+                tvl: parseFloat(token.totalValueLockedUSD)
+            }));
+
+        const result = {
+            tokens,
+            count: tokens.length,
+            source: 'pancakeswap',
+            timestamp: Date.now()
+        };
+
+        setCacheResult(cacheKey, result);
+        res.json(result);
+    } catch (error) {
+        console.error('[Search] PancakeSwap top tokens error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch top tokens' });
     }
 });
 

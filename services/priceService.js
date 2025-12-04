@@ -7,6 +7,8 @@ const axios = require('axios');
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_KEY;
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
+const THE_GRAPH_API_KEY = process.env.THE_GRAPH_API_KEY;
+const PANCAKESWAP_V3_SUBGRAPH_ID = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
 
 // Cache for prices (5 minute TTL)
 const priceCache = new Map();
@@ -314,6 +316,99 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
 }
 
 /**
+ * Fetch crypto price from PancakeSwap V3 Subgraph (BSC tokens)
+ * Uses The Graph API to query PancakeSwap liquidity pools
+ * @param {string} symbol - Token symbol (e.g., CAKE, BAKE)
+ * @param {string} tokenAddress - Optional: BSC token contract address
+ */
+async function fetchPancakeSwapPrice(symbol, tokenAddress = null) {
+    if (!THE_GRAPH_API_KEY) {
+        return { price: null, source: null };
+    }
+
+    try {
+        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
+
+        // If we have a token address, query directly by address
+        // Otherwise, search by symbol (less reliable but works for common tokens)
+        let query;
+        let variables = {};
+
+        if (tokenAddress) {
+            query = `
+                query TokenPrice($tokenAddress: ID!) {
+                    token(id: $tokenAddress) {
+                        id
+                        symbol
+                        name
+                        derivedUSD
+                        totalValueLockedUSD
+                    }
+                }
+            `;
+            variables = { tokenAddress: tokenAddress.toLowerCase() };
+        } else {
+            // Search by symbol - get tokens sorted by TVL to find the most liquid one
+            query = `
+                query TokensBySymbol($symbol: String!) {
+                    tokens(
+                        first: 5,
+                        where: { symbol_contains_nocase: $symbol },
+                        orderBy: totalValueLockedUSD,
+                        orderDirection: desc
+                    ) {
+                        id
+                        symbol
+                        name
+                        derivedUSD
+                        totalValueLockedUSD
+                    }
+                }
+            `;
+            variables = { symbol: symbol.toUpperCase() };
+        }
+
+        const response = await axios.post(
+            endpoint,
+            { query, variables },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 15000
+            }
+        );
+
+        if (response.data.errors) {
+            console.log(`[PriceService] PancakeSwap GraphQL error:`, response.data.errors[0]?.message);
+            return { price: null, source: null };
+        }
+
+        let token;
+        if (tokenAddress) {
+            token = response.data?.data?.token;
+        } else {
+            const tokens = response.data?.data?.tokens || [];
+            // Find exact symbol match with highest TVL
+            token = tokens.find(t => t.symbol.toUpperCase() === symbol.toUpperCase()) || tokens[0];
+        }
+
+        if (token && token.derivedUSD && parseFloat(token.derivedUSD) > 0) {
+            const price = parseFloat(token.derivedUSD);
+            console.log(`[PriceService] PancakeSwap price for ${symbol}: $${price}`);
+            return {
+                price,
+                source: 'pancakeswap',
+                tokenAddress: token.id,
+                tokenName: token.name
+            };
+        }
+    } catch (error) {
+        console.log(`[PriceService] PancakeSwap failed for ${symbol}:`, error.message);
+    }
+
+    return { price: null, source: null };
+}
+
+/**
  * Fetch stock price from Yahoo Finance
  */
 async function fetchStockPriceYahoo(symbol) {
@@ -433,6 +528,11 @@ async function getCurrentPrice(symbol, assetType = null, options = {}) {
     if (isCrypto) {
         // Try CoinGecko for crypto - pass coinGeckoId if available
         result = await fetchCryptoPrice(upperSymbol, coinGeckoId);
+
+        // Fallback to PancakeSwap for BSC tokens
+        if (!result.price) {
+            result = await fetchPancakeSwapPrice(upperSymbol, options.tokenAddress);
+        }
     } else {
         // Try Yahoo first for stocks
         result = await fetchStockPriceYahoo(upperSymbol);
