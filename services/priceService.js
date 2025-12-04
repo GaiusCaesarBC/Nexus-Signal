@@ -6,6 +6,7 @@ const axios = require('axios');
 // ============ CONFIGURATION ============
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_KEY;
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 
 // Cache for prices (5 minute TTL)
 const priceCache = new Map();
@@ -327,13 +328,13 @@ async function fetchStockPriceAlphaVantage(symbol) {
     if (!ALPHA_VANTAGE_KEY) {
         return { price: null, source: null };
     }
-    
+
     try {
         const response = await axios.get(
             `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`,
             { timeout: 10000 }
         );
-        
+
         const quote = response.data?.['Global Quote'];
         if (quote && quote['05. price']) {
             return {
@@ -344,7 +345,35 @@ async function fetchStockPriceAlphaVantage(symbol) {
     } catch (error) {
         console.log(`[PriceService] Alpha Vantage failed for ${symbol}:`, error.message);
     }
-    
+
+    return { price: null, source: null };
+}
+
+/**
+ * Fetch stock price from Finnhub (additional fallback)
+ */
+async function fetchStockPriceFinnhub(symbol) {
+    if (!FINNHUB_API_KEY) {
+        return { price: null, source: null };
+    }
+
+    try {
+        const response = await axios.get(
+            `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`,
+            { timeout: 10000 }
+        );
+
+        // Finnhub returns: c = current price, h = high, l = low, o = open, pc = previous close
+        if (response.data && response.data.c && response.data.c > 0) {
+            return {
+                price: parseFloat(response.data.c),
+                source: 'finnhub'
+            };
+        }
+    } catch (error) {
+        console.log(`[PriceService] Finnhub failed for ${symbol}:`, error.message);
+    }
+
     return { price: null, source: null };
 }
 
@@ -382,10 +411,15 @@ async function getCurrentPrice(symbol, assetType = null) {
     } else {
         // Try Yahoo first for stocks
         result = await fetchStockPriceYahoo(upperSymbol);
-        
+
         // Fallback to Alpha Vantage
         if (!result.price) {
             result = await fetchStockPriceAlphaVantage(upperSymbol);
+        }
+
+        // Fallback to Finnhub
+        if (!result.price) {
+            result = await fetchStockPriceFinnhub(upperSymbol);
         }
     }
     

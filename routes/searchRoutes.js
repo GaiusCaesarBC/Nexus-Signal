@@ -284,16 +284,17 @@ router.get('/', async (req, res) => {
         const searchCryptoFlag = !type || type === 'crypto' || type === 'all';
 
         // Run searches in parallel
+        // Use Yahoo Finance as PRIMARY for stocks (more reliable for pricing)
         const promises = [];
-        
+
         if (searchStocksFlag) {
             promises.push(
-                searchStocks(query)
+                searchStocksYahoo(query)
                     .then(results => { stocks = results; })
                     .catch(() => { stocks = []; })
             );
         }
-        
+
         if (searchCryptoFlag) {
             promises.push(
                 searchCrypto(query)
@@ -304,9 +305,9 @@ router.get('/', async (req, res) => {
 
         await Promise.all(promises);
 
-        // If Alpha Vantage failed for stocks, try Yahoo as backup
+        // If Yahoo failed for stocks, try Alpha Vantage as backup
         if (searchStocksFlag && stocks.length === 0) {
-            stocks = await searchStocksYahoo(query);
+            stocks = await searchStocks(query);
         }
 
         const result = {
@@ -348,11 +349,12 @@ router.get('/stocks', async (req, res) => {
             return res.json(cached);
         }
 
-        let results = await searchStocks(query);
-        
-        // Fallback to Yahoo if Alpha Vantage fails
+        // Use Yahoo as PRIMARY (more reliable for pricing)
+        let results = await searchStocksYahoo(query);
+
+        // Fallback to Alpha Vantage if Yahoo fails
         if (results.length === 0) {
-            results = await searchStocksYahoo(query);
+            results = await searchStocks(query);
         }
 
         const response = { results, query, timestamp: Date.now() };

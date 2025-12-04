@@ -1365,16 +1365,16 @@ router.get('/price/:symbol/:type?', auth, async (req, res) => {
     try {
         const { symbol, type } = req.params;
         const detectedType = type || (priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock');
-        
+
         const priceResult = await priceService.getCurrentPrice(symbol, detectedType);
-        
+
         if (priceResult.price === null) {
             return res.status(404).json({ error: `Could not fetch price for ${symbol}` });
         }
-        
-        res.json({ 
-            success: true, 
-            price: safeNumber(priceResult.price, 0), 
+
+        res.json({
+            success: true,
+            price: safeNumber(priceResult.price, 0),
             symbol: symbol.toUpperCase(),
             type: detectedType,
             source: priceResult.source
@@ -1382,6 +1382,43 @@ router.get('/price/:symbol/:type?', auth, async (req, res) => {
     } catch (error) {
         console.error('[Paper Trading] Get price error:', error);
         res.status(500).json({ error: 'Failed to fetch price' });
+    }
+});
+
+// @route   GET /api/paper-trading/validate/:symbol/:type?
+// @desc    Quick check if a symbol is tradeable (has available price)
+router.get('/validate/:symbol/:type?', auth, async (req, res) => {
+    try {
+        const { symbol, type } = req.params;
+        const detectedType = type || (priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock');
+
+        const priceResult = await priceService.getCurrentPrice(symbol, detectedType);
+
+        if (priceResult.price === null) {
+            return res.json({
+                success: true,
+                tradeable: false,
+                symbol: symbol.toUpperCase(),
+                type: detectedType,
+                message: `${symbol.toUpperCase()} is not available for paper trading. Price data unavailable.`
+            });
+        }
+
+        res.json({
+            success: true,
+            tradeable: true,
+            symbol: symbol.toUpperCase(),
+            type: detectedType,
+            price: safeNumber(priceResult.price, 0),
+            source: priceResult.source
+        });
+    } catch (error) {
+        console.error('[Paper Trading] Validate error:', error);
+        res.json({
+            success: false,
+            tradeable: false,
+            error: 'Validation failed'
+        });
     }
 });
 
