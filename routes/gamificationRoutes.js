@@ -561,17 +561,94 @@ router.delete('/clear-prediction-reset', authMiddleware, async (req, res) => {
     }
 });
 
+// Progress tracking for achievements (statKey -> threshold)
+const ACHIEVEMENT_PROGRESS_MAP = {
+    // Trading
+    'first_blood': { statKey: 'totalTrades', threshold: 1 },
+    'trade_apprentice': { statKey: 'totalTrades', threshold: 10 },
+    'trade_journeyman': { statKey: 'totalTrades', threshold: 50 },
+    'trade_master': { statKey: 'totalTrades', threshold: 100 },
+    'trading_legend': { statKey: 'totalTrades', threshold: 500 },
+
+    // Profitable trades
+    'show_me_the_money': { statKey: 'profitableTrades', threshold: 1 },
+    'money_maker': { statKey: 'profitableTrades', threshold: 10 },
+    'profit_machine': { statKey: 'profitableTrades', threshold: 50 },
+
+    // Days active
+    'baby_steps': { statKey: 'daysActive', threshold: 1 },
+    'week_warrior': { statKey: 'daysActive', threshold: 7 },
+    'month_master': { statKey: 'daysActive', threshold: 30 },
+    'dedicated_trader': { statKey: 'daysActive', threshold: 90 },
+    'yearly_veteran': { statKey: 'daysActive', threshold: 365 },
+
+    // Portfolio
+    'portfolio_starter': { statKey: 'stocksOwned', threshold: 1 },
+    'portfolio_builder': { statKey: 'stocksOwned', threshold: 5 },
+    'diversified': { statKey: 'stocksOwned', threshold: 10 },
+
+    // Predictions
+    'crystal_ball': { statKey: 'predictionsCreated', threshold: 1 },
+    'prediction_rookie': { statKey: 'predictionsCreated', threshold: 5 },
+    'prediction_pro': { statKey: 'predictionsCreated', threshold: 25 },
+    'prediction_master': { statKey: 'predictionsCreated', threshold: 100 },
+
+    // Correct predictions
+    'first_correct': { statKey: 'correctPredictions', threshold: 1 },
+    'oracle': { statKey: 'correctPredictions', threshold: 10 },
+    'prophet': { statKey: 'correctPredictions', threshold: 50 },
+
+    // Streaks
+    'hot_streak_3': { statKey: 'currentWinStreak', threshold: 3 },
+    'hot_streak_5': { statKey: 'maxWinStreak', threshold: 5 },
+    'hot_streak_10': { statKey: 'maxWinStreak', threshold: 10 },
+    'unstoppable': { statKey: 'maxWinStreak', threshold: 20 },
+
+    // Refills
+    'first_refill': { statKey: 'totalRefills', threshold: 1 },
+    'refill_veteran': { statKey: 'totalRefills', threshold: 5 },
+
+    // Leveraged trades
+    'first_leverage': { statKey: 'leveragedTrades', threshold: 1 },
+    'leverage_addict': { statKey: 'leveragedTrades', threshold: 25 },
+
+    // Loss streaks (for humorous achievements)
+    'loss_streak_5': { statKey: 'maxLossStreak', threshold: 5 },
+    'loss_streak_10': { statKey: 'maxLossStreak', threshold: 10 },
+
+    // Losing trades
+    'first_loss': { statKey: 'losingTrades', threshold: 1 },
+
+    // Login streak
+    'login_streak_3': { statKey: 'loginStreak', threshold: 3 },
+    'login_streak_7': { statKey: 'loginStreak', threshold: 7 },
+    'login_streak_30': { statKey: 'loginStreak', threshold: 30 },
+};
+
 // @route   GET /api/gamification/achievements
-// @desc    Get all achievements (with unlock status)
+// @desc    Get all achievements (with unlock status and progress)
 // @access  Private
 router.get('/achievements', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('gamification').lean();
-        
-        // Map all achievements with unlock status
+        const userStats = user?.gamification?.stats || {};
+
+        // Map all achievements with unlock status and progress
         const allAchievements = Object.values(ACHIEVEMENTS).map(ach => {
             const userAchievement = user?.gamification?.achievements?.find(ua => ua.id === ach.id);
-            
+            const progressInfo = ACHIEVEMENT_PROGRESS_MAP[ach.id];
+
+            // Calculate progress for locked achievements
+            let progress = undefined;
+            let threshold = undefined;
+
+            if (!userAchievement && progressInfo) {
+                threshold = progressInfo.threshold;
+                progress = userStats[progressInfo.statKey] || 0;
+                // Cap progress at threshold (100%)
+                progress = Math.min(progress, threshold);
+            }
+
             return {
                 id: ach.id,
                 name: ach.name,
@@ -581,7 +658,9 @@ router.get('/achievements', authMiddleware, async (req, res) => {
                 rarity: ach.rarity,
                 points: ach.points,
                 unlocked: !!userAchievement,
-                unlockedAt: userAchievement ? userAchievement.unlockedAt : null
+                unlockedAt: userAchievement ? userAchievement.unlockedAt : null,
+                progress,
+                threshold
             };
         });
 
