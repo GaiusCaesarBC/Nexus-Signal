@@ -90,7 +90,7 @@ router.get('/me/stats', auth, async (req, res) => {
             vault: {
                // 🔥 NEW: Vault equipped items
 equippedBadges: user.vault?.equippedBadges || [],
-equippedBorder: user.vault?.equippedBorder || null,
+equippedBorder: user.vault?.equippedBorder || 'border-bronze',
 equippedTheme: user.vault?.equippedTheme || 'default',
             }
         });
@@ -179,7 +179,7 @@ router.get('/leaderboard', async (req, res) => {
             
             // 🔥 NEW: Vault equipped items (INCLUDING equippedTheme!)
             equippedBadges: user.vault?.equippedBadges || [],
-            equippedBorder: user.vault?.equippedBorder || null,
+            equippedBorder: user.vault?.equippedBorder || 'border-bronze',
             equippedTheme: user.vault?.equippedTheme || 'default',
             
             // Meta
@@ -442,7 +442,7 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             },
             vault: {
                 equippedBadges: user.vault?.equippedBadges || [],
-                equippedBorder: user.vault?.equippedBorder || null,
+                equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 equippedTheme: user.vault?.equippedTheme || 'default'
             },
             isFounder: user.isFounder || false,
@@ -481,7 +481,7 @@ router.get('/suggested', auth, async (req, res) => {
             username: user.username,
             avatar: user.profile?.avatar || '',
             mutuals: 0,
-            equippedBorder: user.vault?.equippedBorder || null,
+            equippedBorder: user.vault?.equippedBorder || 'border-bronze',
             equippedTheme: user.vault?.equippedTheme || 'default'
         }));
 
@@ -690,7 +690,7 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             // 🔥 Include vault data for badges and borders
             vault: {
                 equippedBadges: user.vault?.equippedBadges || [],
-                equippedBorder: user.vault?.equippedBorder || null,
+                equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 equippedTheme: user.vault?.equippedTheme || 'default'
             },
             isFounder: user.isFounder || false,
@@ -849,7 +849,7 @@ router.get('/search', async (req, res) => {
             badges: user.profile?.badges || [],
            // 🔥 NEW: Include vault data
             equippedBadges: user.vault?.equippedBadges || [],
-            equippedBorder: user.vault?.equippedBorder || null,
+            equippedBorder: user.vault?.equippedBorder || 'border-bronze',
             equippedTheme: user.vault?.equippedTheme || 'default'
         }));
 
