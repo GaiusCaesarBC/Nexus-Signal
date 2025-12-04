@@ -13,23 +13,37 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // ============ CRYPTO SYMBOL DETECTION ============
 const CRYPTO_SYMBOLS = new Set([
+    // Top coins
     'BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'DOT', 'MATIC', 'SHIB',
     'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL',
-    'TRX', 'THETA', 'XMR', 'AAVE', 'GRT', 'FTM', 'SAND', 'MANA', 'AXS', 'CHZ',
-    'ENJ', 'SUSHI', 'YFI', 'COMP', 'SNX', 'MKR', 'CRV', 'LRC', '1INCH', 'BAT',
-    'ZRX', 'ANKR', 'STORJ', 'SKL', 'CELO', 'REN', 'UMA', 'BNT', 'OCEAN', 'FET',
-    'ROSE', 'ONE', 'HOT', 'ZIL', 'ENS', 'IMX', 'LDO', 'APE', 'CRO', 'NEAR',
+    'TRX', 'NEAR', 'TON',
+    // DeFi & Layer 2
+    'AAVE', 'MKR', 'CRV', 'LDO', 'ARB', 'OP', 'INJ', 'SUI', 'APT', 'SEI',
+    'COMP', 'SNX', 'SUSHI', 'YFI', '1INCH', 'DYDX', 'GMX',
+    // Meme coins
+    'PEPE', 'FLOKI', 'BONK', 'WIF',
+    // Metaverse & Gaming
+    'APE', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'IMX', 'RENDER', 'AUDIO', 'CHZ',
+    // Infrastructure
+    'GRT', 'FTM', 'THETA', 'TFUEL', 'LRC', 'ZRX', 'ANKR', 'STORJ', 'SKL', 'CELO',
+    'REN', 'UMA', 'BNT', 'OCEAN', 'FET', 'API3', 'ENS',
+    // Privacy & Legacy
+    'XMR', 'DASH', 'ZEC', 'ZEN', 'SC', 'DCR', 'AR',
+    // Smart Contract Platforms
     'FLOW', 'ICP', 'EGLD', 'XTZ', 'HBAR', 'QNT', 'KLAY', 'BSV', 'NEO', 'WAVES',
-    'DASH', 'ZEC', 'IOTA', 'KSM', 'CAKE', 'RUNE', 'AR', 'KAVA', 'MINA', 'XEC',
-    'BTT', 'HNT', 'TFUEL', 'QTUM', 'OMG', 'ZEN', 'SC', 'DCR', 'ICX', 'ONT',
-    'DGB', 'RVN', 'NANO', 'WAXP', 'LSK', 'ARDR', 'STEEM', 'SRM', 'RAY', 'AUDIO',
-    'GALA', 'JASMY', 'SPELL', 'BICO', 'API3', 'DYDX', 'PEOPLE', 'SLP', 'C98',
-    'BITCOIN', 'ETHEREUM', 'SOLANA', 'CARDANO', 'DOGECOIN', 'RIPPLE', 'POLKADOT',
-    'PEPE', 'FLOKI', 'BONK', 'WIF', 'RENDER', 'INJ', 'SEI', 'SUI', 'APT', 'ARB', 'OP'
+    'IOTA', 'KSM', 'KAVA', 'MINA', 'ROSE', 'ONE', 'ZIL', 'ICX', 'ONT', 'QTUM',
+    // Exchange & DeFi tokens
+    'CRO', 'CAKE', 'RUNE', 'SRM', 'RAY', 'C98', 'BICO',
+    // Other popular
+    'BAT', 'HOT', 'XEC', 'BTT', 'HNT', 'OMG', 'DGB', 'RVN', 'NANO', 'WAXP',
+    'LSK', 'ARDR', 'STEEM', 'JASMY', 'SPELL', 'PEOPLE', 'SLP',
+    // Full name aliases
+    'BITCOIN', 'ETHEREUM', 'SOLANA', 'CARDANO', 'DOGECOIN', 'RIPPLE', 'POLKADOT'
 ]);
 
-// CoinGecko ID mapping for common symbols
+// CoinGecko ID mapping - comprehensive list for all supported cryptos
 const COINGECKO_IDS = {
+    // Top coins
     'BTC': 'bitcoin',
     'ETH': 'ethereum',
     'BNB': 'binancecoin',
@@ -52,10 +66,8 @@ const COINGECKO_IDS = {
     'FIL': 'filecoin',
     'TRX': 'tron',
     'NEAR': 'near',
-    'APE': 'apecoin',
-    'SAND': 'the-sandbox',
-    'MANA': 'decentraland',
-    'AXS': 'axie-infinity',
+    'TON': 'the-open-network',
+    // DeFi & Layer 2
     'AAVE': 'aave',
     'MKR': 'maker',
     'CRV': 'curve-dao-token',
@@ -66,11 +78,102 @@ const COINGECKO_IDS = {
     'SUI': 'sui',
     'APT': 'aptos',
     'SEI': 'sei-network',
-    'RENDER': 'render-token',
+    'COMP': 'compound-governance-token',
+    'SNX': 'havven',
+    'SUSHI': 'sushi',
+    'YFI': 'yearn-finance',
+    '1INCH': '1inch',
+    'DYDX': 'dydx',
+    'GMX': 'gmx',
+    // Meme coins
     'PEPE': 'pepe',
     'FLOKI': 'floki',
     'BONK': 'bonk',
-    'WIF': 'dogwifcoin'
+    'WIF': 'dogwifcoin',
+    // Metaverse & Gaming
+    'APE': 'apecoin',
+    'SAND': 'the-sandbox',
+    'MANA': 'decentraland',
+    'AXS': 'axie-infinity',
+    'GALA': 'gala',
+    'ENJ': 'enjincoin',
+    'IMX': 'immutable-x',
+    'RENDER': 'render-token',
+    'AUDIO': 'audius',
+    'CHZ': 'chiliz',
+    // Infrastructure
+    'GRT': 'the-graph',
+    'FTM': 'fantom',
+    'THETA': 'theta-token',
+    'TFUEL': 'theta-fuel',
+    'LRC': 'loopring',
+    'ZRX': '0x',
+    'ANKR': 'ankr',
+    'STORJ': 'storj',
+    'SKL': 'skale',
+    'CELO': 'celo',
+    'REN': 'republic-protocol',
+    'UMA': 'uma',
+    'BNT': 'bancor',
+    'OCEAN': 'ocean-protocol',
+    'FET': 'fetch-ai',
+    'API3': 'api3',
+    'ENS': 'ethereum-name-service',
+    // Privacy & Legacy
+    'XMR': 'monero',
+    'DASH': 'dash',
+    'ZEC': 'zcash',
+    'ZEN': 'horizen',
+    'SC': 'siacoin',
+    'DCR': 'decred',
+    'AR': 'arweave',
+    // Smart Contract Platforms
+    'FLOW': 'flow',
+    'ICP': 'internet-computer',
+    'EGLD': 'elrond-erd-2',
+    'XTZ': 'tezos',
+    'HBAR': 'hedera-hashgraph',
+    'QNT': 'quant-network',
+    'KLAY': 'klay-token',
+    'BSV': 'bitcoin-cash-sv',
+    'NEO': 'neo',
+    'WAVES': 'waves',
+    'IOTA': 'iota',
+    'KSM': 'kusama',
+    'KAVA': 'kava',
+    'MINA': 'mina-protocol',
+    'ROSE': 'oasis-network',
+    'ONE': 'harmony',
+    'ZIL': 'zilliqa',
+    'ICX': 'icon',
+    'ONT': 'ontology',
+    'QTUM': 'qtum',
+    // Exchange & DeFi tokens
+    'CRO': 'crypto-com-chain',
+    'CAKE': 'pancakeswap-token',
+    'RUNE': 'thorchain',
+    'SRM': 'serum',
+    'RAY': 'raydium',
+    'C98': 'coin98',
+    'BICO': 'biconomy',
+    // Other popular
+    'BAT': 'basic-attention-token',
+    'HOT': 'holotoken',
+    'XEC': 'ecash',
+    'BTT': 'bittorrent',
+    'HNT': 'helium',
+    'OMG': 'omisego',
+    'DGB': 'digibyte',
+    'RVN': 'ravencoin',
+    'NANO': 'nano',
+    'WAXP': 'wax',
+    'LSK': 'lisk',
+    'ARDR': 'ardor',
+    'STEEM': 'steem',
+    'JASMY': 'jasmy',
+    'SPELL': 'spell-token',
+    'PEOPLE': 'constitutiondao',
+    'SLP': 'smooth-love-potion'
 };
 
 // ============ HELPER FUNCTIONS ============

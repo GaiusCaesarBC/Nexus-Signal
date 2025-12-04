@@ -144,65 +144,15 @@ const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || fals
 async function getFreshPrice(symbol, assetType) {
     const upperSymbol = symbol.toUpperCase();
     console.log(`[Price] Fetching fresh price for ${upperSymbol} (${assetType})`);
-    
+
     // Get CoinGecko Pro API key from environment
     const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
-    
+
     try {
         // For crypto, use CoinGecko Pro FIRST (you're paying for it!), then Binance as fallback
         if (assetType === 'crypto') {
-            const cryptoIdMap = {
-                'BTC': 'bitcoin',
-                'ETH': 'ethereum',
-                'SOL': 'solana',
-                'DOGE': 'dogecoin',
-                'XRP': 'ripple',
-                'ADA': 'cardano',
-                'DOT': 'polkadot',
-                'MATIC': 'matic-network',
-                'LINK': 'chainlink',
-                'AVAX': 'avalanche-2',
-                'SHIB': 'shiba-inu',
-                'LTC': 'litecoin',
-                'UNI': 'uniswap',
-                'ATOM': 'cosmos',
-                'XLM': 'stellar',
-                'ALGO': 'algorand',
-                'VET': 'vechain',
-                'FIL': 'filecoin',
-                'AAVE': 'aave',
-                'EOS': 'eos',
-                'PEPE': 'pepe',
-                'BONK': 'bonk',
-                'WIF': 'dogwifcoin',
-                'FLOKI': 'floki',
-                'ARB': 'arbitrum',
-                'OP': 'optimism',
-                'SUI': 'sui',
-                'APT': 'aptos',
-                'INJ': 'injective-protocol',
-                'SEI': 'sei-network',
-                'NEAR': 'near',
-                'RENDER': 'render-token',
-                'BNB': 'binancecoin',
-                'TRX': 'tron',
-                'TON': 'the-open-network',
-                'HBAR': 'hedera-hashgraph',
-                'IMX': 'immutable-x',
-                'MKR': 'maker',
-                'GRT': 'the-graph',
-                'FTM': 'fantom',
-                'SAND': 'the-sandbox',
-                'MANA': 'decentraland',
-                'AXS': 'axie-infinity',
-                'APE': 'apecoin',
-                'CRV': 'curve-dao-token',
-                'LDO': 'lido-dao',
-                'RUNE': 'thorchain',
-                'ENS': 'ethereum-name-service'
-            };
-            
-            const coinId = cryptoIdMap[upperSymbol] || upperSymbol.toLowerCase();
+            // Use priceService for consistent CoinGecko ID mapping
+            const coinId = priceService.getCoinGeckoId(upperSymbol);
             
             // Try CoinGecko Pro FIRST (real-time with your API key)
             try {
