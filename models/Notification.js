@@ -21,6 +21,12 @@ const NotificationSchema = new mongoose.Schema({
             'follow',
             'like',
             'comment',
+            'reply',           // Reply to comment
+            'mention',         // User mention
+            'share',           // Post shared
+            'leaderboard',     // Leaderboard update
+            'trade_copy',      // Trade copied
+            'login_streak',    // Daily login streak
             'system',
             'welcome',
             'info'
