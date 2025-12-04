@@ -152,7 +152,7 @@ router.get('/search/:symbol', auth, async (req, res) => {
         const response = {
             success: true,
             symbol: symbol.toUpperCase(),
-            type: isCrypto(symbol) ? 'crypto' : 'stock',
+            type: priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock',
             sentiment: {
                 overall: analysis.overall,
                 distribution: {
