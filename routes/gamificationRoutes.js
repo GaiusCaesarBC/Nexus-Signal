@@ -146,13 +146,24 @@ const LEVEL_TITLES = [
 
 // Helper function to get level from totalXpEarned
 function calculateLevelFromXp(totalXpEarned) {
+    // 🔍 DEBUG: Log the input value and type
+    console.log(`[calculateLevelFromXp] Input: ${totalXpEarned} (type: ${typeof totalXpEarned})`);
+
+    // Ensure we're working with a number
+    const xp = Number(totalXpEarned) || 0;
+
     let level = 1;
     for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
-        if (totalXpEarned >= LEVEL_THRESHOLDS[i]) {
+        if (xp >= LEVEL_THRESHOLDS[i]) {
             level = i + 1;
+            // 🔍 DEBUG: Log which threshold matched
+            console.log(`[calculateLevelFromXp] Matched threshold[${i}]=${LEVEL_THRESHOLDS[i]} → Level ${level} (XP: ${xp})`);
             break;
         }
     }
+
+    // 🔍 DEBUG: Final result
+    console.log(`[calculateLevelFromXp] Result: XP=${xp} → Level ${level}`);
     return level;
 }
 
@@ -490,6 +501,61 @@ router.post('/sync-level', authMiddleware, async (req, res) => {
             success: false,
             error: 'Failed to sync level'
         });
+    }
+});
+
+// @route   GET /api/gamification/debug-level
+// @desc    Debug endpoint to see raw level calculation values
+// @access  Private
+router.get('/debug-level', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('gamification').lean();
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const g = user.gamification || {};
+        const totalXpEarned = g.totalXpEarned;
+        const xp = g.xp;
+        const storedLevel = g.level;
+        const storedTitle = g.title;
+
+        // Calculate what level SHOULD be
+        const calculatedLevel = calculateLevelFromXp(totalXpEarned);
+        const calculatedTitle = getTitleForLevel(calculatedLevel);
+
+        // Find threshold info
+        const currentThreshold = LEVEL_THRESHOLDS[calculatedLevel - 1] || 0;
+        const nextThreshold = LEVEL_THRESHOLDS[calculatedLevel] || 'MAX';
+
+        res.json({
+            success: true,
+            debug: {
+                raw: {
+                    totalXpEarned: totalXpEarned,
+                    totalXpEarnedType: typeof totalXpEarned,
+                    xp: xp,
+                    storedLevel: storedLevel,
+                    storedTitle: storedTitle
+                },
+                calculated: {
+                    level: calculatedLevel,
+                    title: calculatedTitle,
+                    currentThreshold: currentThreshold,
+                    nextThreshold: nextThreshold,
+                    xpInCurrentLevel: totalXpEarned - currentThreshold,
+                    xpToNextLevel: nextThreshold === 'MAX' ? 'MAX' : nextThreshold - totalXpEarned
+                },
+                mismatch: storedLevel !== calculatedLevel,
+                message: storedLevel !== calculatedLevel
+                    ? `Level mismatch! Stored: ${storedLevel}, Should be: ${calculatedLevel}`
+                    : `Level is correct: ${storedLevel}`
+            }
+        });
+    } catch (error) {
+        console.error('[Debug] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
