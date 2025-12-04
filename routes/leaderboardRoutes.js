@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 
         // Get users with their portfolio data
         const users = await User.find({ isActive: { $ne: false } })
-            .select('username displayName avatar profile xp level createdAt')
+            .select('username displayName avatar profile vault xp level createdAt')
             .lean();
 
         // Get portfolio data for all users
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
                 avatar: user.avatar || user.profile?.avatar,
                 level: user.level || 1,
                 xp: user.xp || 0,
-                equippedBorder: user.profile?.equippedBorder || 'border-default',
+                equippedBorder: user.vault?.equippedBorder || 'border-default',
                 equippedTheme: user.profile?.equippedTheme || 'theme-default',
                 totalValue: totalValue,
                 totalReturn: totalReturn,
@@ -102,7 +102,7 @@ router.get('/top', async (req, res) => {
 
         // Get users with portfolio performance
         const users = await User.find({ isActive: { $ne: false } })
-            .select('username displayName avatar profile xp level')
+            .select('username displayName avatar profile vault xp level')
             .lean();
 
         const portfolios = await Portfolio.find({})
@@ -129,7 +129,7 @@ router.get('/top', async (req, res) => {
                 displayName: user.displayName || user.username,
                 avatar: user.avatar || user.profile?.avatar,
                 level: user.level || 1,
-                equippedBorder: user.profile?.equippedBorder || 'border-default',
+                equippedBorder: user.vault?.equippedBorder || 'border-default',
                 totalReturnPercent: totalReturnPercent
             };
         })
@@ -166,7 +166,7 @@ router.get('/winners', async (req, res) => {
 
         // Get recent profitable trades or users
         const users = await User.find({ isActive: { $ne: false } })
-            .select('username displayName avatar profile xp level updatedAt')
+            .select('username displayName avatar profile vault xp level updatedAt')
             .sort({ updatedAt: -1 })
             .limit(50)
             .lean();
@@ -191,7 +191,7 @@ router.get('/winners', async (req, res) => {
                     displayName: user.displayName || user.username,
                     avatar: user.avatar || user.profile?.avatar,
                     level: user.level || 1,
-                    equippedBorder: user.profile?.equippedBorder || 'border-default',
+                    equippedBorder: user.vault?.equippedBorder || 'border-default',
                     totalReturnPercent: portfolio.totalChangePercent || 0,
                     updatedAt: portfolio.updatedAt || user.updatedAt
                 };
@@ -311,7 +311,7 @@ router.get('/real-portfolio', auth, async (req, res) => {
         
         // Fetch users with real portfolio data
         const users = await User.find(query)
-            .select('username name profile stats')
+            .select('username name profile vault stats')
             .sort(sortField)
             .limit(safeLimit);
         
@@ -331,7 +331,8 @@ router.get('/real-portfolio', auth, async (req, res) => {
                     username: user.username,
                     displayName: user.profile?.displayName || user.name || user.username,
                     avatar: user.profile?.avatar || null,
-                    verified: user.profile?.verified || false
+                    verified: user.profile?.verified || false,
+                    equippedBorder: user.vault?.equippedBorder || 'border-bronze'
                 },
                 isCurrentUser: user._id.toString() === req.user.id,
                 portfolioValue: user.stats?.currentValue || 0,
