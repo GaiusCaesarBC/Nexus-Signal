@@ -8,32 +8,223 @@ const AchievementService = require('../services/achievementService');
 const ACHIEVEMENTS = require('../config/achievements');
 const DailyRewardService = require('../services/dailyRewardService');
 
+// ============ LEVEL THRESHOLDS (MUST MATCH User.js!) ============
+const LEVEL_THRESHOLDS = [
+    0,      // Level 1
+    100,    // Level 2
+    250,    // Level 3
+    500,    // Level 4
+    1000,   // Level 5
+    1750,   // Level 6
+    2750,   // Level 7
+    4000,   // Level 8
+    5500,   // Level 9
+    7500,   // Level 10
+    10000,  // Level 11
+    13000,  // Level 12
+    16500,  // Level 13
+    20500,  // Level 14
+    25000,  // Level 15
+    30000,  // Level 16
+    36000,  // Level 17
+    43000,  // Level 18
+    51000,  // Level 19
+    60000,  // Level 20
+    70000,  // Level 21
+    81000,  // Level 22
+    93000,  // Level 23
+    106000, // Level 24
+    120000, // Level 25
+    135000, // Level 26
+    151000, // Level 27
+    168000, // Level 28
+    186000, // Level 29
+    205000, // Level 30
+    225000, // Level 31
+    246000, // Level 32
+    268000, // Level 33
+    291000, // Level 34
+    315000, // Level 35
+    340000, // Level 36
+    366000, // Level 37
+    393000, // Level 38
+    421000, // Level 39
+    450000, // Level 40
+    480000, // Level 41
+    511000, // Level 42
+    543000, // Level 43
+    576000, // Level 44
+    610000, // Level 45
+    645000, // Level 46
+    681000, // Level 47
+    718000, // Level 48
+    756000, // Level 49
+    795000, // Level 50
+    850000, // Level 51
+    910000, // Level 52
+    975000, // Level 53
+    1045000, // Level 54
+    1120000, // Level 55
+    1200000, // Level 56
+    1285000, // Level 57
+    1375000, // Level 58
+    1470000, // Level 59
+    1570000, // Level 60
+    1680000, // Level 61
+    1800000, // Level 62
+    1930000, // Level 63
+    2070000, // Level 64
+    2220000, // Level 65
+    2380000, // Level 66
+    2550000, // Level 67
+    2730000, // Level 68
+    2920000, // Level 69
+    3120000, // Level 70
+    3340000, // Level 71
+    3580000, // Level 72
+    3840000, // Level 73
+    4120000, // Level 74
+    4420000, // Level 75
+    4750000, // Level 76
+    5100000, // Level 77
+    5480000, // Level 78
+    5890000, // Level 79
+    6330000, // Level 80
+    6810000, // Level 81
+    7330000, // Level 82
+    7890000, // Level 83
+    8500000, // Level 84
+    9160000, // Level 85
+    9870000, // Level 86
+    10640000, // Level 87
+    11470000, // Level 88
+    12370000, // Level 89
+    13340000, // Level 90
+    14390000, // Level 91
+    15520000, // Level 92
+    16740000, // Level 93
+    18060000, // Level 94
+    19490000, // Level 95
+    21030000, // Level 96
+    22700000, // Level 97
+    24500000, // Level 98
+    26450000, // Level 99
+    28560000, // Level 100
+];
+
+const LEVEL_TITLES = [
+    'Rookie Trader',        // 1
+    'Market Novice',        // 2
+    'Chart Reader',         // 3
+    'Trend Spotter',        // 4
+    'Risk Taker',           // 5
+    'Pattern Hunter',       // 6
+    'Swing Trader',         // 7
+    'Market Analyst',       // 8
+    'Portfolio Builder',    // 9
+    'Day Trader',           // 10
+    'Momentum Rider',       // 11
+    'Value Seeker',         // 12
+    'Growth Investor',      // 13
+    'Sector Expert',        // 14
+    'Market Timer',         // 15
+    'Options Trader',       // 16
+    'Futures Master',       // 17
+    'Crypto Pioneer',       // 18
+    'Dividend Hunter',      // 19
+    'Alpha Generator',      // 20
+    'Market Wizard',        // 21-30
+    'Trading Guru',         // 31-40
+    'Wall Street Wolf',     // 41-50
+    'Hedge Fund Hero',      // 51-60
+    'Market Maverick',      // 61-70
+    'Trading Titan',        // 71-80
+    'Nexus Legend',         // 81-90
+    'Ultimate Trader',      // 91-99
+    'Nexus One'             // 100 (MAX)
+];
+
+// Helper function to get level from totalXpEarned
+function calculateLevelFromXp(totalXpEarned) {
+    let level = 1;
+    for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+        if (totalXpEarned >= LEVEL_THRESHOLDS[i]) {
+            level = i + 1;
+            break;
+        }
+    }
+    return level;
+}
+
+// Helper function to get title for level
+function getTitleForLevel(level) {
+    if (level <= 20) return LEVEL_TITLES[Math.min(level - 1, 19)];
+    if (level <= 30) return LEVEL_TITLES[20];
+    if (level <= 40) return LEVEL_TITLES[21];
+    if (level <= 50) return LEVEL_TITLES[22];
+    if (level <= 60) return LEVEL_TITLES[23];
+    if (level <= 70) return LEVEL_TITLES[24];
+    if (level <= 80) return LEVEL_TITLES[25];
+    if (level <= 90) return LEVEL_TITLES[26];
+    if (level <= 99) return LEVEL_TITLES[27];
+    return LEVEL_TITLES[28]; // Level 100
+}
+
 // @route   GET /api/gamification/stats
 // @desc    Get user gamification stats INCLUDING VAULT DATA AND PREDICTION STATS
 // @access  Private
 router.get('/stats', authMiddleware, async (req, res) => {
     try {
         console.log('[Gamification] Fetching data for user:', req.user.id);
-        
+
         // ✅ READ FROM USER.GAMIFICATION (THE SOURCE OF TRUTH)
-        const user = await User.findById(req.user.id).select('stats vault name username profile gamification').lean();
-        
-        if (!user) {
+        // Use non-lean() first so we can auto-sync if needed
+        let userDoc = await User.findById(req.user.id).select('stats vault name username profile gamification');
+
+        if (!userDoc) {
             return res.status(404).json({
                 success: false,
                 error: 'User not found'
             });
         }
-        
+
         // Initialize gamification if it doesn't exist
-        if (!user.gamification) {
+        if (!userDoc.gamification) {
             console.log('[Gamification] No gamification data, initializing...');
-            const updatedUser = await User.findById(req.user.id);
-            // Gamification is initialized by User model defaults
-            await updatedUser.save();
-            user.gamification = updatedUser.gamification;
+            userDoc.gamification = {
+                xp: 0,
+                level: 1,
+                title: 'Rookie Trader',
+                totalXpEarned: 0,
+                nexusCoins: 1000,
+                totalCoinsEarned: 1000
+            };
+            await userDoc.save();
         }
-        
+
+        // ✅ AUTO-SYNC: Check if level is correct based on totalXpEarned
+        const totalXpEarned = userDoc.gamification.totalXpEarned || 0;
+        const correctLevel = calculateLevelFromXp(totalXpEarned);
+        const correctTitle = getTitleForLevel(correctLevel);
+        const storedLevel = userDoc.gamification.level || 1;
+        const storedTitle = userDoc.gamification.title || 'Rookie Trader';
+
+        if (storedLevel !== correctLevel || storedTitle !== correctTitle) {
+            console.log(`[Gamification] Auto-sync for ${req.user.id}: Level ${storedLevel} → ${correctLevel}, Title: ${storedTitle} → ${correctTitle}`);
+            userDoc.gamification.level = correctLevel;
+            userDoc.gamification.title = correctTitle;
+
+            // Also sync xp with totalXpEarned if they differ
+            if (userDoc.gamification.xp !== totalXpEarned) {
+                console.log(`[Gamification] Syncing XP: ${userDoc.gamification.xp} → ${totalXpEarned}`);
+                userDoc.gamification.xp = totalXpEarned;
+            }
+
+            await userDoc.save();
+        }
+
+        // Now convert to lean object for rest of processing
+        const user = userDoc.toObject();
         const gamification = user.gamification;
 
         // ✅ GET REAL PREDICTION STATS FROM PREDICTION MODEL
@@ -198,56 +389,99 @@ router.get('/stats', authMiddleware, async (req, res) => {
 });
 
 // @route   POST /api/gamification/sync-level
-// @desc    Recalculate and sync level with current XP
+// @desc    Recalculate and sync level with current XP (FIXED: uses totalXpEarned and LEVEL_THRESHOLDS)
 // @access  Private
 router.post('/sync-level', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        
+
         if (!user) {
             return res.status(404).json({
                 success: false,
                 error: 'User not found'
             });
         }
-        
-        const oldLevel = user.gamification.level;
-        const oldTitle = user.gamification.title;
-        
-        // Recalculate level based on XP (1000 XP per level)
-        const correctLevel = Math.floor(user.gamification.xp / 1000) + 1;
-        
-        // Get correct title for the level (from User model's getTitleForLevel method)
-        const correctTitle = user.getTitleForLevel ? user.getTitleForLevel(correctLevel) : 'Rookie Trader';
-        
+
+        // Initialize gamification if missing
+        if (!user.gamification) {
+            user.gamification = {
+                xp: 0,
+                level: 1,
+                title: 'Rookie Trader',
+                totalXpEarned: 0,
+                nexusCoins: 1000
+            };
+        }
+
+        const oldLevel = user.gamification.level || 1;
+        const oldTitle = user.gamification.title || 'Rookie Trader';
+        const oldXp = user.gamification.xp || 0;
+        const totalXpEarned = user.gamification.totalXpEarned || 0;
+
+        // ✅ FIXED: Calculate level based on totalXpEarned using LEVEL_THRESHOLDS
+        const correctLevel = calculateLevelFromXp(totalXpEarned);
+        const correctTitle = getTitleForLevel(correctLevel);
+
+        // Calculate next level XP
+        const nextLevelIndex = Math.min(correctLevel, LEVEL_THRESHOLDS.length - 1);
+        const nextLevelXp = LEVEL_THRESHOLDS[nextLevelIndex] - totalXpEarned;
+
+        // Check if xp and totalXpEarned are synced (they should be the same)
+        const xpMismatch = oldXp !== totalXpEarned;
+
+        const changes = [];
+
         // Update if different
-        if (correctLevel !== oldLevel || correctTitle !== oldTitle) {
+        if (correctLevel !== oldLevel) {
             user.gamification.level = correctLevel;
+            changes.push(`Level: ${oldLevel} → ${correctLevel}`);
+        }
+
+        if (correctTitle !== oldTitle) {
             user.gamification.title = correctTitle;
+            changes.push(`Title: ${oldTitle} → ${correctTitle}`);
+        }
+
+        // Sync xp with totalXpEarned if they're different
+        if (xpMismatch) {
+            user.gamification.xp = totalXpEarned;
+            changes.push(`XP synced: ${oldXp} → ${totalXpEarned}`);
+        }
+
+        // Update nextLevelXp
+        user.gamification.nextLevelXp = nextLevelXp;
+
+        if (changes.length > 0) {
             await user.save();
-            
-            console.log(`[Gamification] Synced level for user ${req.user.id}: Level ${oldLevel} → ${correctLevel}, Title: ${oldTitle} → ${correctTitle}`);
-            
+
+            console.log(`[Gamification] Synced for user ${req.user.id}:`, changes.join(', '));
+
             return res.json({
                 success: true,
-                message: 'Level synced successfully',
+                message: 'Gamification data synced successfully',
                 changes: {
+                    totalXpEarned,
                     xp: user.gamification.xp,
                     oldLevel,
                     newLevel: correctLevel,
                     oldTitle,
-                    newTitle: correctTitle
+                    newTitle: correctTitle,
+                    nextLevelXp,
+                    xpWasMismatched: xpMismatch,
+                    changesApplied: changes
                 }
             });
         }
-        
+
         res.json({
             success: true,
-            message: 'Level already in sync',
+            message: 'Gamification data already in sync',
             data: {
+                totalXpEarned,
                 xp: user.gamification.xp,
                 level: user.gamification.level,
-                title: user.gamification.title
+                title: user.gamification.title,
+                nextLevelXp
             }
         });
     } catch (error) {
