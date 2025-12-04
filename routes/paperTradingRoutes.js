@@ -1408,7 +1408,7 @@ router.get('/leaderboard', auth, async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         
         const accounts = await PaperTradingAccount.find()
-            .populate('user', 'name username profile.displayName profile.avatar')
+            .populate('user', 'name username profile.displayName profile.avatar vault.equippedBorder')
             .sort({ totalProfitLossPercent: -1 })
             .limit(limit);
         
