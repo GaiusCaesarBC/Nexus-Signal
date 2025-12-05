@@ -1,7 +1,7 @@
 // server/routes/brokerageRoutes.js - Brokerage Connection Routes
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
+const auth = require('../middleware/authMiddleware');
 const BrokerageConnection = require('../models/BrokerageConnection');
 const krakenService = require('../services/krakenService');
 const plaidService = require('../services/plaidService');
