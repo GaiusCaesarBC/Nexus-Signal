@@ -304,7 +304,8 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
             const value = fiat === 'USD' ? balances[fiat] : balances[fiat]; // TODO: Convert other fiats
             holdings.push({
                 symbol: fiat,
-                balance: balances[fiat],
+                name: fiat,
+                quantity: balances[fiat],
                 price: 1,
                 value: value,
                 type: 'fiat'
@@ -329,7 +330,8 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
 
                 holdings.push({
                     symbol: asset,
-                    balance,
+                    name: asset,
+                    quantity: balance,
                     price,
                     value,
                     change24h: tickers[tickerKey] ?
@@ -345,7 +347,8 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
             for (const asset of cryptoAssets) {
                 holdings.push({
                     symbol: asset,
-                    balance: balances[asset],
+                    name: asset,
+                    quantity: balances[asset],
                     price: 0,
                     value: 0,
                     type: 'crypto'
