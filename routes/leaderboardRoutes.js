@@ -268,11 +268,12 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 
-// Import BrokerageConnection model for real portfolio leaderboard
+// Import models for real portfolio leaderboard
 const BrokerageConnection = require('../models/BrokerageConnection');
+const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory');
 
 // @route   GET /api/leaderboard/real-portfolio
-// @desc    Get real portfolio leaderboard (based on brokerage connections)
+// @desc    Get real portfolio leaderboard (based on portfolio history with gain/loss)
 // @access  Public (shows anonymized data) or Private (shows your rank)
 router.get('/real-portfolio', async (req, res) => {
     try {
@@ -284,95 +285,76 @@ router.get('/real-portfolio', async (req, res) => {
 
         const safeLimit = Math.min(parseInt(limit) || 100, 100);
 
-        // Get all active brokerage connections with cached portfolios
-        const connections = await BrokerageConnection.find({
-            status: 'active',
-            'cachedPortfolio.totalValue': { $gt: 0 }
+        // Get all portfolio histories with gain/loss data
+        const histories = await BrokeragePortfolioHistory.find({
+            currentValue: { $gt: 0 }
         })
-        .populate('user', 'username displayName avatar profile vault level xp')
+        .populate('user', 'username displayName avatar profile vault level xp gamification')
         .lean();
 
-        // Aggregate by user (sum all their connections)
-        const userPortfolios = {};
+        // Build leaderboard from portfolio histories
+        const leaderboard = histories
+            .filter(h => h.user) // Only include entries with valid users
+            .map(history => ({
+                userId: history.user._id.toString(),
+                username: history.user.username || 'Anonymous',
+                displayName: history.user.displayName || history.user.profile?.displayName || history.user.username || 'Anonymous Trader',
+                avatar: history.user.avatar || history.user.profile?.avatar,
+                level: history.user.gamification?.level || history.user.level || 1,
+                xp: history.user.gamification?.xp || history.user.xp || 0,
+                equippedBorder: history.user.vault?.equippedBorder || 'border-bronze',
+                equippedBadges: history.user.vault?.equippedBadges || [],
+                totalValue: history.currentValue || 0,
+                initialValue: history.initialValue || 0,
+                totalReturn: history.totalGain || 0,
+                totalReturnPercent: history.totalGainPercent || 0,
+                allTimeHigh: history.allTimeHigh?.value || 0,
+                allTimeLow: history.allTimeLow?.value || 0,
+                lastSync: history.lastUpdated,
+                trackingSince: history.initialDate
+            }));
 
-        for (const conn of connections) {
-            if (!conn.user) continue;
-
-            const userId = conn.user._id.toString();
-
-            if (!userPortfolios[userId]) {
-                userPortfolios[userId] = {
-                    userId: userId,
-                    username: conn.user.username || 'Anonymous',
-                    displayName: conn.user.displayName || conn.user.profile?.displayName || conn.user.username || 'Anonymous Trader',
-                    avatar: conn.user.avatar || conn.user.profile?.avatar,
-                    level: conn.user.level || 1,
-                    xp: conn.user.xp || 0,
-                    equippedBorder: conn.user.vault?.equippedBorder || 'border-bronze',
-                    equippedBadges: conn.user.vault?.equippedBadges || [],
-                    totalValue: 0,
-                    holdingsCount: 0,
-                    connectionCount: 0,
-                    lastSync: null,
-                    // Estimated stats (we don't track cost basis for real portfolios yet)
-                    totalReturn: 0,
-                    totalReturnPercent: 0,
-                    winRate: 50, // Placeholder
-                    totalTrades: 0 // Placeholder
-                };
-            }
-
-            // Sum portfolio values
-            userPortfolios[userId].totalValue += conn.cachedPortfolio?.totalValue || 0;
-            userPortfolios[userId].holdingsCount += conn.cachedPortfolio?.holdings?.length || 0;
-            userPortfolios[userId].connectionCount += 1;
-
-            // Track most recent sync
-            if (!userPortfolios[userId].lastSync ||
-                new Date(conn.lastSync) > new Date(userPortfolios[userId].lastSync)) {
-                userPortfolios[userId].lastSync = conn.lastSync;
-            }
-        }
-
-        // Convert to array and sort
-        let leaderboard = Object.values(userPortfolios);
-
-        // Sort based on sortBy parameter
+        // Sort based on sortBy parameter - default is by percentage gain (highest to lowest)
         switch (sortBy) {
             case 'totalReturnPercent':
             case 'returns':
-                // For now, sort by total value since we don't track returns
+                leaderboard.sort((a, b) => b.totalReturnPercent - a.totalReturnPercent);
+                break;
+            case 'totalValue':
+            case 'value':
                 leaderboard.sort((a, b) => b.totalValue - a.totalValue);
                 break;
-            case 'winRate':
-            case 'accuracy':
-                leaderboard.sort((a, b) => b.winRate - a.winRate);
-                break;
-            case 'totalTrades':
-            case 'trades':
-                leaderboard.sort((a, b) => b.holdingsCount - a.holdingsCount);
+            case 'totalReturn':
+            case 'gain':
+                leaderboard.sort((a, b) => b.totalReturn - a.totalReturn);
                 break;
             case 'xp':
                 leaderboard.sort((a, b) => b.xp - a.xp);
                 break;
+            case 'level':
+                leaderboard.sort((a, b) => b.level - a.level);
+                break;
             default:
-                leaderboard.sort((a, b) => b.totalValue - a.totalValue);
+                // Default: sort by percentage gain (highest to lowest)
+                leaderboard.sort((a, b) => b.totalReturnPercent - a.totalReturnPercent);
         }
 
         // Limit results
-        leaderboard = leaderboard.slice(0, safeLimit);
+        const limitedLeaderboard = leaderboard.slice(0, safeLimit);
 
         // Add rank
-        const rankedLeaderboard = leaderboard.map((trader, index) => ({
+        const rankedLeaderboard = limitedLeaderboard.map((trader, index) => ({
             rank: index + 1,
             ...trader
         }));
+
+        console.log(`[Leaderboard] Real portfolio: ${rankedLeaderboard.length} users, sorted by ${sortBy}`);
 
         res.json({
             success: true,
             type: 'real-portfolio',
             leaderboard: rankedLeaderboard,
-            total: rankedLeaderboard.length,
+            total: leaderboard.length,
             filters: { sortBy, period }
         });
 
