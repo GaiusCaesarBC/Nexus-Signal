@@ -34,7 +34,7 @@ async function createLinkToken(userId, clientName = 'Nexus Signal') {
     const client = initializePlaidClient();
 
     try {
-        const response = await client.linkTokenCreate({
+        const linkConfig = {
             user: {
                 client_user_id: userId,
             },
@@ -42,7 +42,19 @@ async function createLinkToken(userId, clientName = 'Nexus Signal') {
             products: [Products.Investments],
             country_codes: [CountryCode.Us],
             language: 'en',
-        });
+        };
+
+        // Add webhook URL for production
+        if (process.env.PLAID_WEBHOOK_URL) {
+            linkConfig.webhook = process.env.PLAID_WEBHOOK_URL;
+        }
+
+        // Add OAuth redirect URI for production (required for some institutions)
+        if (process.env.PLAID_REDIRECT_URI) {
+            linkConfig.redirect_uri = process.env.PLAID_REDIRECT_URI;
+        }
+
+        const response = await client.linkTokenCreate(linkConfig);
 
         return {
             linkToken: response.data.link_token,

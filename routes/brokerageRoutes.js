@@ -7,7 +7,96 @@ const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory')
 const krakenService = require('../services/krakenService');
 const plaidService = require('../services/plaidService');
 
-// All routes require authentication
+// ============================================
+// PLAID WEBHOOK (PUBLIC - NO AUTH)
+// Must be defined BEFORE auth middleware
+// ============================================
+
+/**
+ * POST /api/brokerage/plaid/webhook
+ * Receive Plaid webhook events (called by Plaid directly)
+ */
+router.post('/plaid/webhook', async (req, res) => {
+    try {
+        const { webhook_type, webhook_code, item_id, error } = req.body;
+
+        console.log(`[Plaid Webhook] Type: ${webhook_type}, Code: ${webhook_code}, Item: ${item_id}`);
+
+        // Find the connection by Plaid item ID
+        const connection = await BrokerageConnection.findOne({ 'plaid.itemId': item_id });
+
+        if (!connection) {
+            console.log(`[Plaid Webhook] No connection found for item: ${item_id}`);
+            return res.json({ received: true });
+        }
+
+        switch (webhook_type) {
+            case 'HOLDINGS':
+                // Holdings have been updated
+                if (webhook_code === 'DEFAULT_UPDATE') {
+                    console.log(`[Plaid Webhook] Holdings updated for ${connection.name}`);
+                    // Trigger a sync of holdings
+                    try {
+                        const accessToken = connection.getPlaidAccessToken();
+                        const holdings = await plaidService.getHoldings(accessToken);
+                        const portfolioData = {
+                            holdings: holdings.holdings.map(h => ({
+                                symbol: h.symbol,
+                                name: h.name,
+                                quantity: h.quantity,
+                                price: h.price,
+                                value: h.value,
+                                costBasis: h.costBasis,
+                                type: h.type
+                            })),
+                            totalValue: holdings.accounts.reduce((sum, acc) => sum + acc.totalValue, 0)
+                        };
+                        await connection.updateCache(portfolioData);
+                        console.log(`[Plaid Webhook] Holdings synced for ${connection.name}`);
+                    } catch (syncErr) {
+                        console.error(`[Plaid Webhook] Error syncing holdings:`, syncErr.message);
+                    }
+                }
+                break;
+
+            case 'INVESTMENTS_TRANSACTIONS':
+                // New investment transactions available
+                if (webhook_code === 'DEFAULT_UPDATE') {
+                    console.log(`[Plaid Webhook] New transactions for ${connection.name}`);
+                }
+                break;
+
+            case 'ITEM':
+                // Item status changes
+                if (webhook_code === 'ERROR') {
+                    console.error(`[Plaid Webhook] Item error for ${connection.name}:`, error);
+                    await connection.setError(error?.error_message || 'Connection error');
+                } else if (webhook_code === 'PENDING_EXPIRATION') {
+                    console.log(`[Plaid Webhook] Connection expiring soon for ${connection.name}`);
+                    await connection.setError('Connection will expire soon - please re-authenticate');
+                } else if (webhook_code === 'USER_PERMISSION_REVOKED') {
+                    console.log(`[Plaid Webhook] User revoked access for ${connection.name}`);
+                    connection.status = 'disconnected';
+                    connection.lastError = 'Access was revoked';
+                    await connection.save();
+                }
+                break;
+
+            default:
+                console.log(`[Plaid Webhook] Unhandled webhook type: ${webhook_type}`);
+        }
+
+        // Always respond 200 to acknowledge receipt
+        res.json({ received: true });
+
+    } catch (error) {
+        console.error('[Plaid Webhook] Error processing webhook:', error);
+        // Still return 200 to prevent Plaid from retrying
+        res.json({ received: true, error: error.message });
+    }
+});
+
+// All remaining routes require authentication
 router.use(auth);
 
 /**
