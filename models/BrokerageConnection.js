@@ -78,19 +78,10 @@ const brokerageConnectionSchema = new mongoose.Schema({
     lastError: String,
     // Last sync time
     lastSync: Date,
-    // Cached portfolio data
+    // Cached portfolio data (using Mixed for flexibility)
     cachedPortfolio: {
-        holdings: [{
-            symbol: String,
-            name: String,
-            quantity: Number,
-            price: Number,
-            value: Number,
-            costBasis: Number,
-            type: String
-        }],
-        totalValue: Number,
-        lastUpdated: Date
+        type: mongoose.Schema.Types.Mixed,
+        default: { holdings: [], totalValue: 0, lastUpdated: null }
     }
 }, {
     timestamps: true
