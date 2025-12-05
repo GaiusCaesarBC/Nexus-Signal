@@ -214,6 +214,40 @@ router.post(
             }
             console.log('[Auth Route /login] Password matched for user:', user.email);
 
+            // ✅ CHECK IF 2FA IS ENABLED
+            if (user.twoFactor && user.twoFactor.enabled) {
+                console.log(`[Auth Route /login] 2FA enabled for user: ${user.email}, method: ${user.twoFactor.method}`);
+
+                // Check if account is locked from failed 2FA attempts
+                if (user.twoFactor.lockedUntil && user.twoFactor.lockedUntil > new Date()) {
+                    const minutesLeft = Math.ceil((user.twoFactor.lockedUntil - new Date()) / 60000);
+                    return res.status(429).json({
+                        msg: `Account temporarily locked. Try again in ${minutesLeft} minutes.`
+                    });
+                }
+
+                // Generate temporary token for 2FA verification (short-lived, 10 minutes)
+                const tempPayload = {
+                    user: { id: user.id },
+                    purpose: '2fa_verification',
+                    exp: Math.floor(Date.now() / 1000) + (10 * 60) // 10 minutes
+                };
+
+                const tempToken = jwt.sign(tempPayload, process.env.JWT_SECRET);
+
+                // Return 2FA required response (don't issue full token yet)
+                return res.json({
+                    success: true,
+                    requires2FA: true,
+                    tempToken: tempToken,
+                    method: user.twoFactor.method,
+                    email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'), // Masked email
+                    phone: user.twoFactor.phone ? user.twoFactor.phone.replace(/(.{3})(.*)(.{4})/, '$1****$3') : null, // Masked phone
+                    msg: '2FA verification required'
+                });
+            }
+
+            // ✅ NO 2FA - Proceed with normal login
             const payload = { user: { id: user.id } };
             jwt.sign(
                 payload,
@@ -227,10 +261,10 @@ router.post(
                     const cookieOptions = getCookieOptions();
                     res.cookie('token', token, cookieOptions);
                     console.log('[Auth Route /login] Cookie set with options:', cookieOptions);
-                    
+
                     // ✅ FIXED: Return token in response body!
-                    res.json({ 
-                        success: true, 
+                    res.json({
+                        success: true,
                         msg: "Logged in successfully",
                         token: token,
                         user: {
@@ -239,7 +273,7 @@ router.post(
                             username: user.username
                         }
                     });
-                    
+
                     console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued.`);
                 }
             );

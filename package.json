@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
+    "@sendgrid/mail": "^8.1.6",
     "@vercel/analytics": "^1.5.0",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
@@ -36,11 +37,13 @@
     "multer-storage-cloudinary": "^4.0.0",
     "natural": "^8.1.0",
     "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.11",
     "openai": "^6.9.1",
     "plaid": "^40.0.0",
     "sentiment": "^5.0.2",
     "stripe": "^17.0.0",
     "technicalindicators": "^3.1.0",
+    "twilio": "^5.10.7",
     "twitter-api-v2": "^1.28.0",
     "xss-clean": "^0.1.1",
     "yahoo-finance2": "^3.10.1"

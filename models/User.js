@@ -255,7 +255,37 @@ const UserSchema = new mongoose.Schema({
         connected: { type: Boolean, default: false },
         lastSyncedAt: { type: Date, default: null }
     },
-    
+
+    // ============ TWO-FACTOR AUTHENTICATION ============
+    twoFactor: {
+        enabled: { type: Boolean, default: false },
+        method: {
+            type: String,
+            enum: ['email', 'sms', 'both', null],
+            default: null
+        },
+        // Phone number for SMS verification
+        phone: { type: String, default: null },
+        phoneVerified: { type: Boolean, default: false },
+        // Pending verification (during setup)
+        pendingCode: { type: String, default: null },
+        pendingCodeExpires: { type: Date, default: null },
+        pendingMethod: { type: String, default: null },
+        pendingPhone: { type: String, default: null },
+        // Backup codes (hashed)
+        backupCodes: [{ type: String }],
+        backupCodesGeneratedAt: { type: Date, default: null },
+        // Rate limiting
+        lastCodeSent: { type: Date, default: null },
+        codesSentCount: { type: Number, default: 0 },
+        codesSentResetAt: { type: Date, default: null },
+        // Brute force protection
+        failedAttempts: { type: Number, default: 0 },
+        lockedUntil: { type: Date, default: null },
+        // Enabled timestamp
+        enabledAt: { type: Date, default: null }
+    },
+
     // ============ TRADING STATS ============
     stats: {
         // Portfolio stats
