@@ -578,38 +578,50 @@ async function getCurrentPrice(symbol, assetType = 'stock') {
 }
 
 async function getStockPrice(symbol) {
+    // Try Yahoo Finance first
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d`;
-        const response = await axios.get(url, { timeout: 5000 });
-        const result = response.data.chart.result[0];
-        const meta = result.meta;
-        
-        return {
-            price: meta.regularMarketPrice || meta.previousClose,
-            changePercent: meta.regularMarketPrice && meta.previousClose 
-                ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100 
-                : 0
-        };
+        const response = await axios.get(url, { timeout: 10000 });
+        const result = response.data?.chart?.result?.[0];
+        const meta = result?.meta;
+
+        if (meta && (meta.regularMarketPrice || meta.previousClose)) {
+            const price = meta.regularMarketPrice || meta.previousClose;
+            console.log(`[Portfolio] Yahoo price for ${symbol}: $${price}`);
+            return {
+                price: price,
+                changePercent: meta.regularMarketPrice && meta.previousClose
+                    ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100
+                    : 0
+            };
+        }
     } catch (yahooError) {
-        console.log(`Yahoo Finance failed for ${symbol}, trying Alpha Vantage...`);
+        console.log(`[Portfolio] Yahoo Finance failed for ${symbol}: ${yahooError.message}`);
     }
 
+    // Fallback to Alpha Vantage
     const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-    
+
     if (ALPHA_VANTAGE_KEY && ALPHA_VANTAGE_KEY !== 'demo') {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`;
-        const response = await axios.get(url, { timeout: 5000 });
-        const quote = response.data['Global Quote'];
-        
-        if (quote && quote['05. price']) {
-            return {
-                price: parseFloat(quote['05. price']),
-                changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || 0)
-            };
+        try {
+            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`;
+            const response = await axios.get(url, { timeout: 10000 });
+            const quote = response.data['Global Quote'];
+
+            if (quote && quote['05. price']) {
+                const price = parseFloat(quote['05. price']);
+                console.log(`[Portfolio] Alpha Vantage price for ${symbol}: $${price}`);
+                return {
+                    price: price,
+                    changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || 0)
+                };
+            }
+        } catch (avError) {
+            console.log(`[Portfolio] Alpha Vantage failed for ${symbol}: ${avError.message}`);
         }
     }
 
-    throw new Error('Could not fetch stock price from any source');
+    throw new Error(`Could not fetch stock price for ${symbol} from any source`);
 }
 
 async function getCryptoPrice(symbol) {
@@ -618,34 +630,41 @@ async function getCryptoPrice(symbol) {
         ADA: 'cardano', SOL: 'solana', DOGE: 'dogecoin', DOT: 'polkadot',
         BNB: 'binancecoin', LINK: 'chainlink', UNI: 'uniswap',
         MATIC: 'matic-network', SHIB: 'shiba-inu', TRX: 'tron',
-        AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero'
+        AVAX: 'avalanche-2', ATOM: 'cosmos', XMR: 'monero',
+        PEPE: 'pepe', ARB: 'arbitrum', OP: 'optimism'
     };
 
     const coinId = cryptoMap[symbol.toUpperCase()] || symbol.toLowerCase();
     const COINGECKO_KEY = process.env.COINGECKO_API_KEY;
     const baseUrl = process.env.COINGECKO_BASE_URL || 'https://pro-api.coingecko.com/api/v3';
-    
-    const params = {
-        ids: coinId,
-        vs_currencies: 'usd',
-        include_24hr_change: true
-    };
-    
-    if (COINGECKO_KEY) {
-        params['x_cg_pro_api_key'] = COINGECKO_KEY;
-    }
-    
-    const url = `${baseUrl}/simple/price`;
-    const response = await axios.get(url, { params, timeout: 5000 });
-    const data = response.data;
-    
-    if (data[coinId] && data[coinId].usd) {
-        return {
-            price: data[coinId].usd,
-            changePercent: data[coinId].usd_24h_change || 0
+
+    try {
+        const params = {
+            ids: coinId,
+            vs_currencies: 'usd',
+            include_24hr_change: true
         };
+
+        if (COINGECKO_KEY) {
+            params['x_cg_pro_api_key'] = COINGECKO_KEY;
+        }
+
+        const url = `${baseUrl}/simple/price`;
+        const response = await axios.get(url, { params, timeout: 10000 });
+        const data = response.data;
+
+        if (data[coinId] && data[coinId].usd) {
+            const price = data[coinId].usd;
+            console.log(`[Portfolio] CoinGecko price for ${symbol}: $${price}`);
+            return {
+                price: price,
+                changePercent: data[coinId].usd_24h_change || 0
+            };
+        }
+    } catch (error) {
+        console.log(`[Portfolio] CoinGecko failed for ${symbol}: ${error.message}`);
     }
-    
+
     throw new Error(`Crypto price not found for ${symbol}`);
 }
 

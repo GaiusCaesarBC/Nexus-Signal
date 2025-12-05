@@ -245,13 +245,18 @@ PortfolioSchema.methods.sellAsset = async function(symbol, quantity, currentPric
 
 PortfolioSchema.methods.updatePrices = async function(priceData) {
     // priceData format: { 'AAPL': 175.50, 'BTC': 43000, ... }
-    
+
     let updated = false;
-    
+
     this.holdings.forEach(holding => {
-        if (priceData[holding.symbol]) {
-            holding.currentPrice = priceData[holding.symbol];
-            updated = true;
+        // Fix: Check for undefined/null explicitly, not just falsy (0 is valid price)
+        if (holding.symbol in priceData && priceData[holding.symbol] != null) {
+            const newPrice = parseFloat(priceData[holding.symbol]);
+            if (!isNaN(newPrice) && newPrice > 0) {
+                holding.currentPrice = newPrice;
+                updated = true;
+                console.log(`[Portfolio] Updated ${holding.symbol}: $${newPrice.toFixed(2)}`);
+            }
         }
     });
 
@@ -259,6 +264,7 @@ PortfolioSchema.methods.updatePrices = async function(priceData) {
         this.calculateTotals();
         this.lastPriceUpdate = Date.now();
         await this.save();
+        console.log(`[Portfolio] Total value updated: $${this.totalValue.toFixed(2)}`);
     }
 
     return this;
