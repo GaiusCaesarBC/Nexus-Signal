@@ -401,20 +401,26 @@ router.delete('/disconnect/:connectionId', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Connection not found' });
         }
 
-        // If Plaid connection, remove the item
+        // If Plaid connection, try to remove the item (but don't fail if decryption fails)
         if (connection.plaid?.accessToken) {
             try {
                 const accessToken = connection.getPlaidAccessToken();
                 await plaidService.removeItem(accessToken);
             } catch (e) {
-                console.error('Error removing Plaid item:', e.message);
+                console.error('Error removing Plaid item (may be decryption issue):', e.message);
+                // Continue with deletion anyway
             }
         }
 
-        // If Kraken, clear the cache
+        // If Kraken, try to clear the cache (but don't fail if decryption fails)
         if (connection.type === 'kraken' && connection.credentials?.apiKey) {
-            const apiKey = connection.getApiKey();
-            krakenService.clearCache(apiKey);
+            try {
+                const apiKey = connection.getApiKey();
+                krakenService.clearCache(apiKey);
+            } catch (e) {
+                console.error('Error clearing Kraken cache (may be decryption issue):', e.message);
+                // Continue with deletion anyway
+            }
         }
 
         await connection.deleteOne();
