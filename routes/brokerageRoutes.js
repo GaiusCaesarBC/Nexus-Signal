@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const BrokerageConnection = require('../models/BrokerageConnection');
+const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory');
 const krakenService = require('../services/krakenService');
 const plaidService = require('../services/plaidService');
 
@@ -553,6 +554,131 @@ router.post('/sync-all', async (req, res) => {
         });
     } catch (error) {
         console.error('Error syncing all connections:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// PORTFOLIO HISTORY TRACKING ROUTES
+// ============================================
+
+/**
+ * GET /api/brokerage/portfolio-history
+ * Get user's portfolio history and gain/loss stats
+ */
+router.get('/portfolio-history', async (req, res) => {
+    try {
+        const history = await BrokeragePortfolioHistory.findOne({ user: req.user.id });
+
+        if (!history) {
+            return res.json({
+                success: true,
+                history: null,
+                message: 'No portfolio history yet. Connect a brokerage to start tracking.'
+            });
+        }
+
+        res.json({
+            success: true,
+            history: history.getSummary()
+        });
+    } catch (error) {
+        console.error('Error fetching portfolio history:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/brokerage/portfolio-history/track
+ * Track current portfolio value (called by frontend on sync)
+ */
+router.post('/portfolio-history/track', async (req, res) => {
+    try {
+        const { totalValue, holdingsCount } = req.body;
+
+        if (totalValue === undefined || totalValue === null) {
+            return res.status(400).json({ success: false, error: 'totalValue is required' });
+        }
+
+        const history = await BrokeragePortfolioHistory.trackValue(
+            req.user.id,
+            parseFloat(totalValue),
+            holdingsCount || 0
+        );
+
+        res.json({
+            success: true,
+            history: history.getSummary()
+        });
+    } catch (error) {
+        console.error('Error tracking portfolio value:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/brokerage/portfolio-history/reset
+ * Reset portfolio history (set current value as new initial value)
+ */
+router.post('/portfolio-history/reset', async (req, res) => {
+    try {
+        let history = await BrokeragePortfolioHistory.findOne({ user: req.user.id });
+
+        if (!history) {
+            return res.status(404).json({ success: false, error: 'No portfolio history found' });
+        }
+
+        // Reset initial value to current value
+        history.initialValue = history.currentValue;
+        history.initialDate = new Date();
+        history.totalGain = 0;
+        history.totalGainPercent = 0;
+        history.snapshots = [];
+        history.allTimeHigh = { value: history.currentValue, date: new Date() };
+        history.allTimeLow = { value: history.currentValue, date: new Date() };
+        await history.save();
+
+        res.json({
+            success: true,
+            message: 'Portfolio history reset successfully',
+            history: history.getSummary()
+        });
+    } catch (error) {
+        console.error('Error resetting portfolio history:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/brokerage/portfolio-history/snapshots
+ * Get historical snapshots for charting
+ */
+router.get('/portfolio-history/snapshots', async (req, res) => {
+    try {
+        const { days = 30 } = req.query;
+        const history = await BrokeragePortfolioHistory.findOne({ user: req.user.id });
+
+        if (!history) {
+            return res.json({ success: true, snapshots: [] });
+        }
+
+        const cutoffDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000);
+        const snapshots = history.snapshots
+            .filter(s => s.timestamp > cutoffDate)
+            .map(s => ({
+                value: s.value,
+                holdingsCount: s.holdingsCount,
+                timestamp: s.timestamp
+            }));
+
+        res.json({
+            success: true,
+            snapshots,
+            initialValue: history.initialValue,
+            currentValue: history.currentValue
+        });
+    } catch (error) {
+        console.error('Error fetching portfolio snapshots:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
