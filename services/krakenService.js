@@ -281,22 +281,24 @@ async function validateCredentials(apiKey, apiSecret) {
 }
 
 /**
- * Convert normalized symbol back to Kraken pair format
+ * Convert normalized symbol to Kraken ticker pair format
+ * Note: Kraken Ticker API uses different format than Balance API
  * @param {string} asset - Normalized asset code (BTC, ETH, etc.)
- * @returns {string} Kraken pair format
+ * @returns {string} Kraken ticker pair format
  */
-function getKrakenPair(asset) {
-    // Kraken uses XBT for Bitcoin, and prefixes with X for crypto, Z for fiat
-    const krakenPairs = {
-        'BTC': 'XXBTZUSD',
-        'ETH': 'XETHZUSD',
-        'LTC': 'XLTCZUSD',
-        'XRP': 'XXRPZUSD',
-        'XLM': 'XXLMZUSD',
-        'DOGE': 'XDOGEUSD',
-        'XMR': 'XXMRZUSD',
-        'ETC': 'XETCZUSD',
-        'ZEC': 'XZECZUSD',
+function getKrakenTickerPair(asset) {
+    // Kraken Ticker API uses simpler format - XBTUSD, ETHUSD, etc.
+    // NOT the XX/XZ prefixes from the balance API
+    const tickerPairs = {
+        'BTC': 'XBTUSD',    // Bitcoin uses XBT, not BTC
+        'ETH': 'ETHUSD',
+        'LTC': 'LTCUSD',
+        'XRP': 'XRPUSD',
+        'XLM': 'XLMUSD',
+        'DOGE': 'DOGEUSD',
+        'XMR': 'XMRUSD',
+        'ETC': 'ETCUSD',
+        'ZEC': 'ZECUSD',
         'ADA': 'ADAUSD',
         'DOT': 'DOTUSD',
         'SOL': 'SOLUSD',
@@ -307,7 +309,7 @@ function getKrakenPair(asset) {
         'UNI': 'UNIUSD',
         'AAVE': 'AAVEUSD'
     };
-    return krakenPairs[asset] || `${asset}USD`;
+    return tickerPairs[asset] || `${asset}USD`;
 }
 
 /**
@@ -346,35 +348,42 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
 
     // Get crypto prices
     if (cryptoAssets.length > 0) {
-        // Build Kraken-formatted pairs
-        const pairs = cryptoAssets.map(asset => getKrakenPair(asset));
-        console.log('Fetching Kraken pairs:', pairs);
+        // Build Kraken ticker pairs (different format than balance API)
+        const pairs = cryptoAssets.map(asset => getKrakenTickerPair(asset));
+        console.log('[Kraken] Fetching ticker pairs:', pairs);
 
         try {
             const tickers = await getTicker(pairs);
-            console.log('Kraken ticker keys:', Object.keys(tickers));
+            console.log('[Kraken] Ticker response keys:', Object.keys(tickers));
 
             for (const asset of cryptoAssets) {
                 const balance = balances[asset];
-                const krakenPair = getKrakenPair(asset);
+                const tickerPair = getKrakenTickerPair(asset);
 
-                // Find the ticker - Kraken may return slightly different key formats
+                // Kraken returns keys with XX prefix sometimes (e.g., XXBTZUSD for XBTUSD request)
                 const tickerKey = Object.keys(tickers).find(k => {
                     // Direct match
-                    if (k === krakenPair) return true;
-                    // Check if it matches without the Z prefix for USD
-                    if (k.replace('ZUSD', 'USD') === krakenPair.replace('ZUSD', 'USD')) return true;
-                    // For BTC specifically, check XBT variations
-                    if (asset === 'BTC' && (k.includes('XBT') || k.includes('BTC'))) return true;
-                    // Generic check
-                    if (k.includes(asset) || (asset === 'BTC' && k.includes('XBT'))) return true;
+                    if (k === tickerPair) return true;
+                    // Kraken often returns XXBTZUSD when you request XBTUSD
+                    if (k === `X${tickerPair.replace('USD', 'ZUSD')}`) return true;
+                    if (k === `XX${tickerPair.replace('USD', 'ZUSD')}`) return true;
+                    // For BTC/XBT
+                    if (asset === 'BTC' && k.includes('XBT')) return true;
+                    // Generic - check if key contains the ticker pair or asset
+                    if (k.includes(tickerPair.replace('USD', ''))) return true;
                     return false;
                 });
 
-                console.log(`Asset ${asset}: krakenPair=${krakenPair}, tickerKey=${tickerKey}`);
+                console.log(`[Kraken] Asset ${asset}: requested=${tickerPair}, found=${tickerKey}, ticker=${JSON.stringify(tickers[tickerKey]?.c)}`);
 
-                const price = tickers[tickerKey]?.last || 0;
+                const tickerData = tickers[tickerKey];
+                // Kraken ticker format: c[0] = last trade price
+                const price = tickerData ? parseFloat(tickerData.c?.[0] || tickerData.last || 0) : 0;
+                const open24h = tickerData ? parseFloat(tickerData.o || tickerData.open24h || price) : price;
                 const value = balance * price;
+                const change24h = open24h > 0 ? ((price - open24h) / open24h * 100) : 0;
+
+                console.log(`[Kraken] ${asset}: balance=${balance}, price=${price}, value=${value}`);
 
                 holdings.push({
                     symbol: asset,
@@ -382,15 +391,14 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
                     quantity: balance,
                     price,
                     value,
-                    change24h: tickers[tickerKey] ?
-                        ((price - tickers[tickerKey].open24h) / tickers[tickerKey].open24h * 100) : 0,
+                    change24h,
                     type: 'crypto'
                 });
 
                 totalValue += value;
             }
         } catch (error) {
-            console.error('Error fetching Kraken prices:', error.message);
+            console.error('[Kraken] Error fetching prices:', error.message);
             // Add holdings without prices
             for (const asset of cryptoAssets) {
                 holdings.push({
