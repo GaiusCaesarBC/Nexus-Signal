@@ -238,6 +238,23 @@ const UserSchema = new mongoose.Schema({
         // Blocked users
         blocked: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
     },
+
+    // ============ WALLET CONNECTION ============
+    wallet: {
+        address: { type: String, default: null },
+        chainId: { type: Number, default: null },
+        linkedAt: { type: Date, default: null },
+        lastSyncedAt: { type: Date, default: null },
+        // Track if portfolio data comes from wallet
+        isWalletLinked: { type: Boolean, default: false }
+    },
+
+    // ============ BROKERAGE CONNECTION (future) ============
+    brokerage: {
+        provider: { type: String, default: null }, // 'robinhood', 'webull', etc.
+        connected: { type: Boolean, default: false },
+        lastSyncedAt: { type: Date, default: null }
+    },
     
     // ============ TRADING STATS ============
     stats: {
@@ -1092,5 +1109,81 @@ UserSchema.index({ username: 'text', 'profile.displayName': 'text' });
 // Index for vault queries
 UserSchema.index({ 'vault.equippedBorder': 1 });
 UserSchema.index({ 'vault.equippedTheme': 1 });
+
+// Index for wallet queries
+UserSchema.index({ 'wallet.address': 1 }, { sparse: true });
+UserSchema.index({ 'wallet.isWalletLinked': 1 });
+
+// ============ WALLET HELPER METHODS ============
+
+// Check if user has a linked wallet
+UserSchema.methods.hasLinkedWallet = function() {
+    return this.wallet?.isWalletLinked && this.wallet?.address;
+};
+
+// Link a wallet to the user
+UserSchema.methods.linkWallet = async function(address, chainId = 1) {
+    if (!address) {
+        throw new Error('Wallet address is required');
+    }
+
+    // Normalize address to lowercase
+    const normalizedAddress = address.toLowerCase();
+
+    // Check if this wallet is already linked to another user
+    const existingUser = await mongoose.model('User').findOne({
+        'wallet.address': normalizedAddress,
+        _id: { $ne: this._id }
+    });
+
+    if (existingUser) {
+        throw new Error('This wallet is already linked to another account');
+    }
+
+    this.wallet = {
+        address: normalizedAddress,
+        chainId: chainId,
+        linkedAt: new Date(),
+        lastSyncedAt: null,
+        isWalletLinked: true
+    };
+
+    await this.save();
+
+    console.log(`[User] ${this.username} linked wallet: ${normalizedAddress}`);
+
+    return this.wallet;
+};
+
+// Unlink wallet from user
+UserSchema.methods.unlinkWallet = async function() {
+    const oldAddress = this.wallet?.address;
+
+    this.wallet = {
+        address: null,
+        chainId: null,
+        linkedAt: null,
+        lastSyncedAt: null,
+        isWalletLinked: false
+    };
+
+    await this.save();
+
+    console.log(`[User] ${this.username} unlinked wallet: ${oldAddress}`);
+
+    return true;
+};
+
+// Update wallet sync timestamp
+UserSchema.methods.updateWalletSync = async function() {
+    if (!this.wallet?.isWalletLinked) {
+        throw new Error('No wallet linked');
+    }
+
+    this.wallet.lastSyncedAt = new Date();
+    await this.save();
+
+    return this.wallet.lastSyncedAt;
+};
 
 module.exports = mongoose.model('User', UserSchema);

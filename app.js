@@ -137,7 +137,8 @@ const patternRoutes = require('./routes/patternRoutes'); // ✅ ADDED - AI Patte
 const statsRoutes = require('./routes/statsRoutes'); // ✅ ADDED - Platform Stats for Landing Page
 const onboardingRoutes = require('./routes/onboardingRoutes'); // ✅ ADDED - Onboarding Flow
 const leaderboardRoutes = require('./routes/leaderboardRoutes')
-
+const walletRoutes = require('./routes/walletRoutes'); // Wallet Connection
+const brokerageRoutes = require('./routes/brokerageRoutes'); // Brokerage Connections (Kraken, Plaid)
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -179,6 +180,8 @@ app.use('/api/search', searchRoutes);
 app.use('/api/public', publicStatsRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/posts', postRoutes); // ✅ NEW - Posts/Social Feed
+app.use('/api/wallet', walletRoutes); // Wallet Connection
+app.use('/api/brokerage', brokerageRoutes); // Brokerage Connections (Kraken, Plaid)
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
