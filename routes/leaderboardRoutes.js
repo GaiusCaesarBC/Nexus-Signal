@@ -268,95 +268,120 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 
-// Add this to your existing leaderboardRoutes.js
+// Import BrokerageConnection model for real portfolio leaderboard
+const BrokerageConnection = require('../models/BrokerageConnection');
 
 // @route   GET /api/leaderboard/real-portfolio
-// @desc    Get real portfolio leaderboard (based on user stats)
-router.get('/real-portfolio', auth, async (req, res) => {
+// @desc    Get real portfolio leaderboard (based on brokerage connections)
+// @access  Public (shows anonymized data) or Private (shows your rank)
+router.get('/real-portfolio', async (req, res) => {
     try {
-        const { 
-            timeframe = 'all-time', 
-            metric = 'return', 
-            limit = 50 
+        const {
+            sortBy = 'totalReturnPercent',
+            period = 'all',
+            limit = 100
         } = req.query;
-        
-        const safeLimit = Math.min(parseInt(limit) || 50, 100);
-        
-        // Build query based on timeframe
-        let query = { 'stats.lastUpdated': { $exists: true } };
-        const now = new Date();
-        
-        if (timeframe === 'today') {
-            const startOfDay = new Date(now.setHours(0, 0, 0, 0));
-            query['stats.lastUpdated'] = { $gte: startOfDay };
-        } else if (timeframe === 'week') {
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            query['stats.lastUpdated'] = { $gte: weekAgo };
-        } else if (timeframe === 'month') {
-            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            query['stats.lastUpdated'] = { $gte: monthAgo };
+
+        const safeLimit = Math.min(parseInt(limit) || 100, 100);
+
+        // Get all active brokerage connections with cached portfolios
+        const connections = await BrokerageConnection.find({
+            status: 'active',
+            'cachedPortfolio.totalValue': { $gt: 0 }
+        })
+        .populate('user', 'username displayName avatar profile vault level xp')
+        .lean();
+
+        // Aggregate by user (sum all their connections)
+        const userPortfolios = {};
+
+        for (const conn of connections) {
+            if (!conn.user) continue;
+
+            const userId = conn.user._id.toString();
+
+            if (!userPortfolios[userId]) {
+                userPortfolios[userId] = {
+                    userId: userId,
+                    username: conn.user.username || 'Anonymous',
+                    displayName: conn.user.displayName || conn.user.profile?.displayName || conn.user.username || 'Anonymous Trader',
+                    avatar: conn.user.avatar || conn.user.profile?.avatar,
+                    level: conn.user.level || 1,
+                    xp: conn.user.xp || 0,
+                    equippedBorder: conn.user.vault?.equippedBorder || 'border-bronze',
+                    equippedBadges: conn.user.vault?.equippedBadges || [],
+                    totalValue: 0,
+                    holdingsCount: 0,
+                    connectionCount: 0,
+                    lastSync: null,
+                    // Estimated stats (we don't track cost basis for real portfolios yet)
+                    totalReturn: 0,
+                    totalReturnPercent: 0,
+                    winRate: 50, // Placeholder
+                    totalTrades: 0 // Placeholder
+                };
+            }
+
+            // Sum portfolio values
+            userPortfolios[userId].totalValue += conn.cachedPortfolio?.totalValue || 0;
+            userPortfolios[userId].holdingsCount += conn.cachedPortfolio?.holdings?.length || 0;
+            userPortfolios[userId].connectionCount += 1;
+
+            // Track most recent sync
+            if (!userPortfolios[userId].lastSync ||
+                new Date(conn.lastSync) > new Date(userPortfolios[userId].lastSync)) {
+                userPortfolios[userId].lastSync = conn.lastSync;
+            }
         }
-        
-        // Build sort based on metric
-        let sortField = {};
-        if (metric === 'return') {
-            sortField = { 'stats.totalReturnPercent': -1 };
-        } else if (metric === 'profit') {
-            sortField = { 'stats.totalReturn': -1 };
-        } else if (metric === 'winrate') {
-            sortField = { 'stats.winRate': -1 };
-        } else if (metric === 'trades') {
-            sortField = { 'stats.totalTrades': -1 };
+
+        // Convert to array and sort
+        let leaderboard = Object.values(userPortfolios);
+
+        // Sort based on sortBy parameter
+        switch (sortBy) {
+            case 'totalReturnPercent':
+            case 'returns':
+                // For now, sort by total value since we don't track returns
+                leaderboard.sort((a, b) => b.totalValue - a.totalValue);
+                break;
+            case 'winRate':
+            case 'accuracy':
+                leaderboard.sort((a, b) => b.winRate - a.winRate);
+                break;
+            case 'totalTrades':
+            case 'trades':
+                leaderboard.sort((a, b) => b.holdingsCount - a.holdingsCount);
+                break;
+            case 'xp':
+                leaderboard.sort((a, b) => b.xp - a.xp);
+                break;
+            default:
+                leaderboard.sort((a, b) => b.totalValue - a.totalValue);
         }
-        
-        // Fetch users with real portfolio data
-        const users = await User.find(query)
-            .select('username name profile vault stats')
-            .sort(sortField)
-            .limit(safeLimit);
-        
-        // Find current user's rank
-        const allUsers = await User.find(query).sort(sortField).select('_id');
-        const currentUserRank = allUsers.findIndex(u => 
-            u._id.toString() === req.user.id
-        ) + 1;
-        
-        // Format leaderboard
-        const leaderboard = users
-            .filter(user => user.stats && user.stats.totalTrades > 0)
-            .map((user, index) => ({
-                rank: index + 1,
-                user: {
-                    id: user._id,
-                    username: user.username,
-                    displayName: user.profile?.displayName || user.name || user.username,
-                    avatar: user.profile?.avatar || null,
-                    verified: user.profile?.verified || false,
-                    equippedBorder: user.vault?.equippedBorder || 'border-bronze'
-                },
-                isCurrentUser: user._id.toString() === req.user.id,
-                portfolioValue: user.stats?.currentValue || 0,
-                profitLoss: user.stats?.totalReturn || 0,
-                profitLossPercent: user.stats?.totalReturnPercent || 0,
-                winRate: user.stats?.winRate || 0,
-                totalTrades: user.stats?.totalTrades || 0,
-                predictionAccuracy: user.stats?.predictionAccuracy || 0,
-                currentStreak: user.stats?.currentStreak || 0,
-                lastUpdated: user.stats?.lastUpdated
-            }));
-        
+
+        // Limit results
+        leaderboard = leaderboard.slice(0, safeLimit);
+
+        // Add rank
+        const rankedLeaderboard = leaderboard.map((trader, index) => ({
+            rank: index + 1,
+            ...trader
+        }));
+
         res.json({
             success: true,
             type: 'real-portfolio',
-            leaderboard,
-            currentUserRank: currentUserRank || null,
-            filters: { timeframe, metric },
-            total: leaderboard.length
+            leaderboard: rankedLeaderboard,
+            total: rankedLeaderboard.length,
+            filters: { sortBy, period }
         });
-        
+
     } catch (error) {
         console.error('[Leaderboard] Real portfolio error:', error);
-        res.status(500).json({ error: 'Failed to fetch real portfolio leaderboard' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch real portfolio leaderboard'
+        });
     }
 });
 

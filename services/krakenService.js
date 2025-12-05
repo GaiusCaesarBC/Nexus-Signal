@@ -281,6 +281,36 @@ async function validateCredentials(apiKey, apiSecret) {
 }
 
 /**
+ * Convert normalized symbol back to Kraken pair format
+ * @param {string} asset - Normalized asset code (BTC, ETH, etc.)
+ * @returns {string} Kraken pair format
+ */
+function getKrakenPair(asset) {
+    // Kraken uses XBT for Bitcoin, and prefixes with X for crypto, Z for fiat
+    const krakenPairs = {
+        'BTC': 'XXBTZUSD',
+        'ETH': 'XETHZUSD',
+        'LTC': 'XLTCZUSD',
+        'XRP': 'XXRPZUSD',
+        'XLM': 'XXLMZUSD',
+        'DOGE': 'XDOGEUSD',
+        'XMR': 'XXMRZUSD',
+        'ETC': 'XETCZUSD',
+        'ZEC': 'XZECZUSD',
+        'ADA': 'ADAUSD',
+        'DOT': 'DOTUSD',
+        'SOL': 'SOLUSD',
+        'LINK': 'LINKUSD',
+        'MATIC': 'MATICUSD',
+        'AVAX': 'AVAXUSD',
+        'ATOM': 'ATOMUSD',
+        'UNI': 'UNIUSD',
+        'AAVE': 'AAVEUSD'
+    };
+    return krakenPairs[asset] || `${asset}USD`;
+}
+
+/**
  * Get portfolio with USD values
  * @param {string} apiKey - User's API key
  * @param {string} apiSecret - User's API secret
@@ -316,21 +346,39 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
 
     // Get crypto prices
     if (cryptoAssets.length > 0) {
-        const pairs = cryptoAssets.map(asset => `${asset}USD`);
+        // Build Kraken-formatted pairs
+        const pairs = cryptoAssets.map(asset => getKrakenPair(asset));
+        console.log('Fetching Kraken pairs:', pairs);
+
         try {
             const tickers = await getTicker(pairs);
+            console.log('Kraken ticker keys:', Object.keys(tickers));
 
             for (const asset of cryptoAssets) {
                 const balance = balances[asset];
-                const tickerKey = Object.keys(tickers).find(k =>
-                    k.includes(asset) || k.includes(`X${asset}`)
-                );
+                const krakenPair = getKrakenPair(asset);
+
+                // Find the ticker - Kraken may return slightly different key formats
+                const tickerKey = Object.keys(tickers).find(k => {
+                    // Direct match
+                    if (k === krakenPair) return true;
+                    // Check if it matches without the Z prefix for USD
+                    if (k.replace('ZUSD', 'USD') === krakenPair.replace('ZUSD', 'USD')) return true;
+                    // For BTC specifically, check XBT variations
+                    if (asset === 'BTC' && (k.includes('XBT') || k.includes('BTC'))) return true;
+                    // Generic check
+                    if (k.includes(asset) || (asset === 'BTC' && k.includes('XBT'))) return true;
+                    return false;
+                });
+
+                console.log(`Asset ${asset}: krakenPair=${krakenPair}, tickerKey=${tickerKey}`);
+
                 const price = tickers[tickerKey]?.last || 0;
                 const value = balance * price;
 
                 holdings.push({
                     symbol: asset,
-                    name: asset,
+                    name: getCryptoName(asset),
                     quantity: balance,
                     price,
                     value,
@@ -347,7 +395,7 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
             for (const asset of cryptoAssets) {
                 holdings.push({
                     symbol: asset,
-                    name: asset,
+                    name: getCryptoName(asset),
                     quantity: balances[asset],
                     price: 0,
                     value: 0,
@@ -362,6 +410,35 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
         totalValue,
         lastUpdated: new Date().toISOString()
     };
+}
+
+/**
+ * Get full name for crypto asset
+ * @param {string} symbol - Asset symbol
+ * @returns {string} Full name
+ */
+function getCryptoName(symbol) {
+    const names = {
+        'BTC': 'Bitcoin',
+        'ETH': 'Ethereum',
+        'LTC': 'Litecoin',
+        'XRP': 'Ripple',
+        'XLM': 'Stellar',
+        'DOGE': 'Dogecoin',
+        'XMR': 'Monero',
+        'ETC': 'Ethereum Classic',
+        'ZEC': 'Zcash',
+        'ADA': 'Cardano',
+        'DOT': 'Polkadot',
+        'SOL': 'Solana',
+        'LINK': 'Chainlink',
+        'MATIC': 'Polygon',
+        'AVAX': 'Avalanche',
+        'ATOM': 'Cosmos',
+        'UNI': 'Uniswap',
+        'AAVE': 'Aave'
+    };
+    return names[symbol] || symbol;
 }
 
 /**
