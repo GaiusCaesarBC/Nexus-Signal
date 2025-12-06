@@ -126,10 +126,17 @@ class PancakeSwapService {
     formatPoolData(pool) {
         const attrs = pool.attributes || {};
         const priceUsd = parseFloat(attrs.base_token_price_usd) || 0;
-        const priceChange24h = parseFloat(attrs.price_change_percentage?.h24) || 0;
+        let priceChange24h = parseFloat(attrs.price_change_percentage?.h24) || 0;
         const volume24h = parseFloat(attrs.volume_usd?.h24) || 0;
         const liquidity = parseFloat(attrs.reserve_in_usd) || 0;
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
+
+        // Sanity check: Cap extreme percentage changes (GeckoTerminal sometimes returns bad data)
+        // Max reasonable 24h change is ~10000% (100x) for extreme cases
+        if (Math.abs(priceChange24h) > 10000) {
+            console.log(`[PancakeSwap] Capping extreme change for ${attrs.name}: ${priceChange24h}% -> flagged as unreliable`);
+            priceChange24h = priceChange24h > 0 ? 9999 : -99; // Cap to indicate extreme movement
+        }
 
         const txns = attrs.transactions?.h24 || {};
         const txCount = (txns.buys || 0) + (txns.sells || 0);
