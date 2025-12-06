@@ -3,16 +3,21 @@
 
 const axios = require('axios');
 
-const THE_GRAPH_API_KEY = process.env.THE_GRAPH_API_KEY;
-const PANCAKESWAP_V3_SUBGRAPH_ID = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
-
 class PancakeSwapService {
     constructor() {
         this.cache = new Map();
         this.CACHE_DURATION = 2 * 60 * 1000; // 2 minutes (DEX data changes fast)
-        this.endpoint = THE_GRAPH_API_KEY
-            ? `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`
-            : null;
+    }
+
+    // Lazy getter for endpoint - ensures env vars are loaded
+    getEndpoint() {
+        const apiKey = process.env.THE_GRAPH_API_KEY;
+        const subgraphId = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
+
+        if (!apiKey) {
+            return null;
+        }
+        return `https://gateway.thegraph.com/api/${apiKey}/subgraphs/id/${subgraphId}`;
     }
 
     getCached(key) {
@@ -35,18 +40,22 @@ class PancakeSwapService {
      * Returns tokens with price data and 24h changes
      */
     async getTopTokens(limit = 100) {
-        if (!this.endpoint) {
-            console.log('[PancakeSwap] No API key configured');
+        const endpoint = this.getEndpoint();
+        console.log('[PancakeSwap] getTopTokens called, endpoint:', endpoint ? 'configured' : 'NOT configured');
+
+        if (!endpoint) {
+            console.log('[PancakeSwap] No API key configured - THE_GRAPH_API_KEY:', process.env.THE_GRAPH_API_KEY ? 'set' : 'NOT set');
             return [];
         }
 
         const cacheKey = `top-tokens-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) {
-            console.log('[PancakeSwap] Returning cached tokens');
+            console.log('[PancakeSwap] Returning cached tokens:', cached.length);
             return cached;
         }
 
+        console.log('[PancakeSwap] Fetching fresh data from The Graph...');
         try {
             // Query for tokens with highest TVL (Total Value Locked)
             // This gives us the most liquid/traded tokens
@@ -74,7 +83,7 @@ class PancakeSwapService {
             `;
 
             const response = await axios.post(
-                this.endpoint,
+                endpoint,
                 { query },
                 {
                     headers: { 'Content-Type': 'application/json' },
@@ -91,7 +100,7 @@ class PancakeSwapService {
             console.log(`[PancakeSwap] Fetched ${tokens.length} tokens`);
 
             // Get token day data for price changes
-            const tokensWithChanges = await this.addPriceChanges(tokens);
+            const tokensWithChanges = await this.addPriceChanges(tokens, endpoint);
 
             this.setCache(cacheKey, tokensWithChanges);
             return tokensWithChanges;
@@ -105,8 +114,8 @@ class PancakeSwapService {
     /**
      * Add 24h price change data to tokens
      */
-    async addPriceChanges(tokens) {
-        if (!tokens.length) return [];
+    async addPriceChanges(tokens, endpoint) {
+        if (!tokens.length || !endpoint) return [];
 
         try {
             // Get timestamp for 24 hours ago
@@ -141,7 +150,7 @@ class PancakeSwapService {
             `;
 
             const response = await axios.post(
-                this.endpoint,
+                endpoint,
                 { query },
                 {
                     headers: { 'Content-Type': 'application/json' },
@@ -294,7 +303,8 @@ class PancakeSwapService {
      * Search for a specific token by symbol or address
      */
     async searchToken(query) {
-        if (!this.endpoint || !query) return [];
+        const endpoint = this.getEndpoint();
+        if (!endpoint || !query) return [];
 
         try {
             const isAddress = query.startsWith('0x') && query.length === 42;
@@ -329,7 +339,7 @@ class PancakeSwapService {
             `;
 
             const response = await axios.post(
-                this.endpoint,
+                endpoint,
                 { query: graphQuery },
                 {
                     headers: { 'Content-Type': 'application/json' },
