@@ -218,9 +218,11 @@ class ScreenerService {
                 volume: token.volume,
                 marketCap: token.tvl, // Use TVL as proxy for market cap on DEX
                 tvl: token.tvl,
-                source: 'pancakeswap',
+                source: 'geckoterminal',
                 chain: 'BSC',
                 contractAddress: token.contractAddress,
+                poolAddress: token.poolAddress,
+                network: 'bsc',
                 badge: Math.abs(token.changePercent || 0) > 50 ? 'hot' :
                        Math.abs(token.changePercent || 0) > 20 ? 'trending' :
                        Math.abs(token.changePercent || 0) > 10 ? 'volatile' : null

@@ -148,7 +148,10 @@ class HeatmapService {
                         size: Math.max(1, absChange * 10),
                         sector: 'DEX',
                         chain: 'BSC',
-                        source: 'geckoterminal'
+                        source: 'geckoterminal',
+                        contractAddress: token.contractAddress,
+                        poolAddress: token.poolAddress,
+                        network: 'bsc'
                     };
                 });
 
