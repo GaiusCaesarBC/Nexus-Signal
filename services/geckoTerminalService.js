@@ -72,7 +72,7 @@ class GeckoTerminalService {
     /**
      * Get trending pools for a network
      */
-    async getTrendingPools(network = 'bsc', limit = 20) {
+    async getTrendingPools(network = 'bsc', limit = 20, fixPercentages = true) {
         const cacheKey = `trending-${network}-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
@@ -87,7 +87,12 @@ class GeckoTerminalService {
             );
 
             const pools = response.data?.data || [];
-            const results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+            let results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+
+            // Fix suspicious percentages using OHLCV data
+            if (fixPercentages) {
+                results = await this.fixSuspiciousPercentages(results);
+            }
 
             this.setCache(cacheKey, results);
             return results;
@@ -101,7 +106,7 @@ class GeckoTerminalService {
     /**
      * Get top pools by volume for a network
      */
-    async getTopPools(network = 'bsc', sortBy = 'h24_volume_usd_desc', limit = 20) {
+    async getTopPools(network = 'bsc', sortBy = 'h24_volume_usd_desc', limit = 20, fixPercentages = true) {
         const cacheKey = `top-${network}-${sortBy}-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
@@ -116,7 +121,12 @@ class GeckoTerminalService {
             );
 
             const pools = response.data?.data || [];
-            const results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+            let results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+
+            // Fix suspicious percentages using OHLCV data
+            if (fixPercentages) {
+                results = await this.fixSuspiciousPercentages(results);
+            }
 
             this.setCache(cacheKey, results);
             return results;
@@ -130,7 +140,7 @@ class GeckoTerminalService {
     /**
      * Get new pools for a network
      */
-    async getNewPools(network = 'bsc', limit = 20) {
+    async getNewPools(network = 'bsc', limit = 20, fixPercentages = true) {
         const cacheKey = `new-${network}-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
@@ -145,7 +155,12 @@ class GeckoTerminalService {
             );
 
             const pools = response.data?.data || [];
-            const results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+            let results = pools.slice(0, limit).map(pool => this.formatPoolData(pool));
+
+            // Fix suspicious percentages using OHLCV data
+            if (fixPercentages) {
+                results = await this.fixSuspiciousPercentages(results);
+            }
 
             this.setCache(cacheKey, results);
             return results;
@@ -335,6 +350,102 @@ class GeckoTerminalService {
     }
 
     /**
+     * Calculate accurate 24h percentage change from OHLCV data
+     * This is more reliable than the API's price_change_percentage field
+     */
+    async calculateAccurate24hChange(network, poolAddress, currentPrice) {
+        try {
+            // Fetch hourly OHLCV for the last 25 hours (to ensure we have 24h ago data)
+            const ohlcv = await this.getOHLCV(network, poolAddress, 'hour', 1, 25);
+
+            if (!ohlcv || ohlcv.length < 2) {
+                return null; // Not enough data
+            }
+
+            // Find the candle closest to 24 hours ago
+            const now = Date.now() / 1000;
+            const targetTime = now - (24 * 60 * 60); // 24 hours ago in seconds
+
+            // OHLCV is sorted oldest to newest after our reverse()
+            let price24hAgo = null;
+            for (const candle of ohlcv) {
+                if (candle.time <= targetTime) {
+                    price24hAgo = candle.close;
+                } else {
+                    break;
+                }
+            }
+
+            // If we didn't find a candle 24h ago, use the oldest available
+            if (!price24hAgo && ohlcv.length > 0) {
+                price24hAgo = ohlcv[0].close;
+            }
+
+            if (!price24hAgo || price24hAgo === 0) {
+                return null;
+            }
+
+            // Calculate percentage change
+            const actualPrice = currentPrice || ohlcv[ohlcv.length - 1].close;
+            const percentChange = ((actualPrice - price24hAgo) / price24hAgo) * 100;
+
+            return percentChange;
+
+        } catch (error) {
+            console.error(`[GeckoTerminal] Error calculating accurate 24h change:`, error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Fix suspicious percentage values by fetching OHLCV data
+     * Only fixes pools where the reported percentage seems unreliable
+     */
+    async fixSuspiciousPercentages(pools, concurrencyLimit = 5) {
+        // Identify pools with suspicious percentages (>1000% or <-95%)
+        const suspiciousPools = pools.filter(p =>
+            p._suspiciousPercent || Math.abs(p.changePercent) > 1000 || p.changePercent < -95
+        );
+
+        if (suspiciousPools.length === 0) {
+            return pools;
+        }
+
+        console.log(`[GeckoTerminal] Fixing ${suspiciousPools.length} pools with suspicious percentages...`);
+
+        // Process in batches to avoid rate limiting
+        const batches = [];
+        for (let i = 0; i < suspiciousPools.length; i += concurrencyLimit) {
+            batches.push(suspiciousPools.slice(i, i + concurrencyLimit));
+        }
+
+        for (const batch of batches) {
+            await Promise.all(batch.map(async (pool) => {
+                const accurateChange = await this.calculateAccurate24hChange(
+                    pool.network,
+                    pool.poolAddress,
+                    pool.price
+                );
+
+                if (accurateChange !== null) {
+                    const oldPercent = pool.changePercent;
+                    pool.changePercent = Math.round(accurateChange * 100) / 100; // Round to 2 decimals
+                    pool.change = pool.price * (pool.changePercent / 100);
+                    pool._suspiciousPercent = false;
+                    console.log(`[GeckoTerminal] Fixed ${pool.symbol}: ${oldPercent}% -> ${pool.changePercent}% (from OHLCV)`);
+                }
+            }));
+
+            // Small delay between batches to avoid rate limiting
+            if (batches.length > 1) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        return pools;
+    }
+
+    /**
      * Format pool data to standard format
      */
     formatPoolData(pool) {
@@ -345,11 +456,12 @@ class GeckoTerminalService {
         const liquidity = parseFloat(attrs.reserve_in_usd) || 0;
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
 
-        // Sanity check: Cap extreme percentage changes (GeckoTerminal sometimes returns bad data)
-        // Max reasonable 24h change is ~10000% (100x) for extreme cases
-        if (Math.abs(priceChange24h) > 10000) {
-            console.log(`[GeckoTerminal] Capping extreme change for ${attrs.name}: ${priceChange24h}% -> flagged as unreliable`);
-            priceChange24h = priceChange24h > 0 ? 9999 : -99; // Cap to indicate extreme movement
+        // Flag suspicious percentage changes for later OHLCV-based correction
+        // Values over 1000% or under -95% are likely API errors
+        let suspiciousPercent = false;
+        if (Math.abs(priceChange24h) > 1000 || priceChange24h < -95) {
+            console.log(`[GeckoTerminal] Flagging suspicious change for ${attrs.name}: ${priceChange24h}%`);
+            suspiciousPercent = true;
         }
 
         const txns = attrs.transactions?.h24 || {};
@@ -383,7 +495,8 @@ class GeckoTerminalService {
             network: network,
             contractAddress: tokenAddress,
             poolAddress: attrs.address,
-            dexId: pool.relationships?.dex?.data?.id || 'unknown'
+            dexId: pool.relationships?.dex?.data?.id || 'unknown',
+            _suspiciousPercent: suspiciousPercent // Internal flag for fixing
         };
     }
 

@@ -3,6 +3,16 @@
 
 const axios = require('axios');
 
+// Import geckoTerminalService for OHLCV-based percentage fixing
+// Using lazy loading to avoid circular dependency issues
+let geckoTerminalService = null;
+const getGeckoTerminalService = () => {
+    if (!geckoTerminalService) {
+        geckoTerminalService = require('./geckoTerminalService');
+    }
+    return geckoTerminalService;
+};
+
 class PancakeSwapService {
     constructor() {
         this.cache = new Map();
@@ -84,7 +94,7 @@ class PancakeSwapService {
             }
 
             // Format and filter tokens
-            const tokens = Array.from(poolMap.values())
+            let tokens = Array.from(poolMap.values())
                 .map(pool => this.formatPoolData(pool))
                 .filter(token => {
                     // Filter out stablecoins pairs and dust tokens
@@ -92,7 +102,14 @@ class PancakeSwapService {
                     const hasLiquidity = token.tvl > 1000;
                     const hasPrice = token.price > 0;
                     return !isStablePair && hasLiquidity && hasPrice;
-                })
+                });
+
+            // Fix suspicious percentages using OHLCV data from geckoTerminalService
+            const gts = getGeckoTerminalService();
+            tokens = await gts.fixSuspiciousPercentages(tokens);
+
+            // Sort and limit after fixing percentages
+            tokens = tokens
                 .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
                 .slice(0, limit);
 
@@ -131,11 +148,12 @@ class PancakeSwapService {
         const liquidity = parseFloat(attrs.reserve_in_usd) || 0;
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
 
-        // Sanity check: Cap extreme percentage changes (GeckoTerminal sometimes returns bad data)
-        // Max reasonable 24h change is ~10000% (100x) for extreme cases
-        if (Math.abs(priceChange24h) > 10000) {
-            console.log(`[PancakeSwap] Capping extreme change for ${attrs.name}: ${priceChange24h}% -> flagged as unreliable`);
-            priceChange24h = priceChange24h > 0 ? 9999 : -99; // Cap to indicate extreme movement
+        // Flag suspicious percentage changes for later OHLCV-based correction
+        // Values over 1000% or under -95% are likely API errors
+        let suspiciousPercent = false;
+        if (Math.abs(priceChange24h) > 1000 || priceChange24h < -95) {
+            console.log(`[PancakeSwap] Flagging suspicious change for ${attrs.name}: ${priceChange24h}%`);
+            suspiciousPercent = true;
         }
 
         const txns = attrs.transactions?.h24 || {};
@@ -165,9 +183,11 @@ class PancakeSwapService {
             txCount: txCount,
             source: 'geckoterminal',
             chain: 'BSC',
+            network: 'bsc',
             contractAddress: tokenAddress,
             poolAddress: attrs.address,
-            dexId: pool.relationships?.dex?.data?.id || 'pancakeswap'
+            dexId: pool.relationships?.dex?.data?.id || 'pancakeswap',
+            _suspiciousPercent: suspiciousPercent // Internal flag for fixing
         };
     }
 
