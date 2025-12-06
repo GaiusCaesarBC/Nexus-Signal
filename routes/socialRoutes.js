@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const Gamification = require('../models/Gamification'); // 🔥 ADD THIS
+const PaperTradingAccount = require('../models/PaperTradingAccount');
+const BrokerageConnection = require('../models/BrokerageConnection');
 const { updateUserStats, updateAllUserStats } = require('../services/statsService');
 const NotificationService = require('../services/notificationService');
 
@@ -618,6 +620,60 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             console.warn('[Profile] Could not fetch prediction stats:', predError.message);
         }
 
+        // 🔥 FETCH PAPER TRADING STATS
+        let paperTradingStats = {
+            portfolioValue: 100000,
+            totalProfitLossPercent: 0,
+            totalTrades: 0,
+            winRate: 0
+        };
+
+        try {
+            const paperAccount = await PaperTradingAccount.findOne({ user: user._id });
+            if (paperAccount) {
+                paperTradingStats = {
+                    portfolioValue: paperAccount.portfolioValue || 100000,
+                    totalProfitLossPercent: paperAccount.totalProfitLossPercent || 0,
+                    totalTrades: paperAccount.totalTrades || 0,
+                    winRate: paperAccount.winRate || 0,
+                    winningTrades: paperAccount.winningTrades || 0,
+                    losingTrades: paperAccount.losingTrades || 0
+                };
+                console.log(`[Profile] Paper trading stats for ${user.username}: ${paperTradingStats.totalProfitLossPercent.toFixed(2)}% return`);
+            }
+        } catch (ptError) {
+            console.warn('[Profile] Could not fetch paper trading stats:', ptError.message);
+        }
+
+        // 🔥 FETCH BROKERAGE/REAL PORTFOLIO STATS
+        let brokerageStats = {
+            totalValue: 0,
+            connectionCount: 0,
+            hasConnections: false
+        };
+
+        try {
+            const brokerageConnections = await BrokerageConnection.find({
+                user: user._id,
+                status: 'active'
+            });
+
+            if (brokerageConnections.length > 0) {
+                const totalValue = brokerageConnections.reduce((sum, conn) => {
+                    return sum + (conn.cachedPortfolio?.totalValue || 0);
+                }, 0);
+
+                brokerageStats = {
+                    totalValue: totalValue,
+                    connectionCount: brokerageConnections.length,
+                    hasConnections: true
+                };
+                console.log(`[Profile] Brokerage stats for ${user.username}: $${totalValue.toFixed(2)} across ${brokerageConnections.length} connections`);
+            }
+        } catch (brokError) {
+            console.warn('[Profile] Could not fetch brokerage stats:', brokError.message);
+        }
+
         // 🔥 MERGE stats from User.stats AND Gamification.stats
         const mergedStats = {
             // From User.stats
@@ -693,6 +749,10 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
                 equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 equippedTheme: user.vault?.equippedTheme || 'default'
             },
+            // 🔥 Paper trading stats
+            paperTrading: paperTradingStats,
+            // 🔥 Brokerage/Real portfolio stats
+            brokerage: brokerageStats,
             isFounder: user.isFounder || false,
             date: user.createdAt,
             isOwnProfile: isOwnProfile
