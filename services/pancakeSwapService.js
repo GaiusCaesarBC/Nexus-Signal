@@ -1,31 +1,13 @@
-// server/services/pancakeSwapService.js - PancakeSwap DEX Token Service
-// Fetches top BSC tokens from PancakeSwap V2 via NodeReal (FREE)
+// server/services/pancakeSwapService.js - BSC DEX Token Service via DexScreener
+// Fetches top BSC tokens from DexScreener API (FREE - no API key required)
 
 const axios = require('axios');
 
 class PancakeSwapService {
     constructor() {
         this.cache = new Map();
-        this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes (conserve API calls - 200/day limit)
-        this.bnbPriceCache = { price: 0, timestamp: 0 };
-    }
-
-    // Lazy getter for endpoint - NodeReal
-    // Can use full URL (NODEREAL_PANCAKESWAP_URL) or just API key (NODEREAL_API_KEY)
-    getEndpoint() {
-        // Option 1: Full URL provided directly
-        const fullUrl = process.env.NODEREAL_PANCAKESWAP_URL;
-        if (fullUrl) {
-            return fullUrl;
-        }
-
-        // Option 2: Build from API key
-        const apiKey = process.env.NODEREAL_API_KEY;
-        if (!apiKey) {
-            console.log('[PancakeSwap] No NODEREAL_PANCAKESWAP_URL or NODEREAL_API_KEY configured');
-            return null;
-        }
-        return `https://open-platform.nodereal.io/${apiKey}/pancakeswap-free/graphql`;
+        this.CACHE_DURATION = 3 * 60 * 1000; // 3 minutes
+        this.DEXSCREENER_BASE = 'https://api.dexscreener.com';
     }
 
     getCached(key) {
@@ -44,284 +26,170 @@ class PancakeSwapService {
     }
 
     /**
-     * Get BNB price in USD (needed to convert derivedETH to USD)
-     */
-    async getBnbPrice() {
-        // Cache BNB price for 5 minutes
-        if (this.bnbPriceCache.price > 0 &&
-            Date.now() - this.bnbPriceCache.timestamp < 5 * 60 * 1000) {
-            return this.bnbPriceCache.price;
-        }
-
-        const endpoint = this.getEndpoint();
-        if (!endpoint) return 240; // Fallback BNB price
-
-        try {
-            // WBNB contract address on BSC
-            const query = `
-                query GetBnbPrice {
-                    bundle(id: "1") {
-                        ethPrice
-                    }
-                }
-            `;
-
-            const response = await axios.post(
-                endpoint,
-                { query },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 10000
-                }
-            );
-
-            const bnbPrice = parseFloat(response.data?.data?.bundle?.ethPrice) || 240;
-            this.bnbPriceCache = { price: bnbPrice, timestamp: Date.now() };
-            console.log(`[PancakeSwap] BNB price: $${bnbPrice.toFixed(2)}`);
-            return bnbPrice;
-
-        } catch (error) {
-            console.error('[PancakeSwap] Error fetching BNB price:', error.message);
-            return this.bnbPriceCache.price || 240;
-        }
-    }
-
-    /**
-     * Get top tokens by liquidity from PancakeSwap V2
+     * Get top BSC tokens from DexScreener
      * Returns tokens with price data and 24h changes
      */
     async getTopTokens(limit = 100) {
-        const endpoint = this.getEndpoint();
-        console.log('[PancakeSwap] getTopTokens called, endpoint:', endpoint ? 'configured' : 'NOT configured');
-
-        if (!endpoint) {
-            console.log('[PancakeSwap] No API key configured - NODEREAL_API_KEY:', process.env.NODEREAL_API_KEY ? 'set' : 'NOT set');
-            return [];
-        }
-
-        const cacheKey = `top-tokens-v2-${limit}`;
+        const cacheKey = `dexscreener-bsc-tokens-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) {
-            console.log('[PancakeSwap] Returning cached tokens:', cached.length);
+            console.log('[DexScreener] Returning cached tokens:', cached.length);
             return cached;
         }
 
-        console.log('[PancakeSwap] Fetching fresh data from NodeReal...');
+        console.log('[DexScreener] Fetching fresh BSC token data...');
+
         try {
-            // Get BNB price first
-            const bnbPrice = await this.getBnbPrice();
-
-            // Query for tokens with highest liquidity (V2 schema)
-            const query = `
-                query GetTopTokens {
-                    tokens(
-                        first: ${limit},
-                        orderBy: tradeVolumeUSD,
-                        orderDirection: desc,
-                        where: {
-                            tradeVolumeUSD_gt: "10000",
-                            derivedETH_gt: "0"
-                        }
-                    ) {
-                        id
-                        symbol
-                        name
-                        decimals
-                        derivedETH
-                        tradeVolumeUSD
-                        totalLiquidity
-                        txCount
-                    }
-                }
-            `;
-
-            const response = await axios.post(
-                endpoint,
-                { query },
-                {
-                    headers: { 'Content-Type': 'application/json' },
+            // Get top token boosts/trending tokens
+            const [boostsResponse, bscPairsResponse] = await Promise.all([
+                axios.get(`${this.DEXSCREENER_BASE}/token-boosts/top/v1`, {
                     timeout: 15000
-                }
-            );
+                }).catch(() => ({ data: [] })),
+                // Get latest pairs on BSC with good volume
+                axios.get(`${this.DEXSCREENER_BASE}/latest/dex/pairs/bsc`, {
+                    timeout: 15000
+                }).catch(() => ({ data: { pairs: [] } }))
+            ]);
 
-            if (response.data.errors) {
-                console.error('[PancakeSwap] GraphQL error:', response.data.errors[0]?.message);
-                return [];
+            const boosts = boostsResponse.data || [];
+            const bscPairs = bscPairsResponse.data?.pairs || [];
+
+            console.log(`[DexScreener] Got ${boosts.length} boosted tokens, ${bscPairs.length} BSC pairs`);
+
+            // Process boosted tokens that are on BSC
+            const bscBoosts = boosts.filter(t => t.chainId === 'bsc');
+
+            // Get detailed pair data for boosted BSC tokens
+            const tokenAddresses = bscBoosts.slice(0, 30).map(t => t.tokenAddress);
+            let detailedTokens = [];
+
+            if (tokenAddresses.length > 0) {
+                try {
+                    // DexScreener allows comma-separated addresses
+                    const addressChunks = this.chunkArray(tokenAddresses, 10);
+
+                    for (const chunk of addressChunks) {
+                        const response = await axios.get(
+                            `${this.DEXSCREENER_BASE}/latest/dex/tokens/${chunk.join(',')}`,
+                            { timeout: 15000 }
+                        );
+
+                        if (response.data?.pairs) {
+                            detailedTokens.push(...response.data.pairs);
+                        }
+                    }
+                } catch (err) {
+                    console.log('[DexScreener] Error fetching token details:', err.message);
+                }
             }
 
-            const tokens = response.data?.data?.tokens || [];
-            console.log(`[PancakeSwap] Fetched ${tokens.length} tokens`);
+            // Combine BSC pairs data
+            const allPairs = [...detailedTokens, ...bscPairs];
 
-            // Get token day data for price changes
-            const tokensWithChanges = await this.addPriceChanges(tokens, endpoint, bnbPrice);
+            // Deduplicate by base token address, keeping highest liquidity pair
+            const tokenMap = new Map();
 
-            this.setCache(cacheKey, tokensWithChanges);
-            return tokensWithChanges;
+            for (const pair of allPairs) {
+                if (pair.chainId !== 'bsc') continue;
+
+                const baseToken = pair.baseToken;
+                if (!baseToken?.address) continue;
+
+                const existing = tokenMap.get(baseToken.address);
+                const liquidity = pair.liquidity?.usd || 0;
+
+                if (!existing || liquidity > (existing.liquidity?.usd || 0)) {
+                    tokenMap.set(baseToken.address, pair);
+                }
+            }
+
+            // Convert to array and format
+            const tokens = Array.from(tokenMap.values())
+                .filter(pair => {
+                    const liquidity = pair.liquidity?.usd || 0;
+                    const volume = pair.volume?.h24 || 0;
+                    const price = parseFloat(pair.priceUsd) || 0;
+                    // Filter out dust tokens
+                    return liquidity > 1000 && price > 0;
+                })
+                .map(pair => this.formatPairData(pair))
+                .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+                .slice(0, limit);
+
+            console.log(`[DexScreener] Processed ${tokens.length} BSC tokens`);
+
+            this.setCache(cacheKey, tokens);
+            return tokens;
 
         } catch (error) {
-            console.error('[PancakeSwap] Error fetching tokens:', error.message);
+            console.error('[DexScreener] Error fetching tokens:', error.message);
             return [];
         }
     }
 
     /**
-     * Add 24h price change data to tokens (V2 schema)
+     * Format DexScreener pair data to our standard format
      */
-    async addPriceChanges(tokens, endpoint, bnbPrice) {
-        if (!tokens.length || !endpoint) return [];
+    formatPairData(pair) {
+        const baseToken = pair.baseToken || {};
+        const priceUsd = parseFloat(pair.priceUsd) || 0;
+        const priceChange24h = pair.priceChange?.h24 || 0;
+        const volume24h = pair.volume?.h24 || 0;
+        const liquidity = pair.liquidity?.usd || 0;
+        const txns24h = (pair.txns?.h24?.buys || 0) + (pair.txns?.h24?.sells || 0);
 
-        try {
-            // Get timestamp for yesterday (start of day)
-            const now = Math.floor(Date.now() / 1000);
-            const yesterday = now - 86400;
+        // Calculate absolute price change
+        const priceChange = priceUsd * (priceChange24h / 100);
 
-            // Query for token day data
-            const tokenIds = tokens.slice(0, 50).map(t => `"${t.id}"`).join(',');
-
-            const query = `
-                query GetTokenDayData {
-                    tokenDayDatas(
-                        first: 100,
-                        orderBy: date,
-                        orderDirection: desc,
-                        where: {
-                            token_in: [${tokenIds}],
-                            date_gte: ${yesterday - 86400}
-                        }
-                    ) {
-                        token {
-                            id
-                        }
-                        date
-                        priceUSD
-                        dailyVolumeUSD
-                    }
-                }
-            `;
-
-            const response = await axios.post(
-                endpoint,
-                { query },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 15000
-                }
-            );
-
-            // Build a map of token prices from day data
-            // We need today's price and yesterday's price to calculate change
-            const priceMap = new Map();
-            const dayData = response.data?.data?.tokenDayDatas || [];
-
-            for (const data of dayData) {
-                const tokenId = data.token?.id;
-                if (!tokenId) continue;
-
-                const priceUSD = parseFloat(data.priceUSD) || 0;
-                const date = parseInt(data.date);
-                const volume = parseFloat(data.dailyVolumeUSD) || 0;
-
-                if (!priceMap.has(tokenId)) {
-                    priceMap.set(tokenId, {
-                        currentPrice: priceUSD,
-                        previousPrice: 0,
-                        volume24h: volume
-                    });
-                } else {
-                    // This is an older record, use as previous price
-                    const existing = priceMap.get(tokenId);
-                    if (existing.previousPrice === 0) {
-                        existing.previousPrice = priceUSD;
-                    }
-                }
-            }
-
-            // Format tokens with price change data
-            return tokens.map(token => {
-                const dayInfo = priceMap.get(token.id) || {};
-
-                // Calculate current price from derivedETH * BNB price
-                const derivedETH = parseFloat(token.derivedETH) || 0;
-                const currentPrice = dayInfo.currentPrice || (derivedETH * bnbPrice);
-                const previousPrice = dayInfo.previousPrice || currentPrice;
-
-                // Calculate 24h change
-                let priceChange24h = 0;
-                let priceChangePercent24h = 0;
-
-                if (previousPrice > 0 && currentPrice > 0) {
-                    priceChange24h = currentPrice - previousPrice;
-                    priceChangePercent24h = ((currentPrice - previousPrice) / previousPrice) * 100;
-                }
-
-                // Calculate liquidity in USD
-                const totalLiquidity = parseFloat(token.totalLiquidity) || 0;
-                const liquidityUSD = totalLiquidity * currentPrice;
-
-                return {
-                    id: token.id,
-                    symbol: token.symbol?.toUpperCase() || 'UNKNOWN',
-                    name: token.name || token.symbol || 'Unknown Token',
-                    price: currentPrice,
-                    change: priceChange24h,
-                    changePercent: priceChangePercent24h,
-                    volume: dayInfo.volume24h || parseFloat(token.tradeVolumeUSD) || 0,
-                    tvl: liquidityUSD,
-                    txCount: parseInt(token.txCount) || 0,
-                    source: 'pancakeswap',
-                    chain: 'BSC',
-                    contractAddress: token.id
-                };
-            });
-
-        } catch (error) {
-            console.error('[PancakeSwap] Error fetching price changes:', error.message);
-
-            // Return tokens without change data
-            const bnbPrice = this.bnbPriceCache.price || 240;
-            return tokens.map(token => {
-                const derivedETH = parseFloat(token.derivedETH) || 0;
-                const currentPrice = derivedETH * bnbPrice;
-                const totalLiquidity = parseFloat(token.totalLiquidity) || 0;
-
-                return {
-                    id: token.id,
-                    symbol: token.symbol?.toUpperCase() || 'UNKNOWN',
-                    name: token.name || token.symbol || 'Unknown Token',
-                    price: currentPrice,
-                    change: 0,
-                    changePercent: 0,
-                    volume: parseFloat(token.tradeVolumeUSD) || 0,
-                    tvl: totalLiquidity * currentPrice,
-                    txCount: parseInt(token.txCount) || 0,
-                    source: 'pancakeswap',
-                    chain: 'BSC',
-                    contractAddress: token.id
-                };
-            });
-        }
+        return {
+            id: baseToken.address,
+            symbol: baseToken.symbol?.toUpperCase() || 'UNKNOWN',
+            name: baseToken.name || baseToken.symbol || 'Unknown Token',
+            price: priceUsd,
+            change: priceChange,
+            changePercent: priceChange24h,
+            volume: volume24h,
+            tvl: liquidity,
+            txCount: txns24h,
+            source: 'dexscreener',
+            chain: 'BSC',
+            contractAddress: baseToken.address,
+            pairAddress: pair.pairAddress,
+            dexId: pair.dexId || 'pancakeswap'
+        };
     }
 
     /**
-     * Get top gainers from PancakeSwap
+     * Helper to chunk array
+     */
+    chunkArray(array, size) {
+        const chunks = [];
+        for (let i = 0; i < array.length; i += size) {
+            chunks.push(array.slice(i, i + size));
+        }
+        return chunks;
+    }
+
+    /**
+     * Get top gainers from BSC DEX
      */
     async getTopGainers(limit = 50) {
         const tokens = await this.getTopTokens(100);
 
         return tokens
-            .filter(t => t.changePercent > 0 && t.price > 0 && t.tvl > 10000)
+            .filter(t => t.changePercent > 0 && t.price > 0 && t.tvl > 5000)
             .sort((a, b) => b.changePercent - a.changePercent)
             .slice(0, limit);
     }
 
     /**
-     * Get top losers from PancakeSwap
+     * Get top losers from BSC DEX
      */
     async getTopLosers(limit = 50) {
         const tokens = await this.getTopTokens(100);
 
         return tokens
-            .filter(t => t.changePercent < 0 && t.price > 0 && t.tvl > 10000)
+            .filter(t => t.changePercent < 0 && t.price > 0 && t.tvl > 5000)
             .sort((a, b) => a.changePercent - b.changePercent)
             .slice(0, limit);
     }
@@ -374,75 +242,61 @@ class PancakeSwapService {
      * Search for a specific token by symbol or address
      */
     async searchToken(query) {
-        const endpoint = this.getEndpoint();
-        if (!endpoint || !query) return [];
+        if (!query) return [];
 
         try {
-            const bnbPrice = await this.getBnbPrice();
             const isAddress = query.startsWith('0x') && query.length === 42;
 
-            const graphQuery = isAddress ? `
-                query SearchByAddress {
-                    tokens(where: { id: "${query.toLowerCase()}" }) {
-                        id
-                        symbol
-                        name
-                        derivedETH
-                        tradeVolumeUSD
-                        totalLiquidity
+            if (isAddress) {
+                // Search by address
+                const response = await axios.get(
+                    `${this.DEXSCREENER_BASE}/latest/dex/tokens/${query}`,
+                    { timeout: 10000 }
+                );
+
+                const pairs = response.data?.pairs || [];
+                const bscPairs = pairs.filter(p => p.chainId === 'bsc');
+
+                if (bscPairs.length === 0) return [];
+
+                // Return the highest liquidity pair
+                const bestPair = bscPairs.reduce((best, pair) =>
+                    (pair.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? pair : best
+                );
+
+                return [this.formatPairData(bestPair)];
+            } else {
+                // Search by symbol - use the search endpoint
+                const response = await axios.get(
+                    `${this.DEXSCREENER_BASE}/latest/dex/search?q=${encodeURIComponent(query)}`,
+                    { timeout: 10000 }
+                );
+
+                const pairs = response.data?.pairs || [];
+                const bscPairs = pairs.filter(p =>
+                    p.chainId === 'bsc' &&
+                    p.baseToken?.symbol?.toUpperCase().includes(query.toUpperCase())
+                );
+
+                // Deduplicate by token address
+                const tokenMap = new Map();
+                for (const pair of bscPairs) {
+                    const addr = pair.baseToken?.address;
+                    if (!addr) continue;
+
+                    const existing = tokenMap.get(addr);
+                    if (!existing || (pair.liquidity?.usd || 0) > (existing.liquidity?.usd || 0)) {
+                        tokenMap.set(addr, pair);
                     }
                 }
-            ` : `
-                query SearchBySymbol {
-                    tokens(
-                        first: 10,
-                        where: { symbol_contains_nocase: "${query}" },
-                        orderBy: tradeVolumeUSD,
-                        orderDirection: desc
-                    ) {
-                        id
-                        symbol
-                        name
-                        derivedETH
-                        tradeVolumeUSD
-                        totalLiquidity
-                    }
-                }
-            `;
 
-            const response = await axios.post(
-                endpoint,
-                { query: graphQuery },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 10000
-                }
-            );
-
-            const tokens = response.data?.data?.tokens || [];
-
-            return tokens
-                .filter(t => parseFloat(t.derivedETH) > 0)
-                .map(t => {
-                    const derivedETH = parseFloat(t.derivedETH) || 0;
-                    const price = derivedETH * bnbPrice;
-                    const totalLiquidity = parseFloat(t.totalLiquidity) || 0;
-
-                    return {
-                        id: t.id,
-                        symbol: t.symbol?.toUpperCase(),
-                        name: t.name,
-                        price: price,
-                        tvl: totalLiquidity * price,
-                        volume: parseFloat(t.tradeVolumeUSD),
-                        source: 'pancakeswap',
-                        chain: 'BSC',
-                        contractAddress: t.id
-                    };
-                });
+                return Array.from(tokenMap.values())
+                    .slice(0, 10)
+                    .map(pair => this.formatPairData(pair));
+            }
 
         } catch (error) {
-            console.error('[PancakeSwap] Search error:', error.message);
+            console.error('[DexScreener] Search error:', error.message);
             return [];
         }
     }
