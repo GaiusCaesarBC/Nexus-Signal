@@ -10,12 +10,19 @@ class PancakeSwapService {
         this.bnbPriceCache = { price: 0, timestamp: 0 };
     }
 
-    // Lazy getter for endpoint - NodeReal free tier
+    // Lazy getter for endpoint - NodeReal
+    // Can use full URL (NODEREAL_PANCAKESWAP_URL) or just API key (NODEREAL_API_KEY)
     getEndpoint() {
-        const apiKey = process.env.NODEREAL_API_KEY;
+        // Option 1: Full URL provided directly
+        const fullUrl = process.env.NODEREAL_PANCAKESWAP_URL;
+        if (fullUrl) {
+            return fullUrl;
+        }
 
+        // Option 2: Build from API key
+        const apiKey = process.env.NODEREAL_API_KEY;
         if (!apiKey) {
-            console.log('[PancakeSwap] NODEREAL_API_KEY not configured');
+            console.log('[PancakeSwap] No NODEREAL_PANCAKESWAP_URL or NODEREAL_API_KEY configured');
             return null;
         }
         return `https://open-platform.nodereal.io/${apiKey}/pancakeswap-free/graphql`;
