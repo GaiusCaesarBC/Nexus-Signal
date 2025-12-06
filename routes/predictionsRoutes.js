@@ -9,6 +9,7 @@ const GamificationService = require('../services/gamificationService');
 
 const priceService = require('../services/priceService');
 const stockDataService = require('../services/stockDataService');
+const geckoTerminalService = require('../services/geckoTerminalService');
 const fs = require('fs');
 const path = require('path');
 
@@ -25,7 +26,7 @@ function appendDebugLog(label, obj) {
 
 
 // @route   GET /api/predictions/symbols/search
-// @desc    Search for valid stock/crypto symbols
+// @desc    Search for valid stock/crypto/DEX symbols
 // @access  Public
 router.get('/symbols/search', async (req, res) => {
     try {
@@ -38,18 +39,56 @@ router.get('/symbols/search', async (req, res) => {
 
         const results = [];
 
-        // Search crypto symbols
+        // Search crypto symbols (CoinGecko)
         if (!type || type === 'crypto' || type === 'all') {
             const cryptoSymbols = Array.from(priceService.CRYPTO_SYMBOLS);
             const matchingCrypto = cryptoSymbols.filter(s =>
                 s.startsWith(query) || s.includes(query)
-            ).slice(0, 20).map(s => ({
+            ).slice(0, 15).map(s => ({
                 symbol: s,
                 name: priceService.COINGECKO_IDS[s] ?
                     priceService.COINGECKO_IDS[s].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : s,
                 type: 'crypto'
             }));
             results.push(...matchingCrypto);
+        }
+
+        // Search DEX tokens (GeckoTerminal) - only if query is 2+ chars
+        if ((!type || type === 'dex' || type === 'all') && query.length >= 2) {
+            try {
+                // Search across multiple networks in parallel
+                const networks = ['bsc', 'eth', 'solana'];
+                const dexSearchPromises = networks.map(network =>
+                    geckoTerminalService.search(query, network, false).catch(() => [])
+                );
+
+                const dexResults = await Promise.all(dexSearchPromises);
+                const allDexTokens = dexResults.flat();
+
+                // Filter and format DEX tokens
+                const matchingDex = allDexTokens
+                    .filter(token =>
+                        token.symbol?.toUpperCase().includes(query) ||
+                        token.name?.toUpperCase().includes(query)
+                    )
+                    .filter(token => token.price > 0 && token.tvl > 1000) // Only tokens with liquidity
+                    .slice(0, 15)
+                    .map(token => ({
+                        symbol: `${token.symbol}:${token.network}`,
+                        name: token.name || token.symbol,
+                        type: 'dex',
+                        chain: token.chain || token.network?.toUpperCase(),
+                        price: token.price,
+                        contractAddress: token.contractAddress,
+                        poolAddress: token.poolAddress,
+                        network: token.network
+                    }));
+
+                results.push(...matchingDex);
+                console.log(`[Predictions] DEX search for "${query}" found ${matchingDex.length} tokens`);
+            } catch (dexError) {
+                console.log('[Predictions] DEX search error:', dexError.message);
+            }
         }
 
         // Search popular stocks (hardcoded list for quick search)
@@ -90,16 +129,24 @@ router.get('/symbols/search', async (req, res) => {
             const matchingStocks = popularStocks.filter(s =>
                 s.symbol.startsWith(query) || s.symbol.includes(query) ||
                 s.name.toUpperCase().includes(query)
-            ).slice(0, 20).map(s => ({ ...s, type: 'stock' }));
+            ).slice(0, 15).map(s => ({ ...s, type: 'stock' }));
             results.push(...matchingStocks);
         }
 
-        // Sort by exact match first, then alphabetically
+        // Sort by exact match first, then by type priority, then alphabetically
         results.sort((a, b) => {
+            // Exact symbol match first
             if (a.symbol === query) return -1;
             if (b.symbol === query) return 1;
+            // Then starts with query
             if (a.symbol.startsWith(query) && !b.symbol.startsWith(query)) return -1;
             if (!a.symbol.startsWith(query) && b.symbol.startsWith(query)) return 1;
+            // Then by type priority (crypto > dex > stock)
+            const typePriority = { crypto: 0, dex: 1, stock: 2 };
+            const typeA = typePriority[a.type] ?? 3;
+            const typeB = typePriority[b.type] ?? 3;
+            if (typeA !== typeB) return typeA - typeB;
+            // Finally alphabetically
             return a.symbol.localeCompare(b.symbol);
         });
 
@@ -141,7 +188,7 @@ const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || fals
 
 // ============ REAL-TIME PRICE FETCHING ============
 // Fetch fresh price directly from external APIs (bypass cache for display)
-async function getFreshPrice(symbol, assetType) {
+async function getFreshPrice(symbol, assetType, dexInfo = null) {
     const upperSymbol = symbol.toUpperCase();
     console.log(`[Price] Fetching fresh price for ${upperSymbol} (${assetType})`);
 
@@ -149,6 +196,57 @@ async function getFreshPrice(symbol, assetType) {
     const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
 
     try {
+        // For DEX tokens, use GeckoTerminal
+        if (assetType === 'dex') {
+            try {
+                // DEX symbol format: SYMBOL:network (e.g., DYOR:bsc)
+                let network = dexInfo?.network || 'bsc';
+                let tokenSymbol = upperSymbol;
+
+                // Parse symbol:network format
+                if (upperSymbol.includes(':')) {
+                    const parts = upperSymbol.split(':');
+                    tokenSymbol = parts[0];
+                    network = parts[1]?.toLowerCase() || 'bsc';
+                }
+
+                console.log(`[Price] DEX token: ${tokenSymbol} on ${network}`);
+
+                // If we have pool address, get direct pool data
+                if (dexInfo?.poolAddress) {
+                    const poolData = await geckoTerminalService.getPoolData(network, dexInfo.poolAddress);
+                    if (poolData?.price) {
+                        console.log(`[Price] ✅ Fresh ${tokenSymbol} from GeckoTerminal pool: $${poolData.price}`);
+                        return { price: poolData.price, source: 'geckoterminal-pool' };
+                    }
+                }
+
+                // Search for the token
+                const searchResults = await geckoTerminalService.search(tokenSymbol, network, false);
+                if (searchResults && searchResults.length > 0) {
+                    // Find best match (exact symbol match preferred)
+                    const exactMatch = searchResults.find(r => r.symbol === tokenSymbol);
+                    const result = exactMatch || searchResults[0];
+
+                    if (result?.price > 0) {
+                        console.log(`[Price] ✅ Fresh ${tokenSymbol} from GeckoTerminal: $${result.price}`);
+                        return {
+                            price: result.price,
+                            source: 'geckoterminal',
+                            poolAddress: result.poolAddress,
+                            network: network
+                        };
+                    }
+                }
+
+                console.log(`[Price] ❌ No DEX price found for ${tokenSymbol}`);
+                return { price: null, source: 'error' };
+            } catch (dexError) {
+                console.error(`[Price] DEX price error for ${upperSymbol}:`, dexError.message);
+                return { price: null, source: 'error' };
+            }
+        }
+
         // For crypto, use CoinGecko Pro FIRST (you're paying for it!), then Binance as fallback
         if (assetType === 'crypto') {
             // Use priceService for consistent CoinGecko ID mapping
@@ -424,61 +522,83 @@ router.get('/active/:symbol', async (req, res) => {
 });
 
 // @route   POST /api/predictions/predict
-// @desc    Get or create prediction for a stock/crypto
+// @desc    Get or create prediction for a stock/crypto/DEX
 // @access  Private
 router.post('/predict', auth, async (req, res) => {
     try {
-        let { symbol, days = 7, assetType } = req.body;
-        
+        let { symbol, days = 7, assetType, poolAddress, network, contractAddress } = req.body;
+
         if (!symbol) {
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
-        // Normalize symbol (handles BTC-USD, BTCUSD -> BTC for crypto)
         const originalSymbol = symbol.toUpperCase().trim();
-        symbol = priceService.normalizeSymbol(originalSymbol);
-        if (originalSymbol !== symbol) {
-            console.log(`[Predictions] Symbol normalized: ${originalSymbol} -> ${symbol}`);
+
+        // Detect DEX tokens (format: SYMBOL:network like DYOR:bsc)
+        let dexInfo = null;
+        if (originalSymbol.includes(':')) {
+            const parts = originalSymbol.split(':');
+            symbol = parts[0];
+            network = parts[1]?.toLowerCase() || network || 'bsc';
+            assetType = 'dex';
+            dexInfo = { network, poolAddress, contractAddress };
+            console.log(`[Predictions] DEX token detected: ${symbol} on ${network}`);
+        } else if (assetType === 'dex') {
+            // Explicit DEX type passed
+            symbol = originalSymbol;
+            dexInfo = { network: network || 'bsc', poolAddress, contractAddress };
+            console.log(`[Predictions] DEX token (explicit): ${symbol} on ${dexInfo.network}`);
+        } else {
+            // Normalize symbol for stocks/crypto (handles BTC-USD, BTCUSD -> BTC for crypto)
+            symbol = priceService.normalizeSymbol(originalSymbol);
+            if (originalSymbol !== symbol) {
+                console.log(`[Predictions] Symbol normalized: ${originalSymbol} -> ${symbol}`);
+            }
+
+            // Auto-detect asset type
+            if (!assetType) {
+                assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
+                console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
+            }
         }
 
-        // Auto-detect asset type
-        if (!assetType) {
-            assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
-            console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
-        }
+        // For DEX tokens, use the full format for database storage
+        const dbSymbol = assetType === 'dex' ? `${symbol}:${dexInfo?.network || 'bsc'}` : symbol;
 
-        console.log(`[Predictions] Getting prediction for ${symbol} (${assetType}), days: ${days}`);
-        
+        console.log(`[Predictions] Getting prediction for ${dbSymbol} (${assetType}), days: ${days}`);
+
         // ============ VALIDATE TICKER - Check if we can get a real price ============
         let currentPrice = null;
         let priceSource = null;
+        let pricePoolAddress = null;
         try {
-            const priceResult = await getFreshPrice(symbol, assetType);
+            const priceResult = await getFreshPrice(dbSymbol, assetType, dexInfo);
             currentPrice = priceResult.price;
             priceSource = priceResult.source;
-            console.log(`[Predictions] Fresh price for ${symbol}: $${currentPrice} (source: ${priceSource})`);
+            pricePoolAddress = priceResult.poolAddress;
+            console.log(`[Predictions] Fresh price for ${dbSymbol}: $${currentPrice} (source: ${priceSource})`);
         } catch (priceError) {
-            console.log(`[Predictions] Could not get price for ${symbol}:`, priceError.message);
+            console.log(`[Predictions] Could not get price for ${dbSymbol}:`, priceError.message);
         }
 
         // ❌ REJECT INVALID TICKERS - If we can't get a price, the ticker is likely invalid
         if (!currentPrice || priceSource === 'error') {
-            console.log(`[Predictions] ❌ Rejecting invalid ticker: ${symbol}`);
-            return res.status(400).json({ 
+            console.log(`[Predictions] ❌ Rejecting invalid ticker: ${dbSymbol}`);
+            return res.status(400).json({
                 error: 'Invalid symbol',
-                message: `Could not find price data for "${symbol}". Please check the ticker symbol and try again.`,
-                symbol: symbol
+                message: `Could not find price data for "${dbSymbol}". Please check the ticker symbol and try again.`,
+                symbol: dbSymbol
             });
         }
         const existingPrediction = await Prediction.findOne({
-            symbol: symbol,
+            symbol: dbSymbol,
             status: 'pending',
             expiresAt: { $gt: new Date() },
             timeframe: days // Same timeframe
         }).sort({ createdAt: -1 });
-        
+
         if (existingPrediction) {
-            console.log(`[Predictions] ✅ Found existing shared prediction for ${symbol}`);
+            console.log(`[Predictions] ✅ Found existing shared prediction for ${dbSymbol}`);
             
             // Get fresh price for display (use already fetched price, or refresh)
             const displayPrice = currentPrice || existingPrediction.currentPrice;
@@ -499,7 +619,7 @@ router.post('/predict', auth, async (req, res) => {
             
             // Award small XP for joining shared prediction
             try {
-                await GamificationService.awardXP(req.user.id, 5, `Joined shared prediction for ${symbol}`);
+                await GamificationService.awardXP(req.user.id, 5, `Joined shared prediction for ${dbSymbol}`);
             } catch (e) { /* ignore */ }
             
             return res.json({
@@ -530,20 +650,20 @@ router.post('/predict', auth, async (req, res) => {
         }
         
         // ============ CREATE NEW PREDICTION ============
-        console.log(`[Predictions] Creating new prediction for ${symbol}`);
-        
+        console.log(`[Predictions] Creating new prediction for ${dbSymbol}`);
+
         // currentPrice is already set from validation above
 
         let predictionData;
         let formattedIndicators = {};
-        
-        // Try ML service if not using mocks
-        if (!USE_MOCK_PREDICTIONS) {
+
+        // Try ML service if not using mocks (skip for DEX tokens - ML doesn't support them yet)
+        if (!USE_MOCK_PREDICTIONS && assetType !== 'dex') {
             try {
                 console.log(`[Predictions] Trying ML service at ${ML_SERVICE_URL}`);
-                
+
                 const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
-                    symbol: symbol,
+                    symbol: dbSymbol,
                     days: days,
                     type: assetType
                 }, { timeout: 30000 });
@@ -574,7 +694,7 @@ router.post('/predict', auth, async (req, res) => {
                     
                     if (finalCurrentPrice && finalTargetPrice) {
     predictionData = {
-        symbol: symbol,
+        symbol: dbSymbol,
         current_price: parseFloat(finalCurrentPrice),
         prediction: {
            target_price: parseFloat(finalTargetPrice),
@@ -600,8 +720,8 @@ price_change: parseFloat(finalPriceChange),
         
         // Fallback to mock prediction
         if (!predictionData) {
-            console.log(`[Predictions] Using generated prediction for ${symbol}`);
-            predictionData = generateMockPrediction(symbol, days, currentPrice);
+            console.log(`[Predictions] Using generated prediction for ${dbSymbol}`);
+            predictionData = generateMockPrediction(dbSymbol, days, currentPrice);
             formattedIndicators = predictionData.indicators;
         }
 
@@ -630,10 +750,11 @@ price_change: parseFloat(finalPriceChange),
         // Save prediction to database
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + days);
-        
-        const prediction = new Prediction({
+
+        // Build prediction data object
+        const predictionRecord = {
             user: req.user.id,
-            symbol: symbol,
+            symbol: dbSymbol,
             assetType,
             currentPrice: predictionData.current_price,
             targetPrice: predictionData.prediction.target_price,
@@ -652,17 +773,28 @@ price_change: parseFloat(finalPriceChange),
             expiresAt,
             viewers: [req.user.id],
             viewCount: 1
-        });
-        
+        };
+
+        // Add DEX-specific fields if applicable
+        if (assetType === 'dex' && dexInfo) {
+            predictionRecord.dexInfo = {
+                network: dexInfo.network,
+                poolAddress: pricePoolAddress || dexInfo.poolAddress,
+                contractAddress: dexInfo.contractAddress
+            };
+        }
+
+        const prediction = new Prediction(predictionRecord);
+
         await prediction.save();
-        
-        console.log(`[Predictions] ✅ Created NEW prediction ${prediction._id} for ${symbol}`);
+
+        console.log(`[Predictions] ✅ Created NEW prediction ${prediction._id} for ${dbSymbol}`);
         console.log(`[Predictions] Price: $${predictionData.current_price}, Target: $${predictionData.prediction.target_price}`);
-        
+
         // Gamification
         try {
             await GamificationService.trackPrediction(req.user.id);
-            await GamificationService.awardXP(req.user.id, 15, `Started prediction for ${symbol}`);
+            await GamificationService.awardXP(req.user.id, 15, `Started prediction for ${dbSymbol}`);
         } catch (gamError) {
             console.warn('[Predictions] Gamification error:', gamError.message);
         }
