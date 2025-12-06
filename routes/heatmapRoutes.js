@@ -19,7 +19,7 @@ router.get('/stocks', auth, async (req, res) => {
 });
 
 // @route   GET /api/heatmap/crypto
-// @desc    Get crypto market heatmap data
+// @desc    Get crypto market heatmap data (CoinGecko + GeckoTerminal DEX)
 // @access  Private
 router.get('/crypto', auth, async (req, res) => {
     try {
@@ -28,6 +28,20 @@ router.get('/crypto', auth, async (req, res) => {
     } catch (error) {
         console.error('[Heatmap] Error getting crypto heatmap:', error.message);
         res.status(500).json({ error: 'Failed to load crypto heatmap' });
+    }
+});
+
+// @route   GET /api/heatmap/dex
+// @desc    Get DEX-only heatmap data (GeckoTerminal BSC/ETH/SOL tokens)
+// @access  Private
+router.get('/dex', auth, async (req, res) => {
+    try {
+        const { network = 'bsc' } = req.query;
+        const data = await heatmapService.getDexHeatmap(network);
+        res.json(data);
+    } catch (error) {
+        console.error('[Heatmap] Error getting DEX heatmap:', error.message);
+        res.status(500).json({ error: 'Failed to load DEX heatmap' });
     }
 });
 

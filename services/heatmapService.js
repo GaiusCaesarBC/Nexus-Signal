@@ -2,6 +2,7 @@
 
 const alphaVantageService = require('./alphaVantageService');
 const coinGeckoService = require('./coinGeckoService');
+const geckoTerminalService = require('./geckoTerminalService');
 
 class HeatmapService {
     constructor() {
@@ -89,41 +90,79 @@ class HeatmapService {
         }
     }
 
-    // Get crypto market movers heatmap
+    // Get crypto market movers heatmap (CoinGecko + GeckoTerminal DEX tokens)
     async getCryptoHeatmap() {
         const cacheKey = 'crypto-heatmap-movers';
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
 
         try {
-            // Get more crypto data - 250 coins to find the biggest movers
-            const markets = await coinGeckoService.getMarkets({
-                per_page: 250,
-                order: 'market_cap_desc'
+            // Fetch CoinGecko and GeckoTerminal data in parallel
+            const [markets, dexTokens] = await Promise.all([
+                coinGeckoService.getMarkets({
+                    per_page: 200,
+                    order: 'market_cap_desc'
+                }).catch(err => {
+                    console.error('[Heatmap] CoinGecko error:', err.message);
+                    return [];
+                }),
+                geckoTerminalService.getTrendingPools('bsc', 50).catch(err => {
+                    console.error('[Heatmap] GeckoTerminal error:', err.message);
+                    return [];
+                })
+            ]);
+
+            // Format CoinGecko data
+            const coinGeckoFormatted = markets.map(coin => {
+                const change = coin.price_change_percentage_24h || 0;
+                const absChange = Math.abs(change);
+                return {
+                    id: coin.id,
+                    symbol: coin.symbol.toUpperCase(),
+                    name: coin.name,
+                    price: coin.current_price,
+                    change: change,
+                    marketCap: coin.market_cap,
+                    volume: coin.total_volume || 0,
+                    size: Math.max(1, absChange * 10),
+                    image: coin.image,
+                    sector: 'Crypto',
+                    source: 'coingecko'
+                };
             });
 
-            // Format and sort by absolute change (biggest movers)
-            const formatted = markets
-                .map(coin => {
-                    const change = coin.price_change_percentage_24h || 0;
+            // Format GeckoTerminal DEX tokens
+            const dexFormatted = dexTokens
+                .filter(token => !this.isStablecoin(token.symbol))
+                .map(token => {
+                    const change = token.changePercent || 0;
                     const absChange = Math.abs(change);
                     return {
-                        id: coin.id, // CoinGecko ID for navigation
-                        symbol: coin.symbol.toUpperCase(),
-                        name: coin.name,
-                        price: coin.current_price,
+                        id: token.contractAddress,
+                        symbol: token.symbol,
+                        name: token.name,
+                        price: token.price,
                         change: change,
-                        marketCap: coin.market_cap,
-                        volume: coin.total_volume || 0,
-                        // Size based on absolute change for consistent treemap - min 1, scale for visibility
+                        marketCap: token.tvl,
+                        volume: token.volume || 0,
                         size: Math.max(1, absChange * 10),
-                        image: coin.image,
-                        sector: 'Crypto'
+                        sector: 'DEX',
+                        chain: 'BSC',
+                        source: 'geckoterminal'
                     };
-                })
-                .filter(coin => coin.change !== 0) // Remove flat coins
+                });
+
+            // Combine and deduplicate (prefer CoinGecko for established coins)
+            const existingSymbols = new Set(coinGeckoFormatted.map(c => c.symbol));
+            const uniqueDex = dexFormatted.filter(d => !existingSymbols.has(d.symbol));
+
+            const allTokens = [...coinGeckoFormatted, ...uniqueDex];
+
+            // Sort by absolute change and take top movers
+            const formatted = allTokens
+                .filter(coin => coin.change !== 0)
                 .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
-                .slice(0, 150); // Get top 150 movers
+                .slice(0, 150);
 
             // Calculate stats
             const stats = {
@@ -134,7 +173,9 @@ class HeatmapService {
                 topGainer: formatted.reduce((max, c) => c.change > (max?.change || -Infinity) ? c : max, null),
                 topLoser: formatted.reduce((min, c) => c.change < (min?.change || Infinity) ? c : min, null),
                 totalMarketCap: formatted.reduce((sum, c) => sum + (c.marketCap || 0), 0),
-                totalVolume: formatted.reduce((sum, c) => sum + c.volume, 0)
+                totalVolume: formatted.reduce((sum, c) => sum + c.volume, 0),
+                dexTokensCount: uniqueDex.length,
+                coinGeckoCount: coinGeckoFormatted.length
             };
 
             const result = {
@@ -148,6 +189,70 @@ class HeatmapService {
 
         } catch (error) {
             console.error('[Heatmap] Error getting crypto heatmap:', error.message);
+            throw error;
+        }
+    }
+
+    // Check if symbol is a stablecoin
+    isStablecoin(symbol) {
+        const stables = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'UST', 'USDP', 'GUSD'];
+        return stables.includes(symbol?.toUpperCase());
+    }
+
+    // Get DEX-only heatmap (BSC tokens from GeckoTerminal)
+    async getDexHeatmap(network = 'bsc') {
+        const cacheKey = `dex-heatmap-${network}`;
+        const cached = this.getCached(cacheKey);
+        if (cached) return cached;
+
+        try {
+            const dexTokens = await geckoTerminalService.getTrendingPools(network, 100);
+
+            const formatted = dexTokens
+                .filter(token => !this.isStablecoin(token.symbol) && token.changePercent !== 0)
+                .map(token => {
+                    const change = token.changePercent || 0;
+                    const absChange = Math.abs(change);
+                    return {
+                        id: token.contractAddress,
+                        symbol: token.symbol,
+                        name: token.name,
+                        price: token.price,
+                        change: change,
+                        marketCap: token.tvl,
+                        volume: token.volume || 0,
+                        size: Math.max(1, absChange * 10),
+                        sector: 'DEX',
+                        chain: network.toUpperCase(),
+                        source: 'geckoterminal',
+                        poolAddress: token.poolAddress
+                    };
+                })
+                .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+            const stats = {
+                total: formatted.length,
+                gainers: formatted.filter(c => c.change > 0).length,
+                losers: formatted.filter(c => c.change < 0).length,
+                avgChange: formatted.reduce((sum, c) => sum + c.change, 0) / formatted.length || 0,
+                topGainer: formatted.reduce((max, c) => c.change > (max?.change || -Infinity) ? c : max, null),
+                topLoser: formatted.reduce((min, c) => c.change < (min?.change || Infinity) ? c : min, null),
+                totalVolume: formatted.reduce((sum, c) => sum + c.volume, 0)
+            };
+
+            const result = {
+                items: formatted,
+                stats: stats,
+                network: network,
+                source: 'geckoterminal',
+                lastUpdated: new Date().toISOString()
+            };
+
+            this.setCache(cacheKey, result);
+            return result;
+
+        } catch (error) {
+            console.error('[Heatmap] Error getting DEX heatmap:', error.message);
             throw error;
         }
     }

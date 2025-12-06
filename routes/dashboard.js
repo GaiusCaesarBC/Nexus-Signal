@@ -6,6 +6,7 @@ const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
 const Portfolio = require('../models/Portfolio'); // ✅ Import Portfolio model
 const User = require('../models/User'); // ✅ Import User model
+const geckoTerminalService = require('../services/geckoTerminalService');
 
 const alphaVantageBaseUrl = 'https://www.alphavantage.co/query';
 const coinGeckoBaseUrl = 'https://api.coingecko.com/api/v3';
@@ -377,6 +378,93 @@ router.get('/news', auth, async (req, res) => {
     } catch (err) {
         console.error('[Dashboard] Error fetching news from Finnhub:', err.response?.data || err.message);
         res.status(500).json({ msg: 'Server Error fetching news' });
+    }
+});
+
+// @route   GET /api/dashboard/dex-trending
+// @desc    Get trending DEX tokens from GeckoTerminal (BSC by default)
+// @access  Private
+let cachedDexTrending = null;
+let lastDexTrendingFetch = 0;
+const DEX_TRENDING_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+router.get('/dex-trending', auth, async (req, res) => {
+    const currentTime = Date.now();
+    const network = req.query.network || 'bsc';
+
+    // Check cache
+    if (cachedDexTrending && (currentTime - lastDexTrendingFetch < DEX_TRENDING_CACHE_DURATION)) {
+        console.log('[Dashboard] Serving DEX trending from cache');
+        return res.json(cachedDexTrending);
+    }
+
+    console.log(`[Dashboard] Fetching DEX trending from GeckoTerminal (${network})...`);
+
+    try {
+        const trending = await geckoTerminalService.getTrendingPools(network);
+
+        // Format for ticker tape display
+        const formattedTrending = trending.slice(0, 15).map(token => ({
+            symbol: token.symbol,
+            name: token.name,
+            price: token.price,
+            change: token.changePercent,
+            volume: token.volume,
+            tvl: token.tvl,
+            chain: token.chain || 'BSC',
+            source: 'geckoterminal',
+            poolAddress: token.poolAddress,
+            contractAddress: token.contractAddress,
+            badge: token.badge
+        }));
+
+        cachedDexTrending = {
+            success: true,
+            network,
+            count: formattedTrending.length,
+            tokens: formattedTrending
+        };
+        lastDexTrendingFetch = currentTime;
+
+        console.log(`[Dashboard] DEX trending: ${formattedTrending.length} tokens`);
+        return res.json(cachedDexTrending);
+
+    } catch (error) {
+        console.error('[Dashboard] Error fetching DEX trending:', error.message);
+        res.status(500).json({ msg: 'Server Error fetching DEX trending', error: error.message });
+    }
+});
+
+// @route   GET /api/dashboard/dex-gainers
+// @desc    Get top DEX gainers from GeckoTerminal
+// @access  Private
+router.get('/dex-gainers', auth, async (req, res) => {
+    const network = req.query.network || 'bsc';
+
+    try {
+        console.log(`[Dashboard] Fetching DEX gainers from GeckoTerminal (${network})...`);
+        const gainers = await geckoTerminalService.getTopGainers(network);
+
+        const formattedGainers = gainers.slice(0, 10).map(token => ({
+            symbol: token.symbol,
+            name: token.name,
+            price: token.price,
+            change: token.changePercent,
+            volume: token.volume,
+            chain: token.chain || 'BSC',
+            source: 'geckoterminal'
+        }));
+
+        res.json({
+            success: true,
+            network,
+            count: formattedGainers.length,
+            tokens: formattedGainers
+        });
+
+    } catch (error) {
+        console.error('[Dashboard] Error fetching DEX gainers:', error.message);
+        res.status(500).json({ msg: 'Server Error fetching DEX gainers' });
     }
 });
 

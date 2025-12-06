@@ -5,6 +5,7 @@ const router = express.Router();
 const axios = require('axios');
 const dotenv = require('dotenv');
 dotenv.config();
+const geckoTerminalService = require('../services/geckoTerminalService');
 
 const {
     calculateSMA,
@@ -587,6 +588,264 @@ router.get('/list', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ msg: 'Failed to get crypto list', error: error.message });
+    }
+});
+
+// =====================================================
+// GeckoTerminal DEX Token Routes
+// =====================================================
+
+// GET /api/crypto/dex/quote/:network/:poolAddress - Get DEX token quote
+router.get('/dex/quote/:network/:poolAddress', async (req, res) => {
+    try {
+        const { network, poolAddress } = req.params;
+
+        console.log(`[Crypto] Fetching DEX quote for pool ${poolAddress} on ${network}`);
+
+        const poolData = await geckoTerminalService.getPoolData(network, poolAddress);
+
+        if (!poolData) {
+            return res.status(404).json({ msg: 'DEX pool not found' });
+        }
+
+        res.json({
+            symbol: poolData.symbol,
+            name: poolData.name,
+            price: poolData.price,
+            change24h: poolData.change,
+            changePercent24h: poolData.changePercent,
+            volume24h: poolData.volume,
+            tvl: poolData.tvl,
+            fdv: poolData.fdv,
+            poolAddress: poolData.poolAddress,
+            tokenAddress: poolData.contractAddress,
+            network: network,
+            chain: poolData.chain,
+            dex: poolData.dex,
+            source: 'geckoterminal',
+            lastUpdated: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX quote error:', error.message);
+        res.status(500).json({ msg: 'Failed to fetch DEX quote', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/historical/:network/:poolAddress - Get DEX token OHLCV chart data
+router.get('/dex/historical/:network/:poolAddress', async (req, res) => {
+    try {
+        const { network, poolAddress } = req.params;
+        const { range = '1M' } = req.query;
+
+        // Map range to GeckoTerminal timeframe and aggregate
+        let timeframe, aggregate;
+        switch (range) {
+            case '1D':
+                timeframe = 'minute';
+                aggregate = 15; // 15-minute candles
+                break;
+            case '5D':
+                timeframe = 'hour';
+                aggregate = 1;
+                break;
+            case '1M':
+                timeframe = 'hour';
+                aggregate = 4; // 4-hour candles
+                break;
+            case '3M':
+            case '6M':
+                timeframe = 'day';
+                aggregate = 1;
+                break;
+            case '1Y':
+            case '5Y':
+            case 'MAX':
+                timeframe = 'day';
+                aggregate = 1;
+                break;
+            default:
+                timeframe = 'hour';
+                aggregate = 4;
+        }
+
+        console.log(`[Crypto] Fetching DEX OHLCV for pool ${poolAddress} on ${network}, range: ${range}`);
+
+        const ohlcvData = await geckoTerminalService.getOHLCV(network, poolAddress, timeframe, aggregate);
+
+        if (!ohlcvData || ohlcvData.length === 0) {
+            return res.status(404).json({ msg: 'No OHLCV data found for this pool' });
+        }
+
+        // Format data to match CoinGecko format
+        const historicalData = ohlcvData.map(candle => ({
+            time: candle.time,
+            date: formatDateString(candle.time, range),
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume
+        }));
+
+        // Get pool info for symbol
+        const poolData = await geckoTerminalService.getPoolData(network, poolAddress);
+
+        res.json({
+            symbol: poolData?.symbol || 'DEX',
+            name: poolData?.name || 'DEX Token',
+            network,
+            poolAddress,
+            range,
+            source: 'geckoterminal',
+            dataPoints: historicalData.length,
+            historicalData
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX historical error:', error.message);
+        res.status(500).json({ msg: 'Failed to fetch DEX historical data', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/prediction/:network/:poolAddress - DEX token prediction
+router.get('/dex/prediction/:network/:poolAddress', async (req, res) => {
+    try {
+        const { network, poolAddress } = req.params;
+        const { range = '1M' } = req.query;
+
+        // Get OHLCV data
+        const ohlcvData = await geckoTerminalService.getOHLCV(network, poolAddress, 'hour', 4);
+
+        if (!ohlcvData || ohlcvData.length < 20) {
+            return res.status(400).json({
+                msg: `Not enough data (${ohlcvData?.length || 0} points). DEX tokens may have limited history.`
+            });
+        }
+
+        // Format data
+        const historicalData = ohlcvData.map(candle => ({
+            time: candle.time,
+            date: formatDateString(candle.time, range),
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: candle.volume
+        }));
+
+        const lastClosePrice = historicalData[historicalData.length - 1].close;
+        const prediction = calculateCryptoPrediction(historicalData, lastClosePrice);
+
+        // Get pool info
+        const poolData = await geckoTerminalService.getPoolData(network, poolAddress);
+
+        res.json({
+            symbol: poolData?.symbol || 'DEX',
+            name: poolData?.name || 'DEX Token',
+            network,
+            poolAddress,
+            source: 'geckoterminal',
+            currentPrice: lastClosePrice,
+            historicalData,
+            ...prediction
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX prediction error:', error.message);
+        res.status(500).json({ msg: 'Failed to generate DEX prediction', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/trending/:network? - Get trending DEX tokens
+router.get('/dex/trending/:network?', async (req, res) => {
+    try {
+        const network = req.params.network || 'bsc';
+        const limit = parseInt(req.query.limit) || 20;
+
+        console.log(`[Crypto] Fetching trending DEX tokens on ${network}`);
+
+        const trending = await geckoTerminalService.getTrendingPools(network);
+
+        res.json({
+            network,
+            source: 'geckoterminal',
+            count: Math.min(trending.length, limit),
+            tokens: trending.slice(0, limit)
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX trending error:', error.message);
+        res.status(500).json({ msg: 'Failed to fetch trending DEX tokens', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/gainers/:network? - Get top DEX gainers
+router.get('/dex/gainers/:network?', async (req, res) => {
+    try {
+        const network = req.params.network || 'bsc';
+        const limit = parseInt(req.query.limit) || 20;
+
+        const gainers = await geckoTerminalService.getTopGainers(network);
+
+        res.json({
+            network,
+            source: 'geckoterminal',
+            count: Math.min(gainers.length, limit),
+            tokens: gainers.slice(0, limit)
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX gainers error:', error.message);
+        res.status(500).json({ msg: 'Failed to fetch DEX gainers', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/losers/:network? - Get top DEX losers
+router.get('/dex/losers/:network?', async (req, res) => {
+    try {
+        const network = req.params.network || 'bsc';
+        const limit = parseInt(req.query.limit) || 20;
+
+        const losers = await geckoTerminalService.getTopLosers(network);
+
+        res.json({
+            network,
+            source: 'geckoterminal',
+            count: Math.min(losers.length, limit),
+            tokens: losers.slice(0, limit)
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX losers error:', error.message);
+        res.status(500).json({ msg: 'Failed to fetch DEX losers', error: error.message });
+    }
+});
+
+// GET /api/crypto/dex/search - Search DEX tokens across networks
+router.get('/dex/search', async (req, res) => {
+    try {
+        const { q, network } = req.query;
+
+        if (!q || q.length < 2) {
+            return res.status(400).json({ msg: 'Query must be at least 2 characters' });
+        }
+
+        console.log(`[Crypto] Searching DEX tokens for "${q}" on ${network || 'all networks'}`);
+
+        const results = await geckoTerminalService.search(q, network);
+
+        res.json({
+            query: q,
+            network: network || 'all',
+            source: 'geckoterminal',
+            count: results.length,
+            tokens: results
+        });
+
+    } catch (error) {
+        console.error('[Crypto] DEX search error:', error.message);
+        res.status(500).json({ msg: 'Failed to search DEX tokens', error: error.message });
     }
 });
 

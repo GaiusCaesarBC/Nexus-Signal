@@ -1,9 +1,10 @@
 // server/routes/searchRoutes.js - Stock & Crypto Search API
-// Uses Alpha Vantage Pro for stocks, CoinGecko Pro for crypto, Yahoo Finance as backup
+// Uses Alpha Vantage Pro for stocks, CoinGecko Pro for crypto, GeckoTerminal for DEX tokens
 
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const geckoTerminalService = require('../services/geckoTerminalService');
 
 // API Keys
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
@@ -241,66 +242,39 @@ async function searchCrypto(query) {
         .slice(0, 8);
 }
 
-// Search PancakeSwap for BSC tokens via The Graph
-async function searchPancakeSwap(query) {
-    if (!THE_GRAPH_API_KEY) {
-        return [];
-    }
-
+// Search GeckoTerminal for DEX tokens (BSC, ETH, SOL, etc.)
+async function searchGeckoTerminal(query, network = null) {
     try {
-        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
+        const results = await geckoTerminalService.search(query, network);
 
-        const graphQuery = `
-            query SearchTokens($query: String!) {
-                tokens(
-                    first: 10,
-                    where: { symbol_contains_nocase: $query },
-                    orderBy: totalValueLockedUSD,
-                    orderDirection: desc
-                ) {
-                    id
-                    symbol
-                    name
-                    derivedUSD
-                    totalValueLockedUSD
-                }
-            }
-        `;
-
-        const response = await axios.post(
-            endpoint,
-            { query: graphQuery, variables: { query: query.toUpperCase() } },
-            {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 10000
-            }
-        );
-
-        if (response.data.errors) {
-            console.error('[Search] PancakeSwap GraphQL error:', response.data.errors[0]?.message);
-            return [];
-        }
-
-        const tokens = response.data?.data?.tokens || [];
-
-        // Filter tokens with valid prices and TVL > $1000 (to avoid dust tokens)
-        return tokens
-            .filter(t => t.derivedUSD && parseFloat(t.derivedUSD) > 0 && parseFloat(t.totalValueLockedUSD) > 1000)
+        return results
+            .filter(t => t.tvl > 1000 && t.price > 0)
             .map(token => ({
-                symbol: token.symbol.toUpperCase(),
+                symbol: token.symbol,
                 name: token.name,
                 type: 'crypto',
-                source: 'pancakeswap',
-                tokenAddress: token.id,
-                price: parseFloat(token.derivedUSD),
-                tvl: parseFloat(token.totalValueLockedUSD),
-                matchScore: parseFloat(token.totalValueLockedUSD) / 1000000 // Score by TVL in millions
+                source: 'geckoterminal',
+                chain: token.chain,
+                network: token.network,
+                tokenAddress: token.contractAddress,
+                poolAddress: token.poolAddress,
+                price: token.price,
+                priceChange24h: token.changePercent,
+                tvl: token.tvl,
+                volume: token.volume,
+                matchScore: (token.tvl / 100000) + (token.volume / 1000000) // Score by TVL + volume
             }))
-            .slice(0, 8);
+            .slice(0, 10);
     } catch (error) {
-        console.error('[Search] PancakeSwap search failed:', error.message);
+        console.error('[Search] GeckoTerminal search failed:', error.message);
         return [];
     }
+}
+
+// Search PancakeSwap for BSC tokens via The Graph (DEPRECATED - use GeckoTerminal)
+async function searchPancakeSwap(query) {
+    // Now using GeckoTerminal for BSC tokens - more reliable and free
+    return searchGeckoTerminal(query, 'bsc');
 }
 
 // Determine if query is likely crypto
@@ -350,7 +324,7 @@ router.get('/', async (req, res) => {
         // Run searches in parallel
         // Use Yahoo Finance as PRIMARY for stocks (more reliable for pricing)
         const promises = [];
-        let pancakeSwapResults = [];
+        let geckoTerminalResults = [];
 
         if (searchStocksFlag) {
             promises.push(
@@ -361,32 +335,32 @@ router.get('/', async (req, res) => {
         }
 
         if (searchCryptoFlag) {
-            // Search both CoinGecko and PancakeSwap in parallel
+            // Search CoinGecko for established coins and GeckoTerminal for DEX tokens
             promises.push(
                 searchCrypto(query)
                     .then(results => { crypto = results; })
                     .catch(() => { crypto = []; })
             );
             promises.push(
-                searchPancakeSwap(query)
-                    .then(results => { pancakeSwapResults = results; })
-                    .catch(() => { pancakeSwapResults = []; })
+                searchGeckoTerminal(query)
+                    .then(results => { geckoTerminalResults = results; })
+                    .catch(() => { geckoTerminalResults = []; })
             );
         }
 
         await Promise.all(promises);
 
-        // Merge PancakeSwap results with CoinGecko results (avoid duplicates)
-        if (pancakeSwapResults.length > 0) {
+        // Merge GeckoTerminal DEX results with CoinGecko results (avoid duplicates)
+        if (geckoTerminalResults.length > 0) {
             const existingSymbols = new Set(crypto.map(c => c.symbol.toUpperCase()));
-            for (const token of pancakeSwapResults) {
+            for (const token of geckoTerminalResults) {
                 if (!existingSymbols.has(token.symbol.toUpperCase())) {
                     crypto.push(token);
                 }
             }
             // Re-sort by match score
             crypto.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
-            crypto = crypto.slice(0, 12); // Limit to 12 results
+            crypto = crypto.slice(0, 15); // Limit to 15 results
         }
 
         // If Yahoo failed for stocks, try Alpha Vantage as backup
@@ -398,7 +372,7 @@ router.get('/', async (req, res) => {
             query,
             stocks,
             crypto,
-            pancakeSwapCount: pancakeSwapResults.length,
+            dexTokensCount: geckoTerminalResults.length,
             timestamp: Date.now()
         };
 
@@ -556,35 +530,29 @@ router.get('/validate/:symbol', async (req, res) => {
     }
 });
 
-// GET /api/search/pancakeswap?q=CAKE - PancakeSwap BSC token search
-router.get('/pancakeswap', async (req, res) => {
+// GET /api/search/dex?q=CAKE&network=bsc - DEX token search via GeckoTerminal
+router.get('/dex', async (req, res) => {
     try {
-        const { q } = req.query;
+        const { q, network } = req.query;
 
         if (!q || q.trim().length < 1) {
-            return res.json({ results: [], query: '', source: 'pancakeswap' });
-        }
-
-        if (!THE_GRAPH_API_KEY) {
-            return res.status(503).json({
-                error: 'PancakeSwap search not configured',
-                message: 'THE_GRAPH_API_KEY is not set'
-            });
+            return res.json({ results: [], query: '', source: 'geckoterminal' });
         }
 
         const query = q.trim();
-        const cacheKey = `pancakeswap-search-${query.toLowerCase()}`;
+        const cacheKey = `dex-search-${query.toLowerCase()}-${network || 'all'}`;
 
         const cached = getCachedResult(cacheKey);
         if (cached) {
             return res.json(cached);
         }
 
-        const results = await searchPancakeSwap(query);
+        const results = await searchGeckoTerminal(query, network || null);
         const response = {
             results,
             query,
-            source: 'pancakeswap',
+            network: network || 'all',
+            source: 'geckoterminal',
             count: results.length,
             timestamp: Date.now()
         };
@@ -592,78 +560,142 @@ router.get('/pancakeswap', async (req, res) => {
         setCacheResult(cacheKey, response);
         res.json(response);
     } catch (error) {
-        console.error('[Search] PancakeSwap search error:', error.message);
-        res.status(500).json({ error: 'PancakeSwap search failed', results: [] });
+        console.error('[Search] DEX search error:', error.message);
+        res.status(500).json({ error: 'DEX search failed', results: [] });
     }
 });
 
-// GET /api/search/pancakeswap/top - Get top PancakeSwap tokens by TVL
-router.get('/pancakeswap/top', async (req, res) => {
+// GET /api/search/dex/trending?network=bsc - Get trending DEX tokens
+router.get('/dex/trending', async (req, res) => {
     try {
-        if (!THE_GRAPH_API_KEY) {
-            return res.status(503).json({ error: 'PancakeSwap not configured' });
-        }
+        const { network = 'bsc', limit = 20 } = req.query;
 
-        const cacheKey = 'pancakeswap-top-tokens';
+        const cacheKey = `dex-trending-${network}-${limit}`;
         const cached = getCachedResult(cacheKey);
         if (cached) {
             return res.json(cached);
         }
 
-        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
-
-        const query = `
-            query TopTokens {
-                tokens(
-                    first: 50,
-                    orderBy: totalValueLockedUSD,
-                    orderDirection: desc,
-                    where: { totalValueLockedUSD_gt: "10000" }
-                ) {
-                    id
-                    symbol
-                    name
-                    derivedUSD
-                    totalValueLockedUSD
-                }
-            }
-        `;
-
-        const response = await axios.post(
-            endpoint,
-            { query },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
-        );
-
-        if (response.data.errors) {
-            throw new Error(response.data.errors[0]?.message || 'GraphQL error');
-        }
-
-        const tokens = (response.data?.data?.tokens || [])
-            .filter(t => t.derivedUSD && parseFloat(t.derivedUSD) > 0)
-            .map(token => ({
-                symbol: token.symbol.toUpperCase(),
-                name: token.name,
-                type: 'crypto',
-                source: 'pancakeswap',
-                tokenAddress: token.id,
-                price: parseFloat(token.derivedUSD),
-                tvl: parseFloat(token.totalValueLockedUSD)
-            }));
+        const tokens = await geckoTerminalService.getTrendingPools(network, parseInt(limit));
 
         const result = {
-            tokens,
+            tokens: tokens.map(t => ({
+                symbol: t.symbol,
+                name: t.name,
+                type: 'crypto',
+                source: 'geckoterminal',
+                chain: t.chain,
+                tokenAddress: t.contractAddress,
+                poolAddress: t.poolAddress,
+                price: t.price,
+                priceChange24h: t.changePercent,
+                volume: t.volume,
+                tvl: t.tvl
+            })),
             count: tokens.length,
-            source: 'pancakeswap',
+            network,
+            source: 'geckoterminal',
             timestamp: Date.now()
         };
 
         setCacheResult(cacheKey, result);
         res.json(result);
     } catch (error) {
-        console.error('[Search] PancakeSwap top tokens error:', error.message);
-        res.status(500).json({ error: 'Failed to fetch top tokens' });
+        console.error('[Search] DEX trending error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch trending tokens' });
     }
+});
+
+// GET /api/search/dex/gainers?network=bsc - Get top gainers from DEX
+router.get('/dex/gainers', async (req, res) => {
+    try {
+        const { network = 'bsc', limit = 20 } = req.query;
+
+        const cacheKey = `dex-gainers-${network}-${limit}`;
+        const cached = getCachedResult(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const tokens = await geckoTerminalService.getTopGainers(network, parseInt(limit));
+
+        const result = {
+            tokens,
+            count: tokens.length,
+            network,
+            source: 'geckoterminal',
+            timestamp: Date.now()
+        };
+
+        setCacheResult(cacheKey, result);
+        res.json(result);
+    } catch (error) {
+        console.error('[Search] DEX gainers error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch top gainers' });
+    }
+});
+
+// GET /api/search/dex/losers?network=bsc - Get top losers from DEX
+router.get('/dex/losers', async (req, res) => {
+    try {
+        const { network = 'bsc', limit = 20 } = req.query;
+
+        const cacheKey = `dex-losers-${network}-${limit}`;
+        const cached = getCachedResult(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const tokens = await geckoTerminalService.getTopLosers(network, parseInt(limit));
+
+        const result = {
+            tokens,
+            count: tokens.length,
+            network,
+            source: 'geckoterminal',
+            timestamp: Date.now()
+        };
+
+        setCacheResult(cacheKey, result);
+        res.json(result);
+    } catch (error) {
+        console.error('[Search] DEX losers error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch top losers' });
+    }
+});
+
+// Legacy route - redirect to /dex
+router.get('/pancakeswap', async (req, res) => {
+    const { q } = req.query;
+    if (!q) return res.json({ results: [], query: '', source: 'geckoterminal' });
+
+    const results = await searchGeckoTerminal(q.trim(), 'bsc');
+    res.json({
+        results,
+        query: q.trim(),
+        source: 'geckoterminal',
+        count: results.length,
+        timestamp: Date.now()
+    });
+});
+
+// Legacy route - redirect to /dex/trending
+router.get('/pancakeswap/top', async (req, res) => {
+    const tokens = await geckoTerminalService.getTrendingPools('bsc', 50);
+    res.json({
+        tokens: tokens.map(t => ({
+            symbol: t.symbol,
+            name: t.name,
+            type: 'crypto',
+            source: 'geckoterminal',
+            tokenAddress: t.contractAddress,
+            price: t.price,
+            tvl: t.tvl
+        })),
+        count: tokens.length,
+        source: 'geckoterminal',
+        timestamp: Date.now()
+    });
 });
 
 // Preload coin list on startup

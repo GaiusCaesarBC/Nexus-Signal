@@ -2,6 +2,7 @@
 // No circular dependencies - standalone service
 
 const axios = require('axios');
+const geckoTerminalService = require('./geckoTerminalService');
 
 // ============ CONFIGURATION ============
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -316,93 +317,46 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
 }
 
 /**
- * Fetch crypto price from PancakeSwap V3 Subgraph (BSC tokens)
- * Uses The Graph API to query PancakeSwap liquidity pools
+ * Fetch crypto price from GeckoTerminal (DEX tokens across multiple networks)
  * @param {string} symbol - Token symbol (e.g., CAKE, BAKE)
- * @param {string} tokenAddress - Optional: BSC token contract address
+ * @param {string} tokenAddress - Optional: Token contract address
+ * @param {string} network - Optional: Network (bsc, eth, solana, etc.)
  */
-async function fetchPancakeSwapPrice(symbol, tokenAddress = null) {
-    if (!THE_GRAPH_API_KEY) {
-        return { price: null, source: null };
-    }
-
+async function fetchGeckoTerminalPrice(symbol, tokenAddress = null, network = 'bsc') {
     try {
-        const endpoint = `https://gateway.thegraph.com/api/${THE_GRAPH_API_KEY}/subgraphs/id/${PANCAKESWAP_V3_SUBGRAPH_ID}`;
-
-        // If we have a token address, query directly by address
-        // Otherwise, search by symbol (less reliable but works for common tokens)
-        let query;
-        let variables = {};
-
+        // If we have a token address, fetch directly
         if (tokenAddress) {
-            query = `
-                query TokenPrice($tokenAddress: ID!) {
-                    token(id: $tokenAddress) {
-                        id
-                        symbol
-                        name
-                        derivedUSD
-                        totalValueLockedUSD
-                    }
-                }
-            `;
-            variables = { tokenAddress: tokenAddress.toLowerCase() };
-        } else {
-            // Search by symbol - get tokens sorted by TVL to find the most liquid one
-            query = `
-                query TokensBySymbol($symbol: String!) {
-                    tokens(
-                        first: 5,
-                        where: { symbol_contains_nocase: $symbol },
-                        orderBy: totalValueLockedUSD,
-                        orderDirection: desc
-                    ) {
-                        id
-                        symbol
-                        name
-                        derivedUSD
-                        totalValueLockedUSD
-                    }
-                }
-            `;
-            variables = { symbol: symbol.toUpperCase() };
-        }
-
-        const response = await axios.post(
-            endpoint,
-            { query, variables },
-            {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 15000
+            const tokenData = await geckoTerminalService.getTokenPrice(network, tokenAddress);
+            if (tokenData && tokenData.price > 0) {
+                console.log(`[PriceService] GeckoTerminal price for ${symbol}: $${tokenData.price}`);
+                return {
+                    price: tokenData.price,
+                    source: 'geckoterminal',
+                    tokenAddress: tokenAddress,
+                    network: network,
+                    priceChange24h: tokenData.priceChange24h
+                };
             }
-        );
-
-        if (response.data.errors) {
-            console.log(`[PriceService] PancakeSwap GraphQL error:`, response.data.errors[0]?.message);
-            return { price: null, source: null };
         }
 
-        let token;
-        if (tokenAddress) {
-            token = response.data?.data?.token;
-        } else {
-            const tokens = response.data?.data?.tokens || [];
-            // Find exact symbol match with highest TVL
-            token = tokens.find(t => t.symbol.toUpperCase() === symbol.toUpperCase()) || tokens[0];
-        }
-
-        if (token && token.derivedUSD && parseFloat(token.derivedUSD) > 0) {
-            const price = parseFloat(token.derivedUSD);
-            console.log(`[PriceService] PancakeSwap price for ${symbol}: $${price}`);
-            return {
-                price,
-                source: 'pancakeswap',
-                tokenAddress: token.id,
-                tokenName: token.name
-            };
+        // Otherwise, search by symbol
+        const searchResults = await geckoTerminalService.search(symbol, network);
+        if (searchResults && searchResults.length > 0) {
+            // Find exact symbol match or use first result
+            const match = searchResults.find(t => t.symbol.toUpperCase() === symbol.toUpperCase()) || searchResults[0];
+            if (match && match.price > 0) {
+                console.log(`[PriceService] GeckoTerminal price for ${symbol}: $${match.price}`);
+                return {
+                    price: match.price,
+                    source: 'geckoterminal',
+                    tokenAddress: match.contractAddress,
+                    network: match.network,
+                    priceChange24h: match.changePercent
+                };
+            }
         }
     } catch (error) {
-        console.log(`[PriceService] PancakeSwap failed for ${symbol}:`, error.message);
+        console.log(`[PriceService] GeckoTerminal failed for ${symbol}:`, error.message);
     }
 
     return { price: null, source: null };
@@ -529,9 +483,9 @@ async function getCurrentPrice(symbol, assetType = null, options = {}) {
         // Try CoinGecko for crypto - pass coinGeckoId if available
         result = await fetchCryptoPrice(upperSymbol, coinGeckoId);
 
-        // Fallback to PancakeSwap for BSC tokens
+        // Fallback to GeckoTerminal for DEX tokens (BSC, ETH, SOL, etc.)
         if (!result.price) {
-            result = await fetchPancakeSwapPrice(upperSymbol, options.tokenAddress);
+            result = await fetchGeckoTerminalPrice(upperSymbol, options.tokenAddress, options.network || 'bsc');
         }
     } else {
         // Try Yahoo first for stocks
