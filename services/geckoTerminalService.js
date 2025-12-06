@@ -402,9 +402,10 @@ class GeckoTerminalService {
      * Only fixes pools where the reported percentage seems unreliable
      */
     async fixSuspiciousPercentages(pools, concurrencyLimit = 5) {
-        // Identify pools with suspicious percentages (>1000% or <-95%)
+        // Identify pools with suspicious percentages (>200% or <-80%)
+        // Lowered threshold since GeckoTerminal often reports incorrect values
         const suspiciousPools = pools.filter(p =>
-            p._suspiciousPercent || Math.abs(p.changePercent) > 1000 || p.changePercent < -95
+            p._suspiciousPercent || Math.abs(p.changePercent) > 200 || p.changePercent < -80
         );
 
         if (suspiciousPools.length === 0) {
@@ -457,9 +458,9 @@ class GeckoTerminalService {
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
 
         // Flag suspicious percentage changes for later OHLCV-based correction
-        // Values over 1000% or under -95% are likely API errors
+        // Values over 200% or under -80% should be verified with OHLCV data
         let suspiciousPercent = false;
-        if (Math.abs(priceChange24h) > 1000 || priceChange24h < -95) {
+        if (Math.abs(priceChange24h) > 200 || priceChange24h < -80) {
             console.log(`[GeckoTerminal] Flagging suspicious change for ${attrs.name}: ${priceChange24h}%`);
             suspiciousPercent = true;
         }
