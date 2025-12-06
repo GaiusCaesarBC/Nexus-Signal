@@ -40,7 +40,7 @@ class GeckoTerminalService {
     /**
      * Search for tokens/pools across networks
      */
-    async search(query, network = null) {
+    async search(query, network = null, fixPercentages = true) {
         if (!query || query.length < 2) return [];
 
         const cacheKey = `search-${query}-${network || 'all'}`;
@@ -58,7 +58,12 @@ class GeckoTerminalService {
             });
 
             const pools = response.data?.data || [];
-            const results = pools.slice(0, 20).map(pool => this.formatPoolData(pool));
+            let results = pools.slice(0, 20).map(pool => this.formatPoolData(pool));
+
+            // Fix suspicious percentages using OHLCV data
+            if (fixPercentages) {
+                results = await this.fixSuspiciousPercentages(results);
+            }
 
             this.setCache(cacheKey, results);
             return results;
@@ -402,10 +407,10 @@ class GeckoTerminalService {
      * Only fixes pools where the reported percentage seems unreliable
      */
     async fixSuspiciousPercentages(pools, concurrencyLimit = 5) {
-        // Identify pools with suspicious percentages (>200% or <-80%)
-        // Lowered threshold since GeckoTerminal often reports incorrect values
+        // Identify pools with suspicious percentages (>100% or <-70%)
+        // Very aggressive threshold since GeckoTerminal is highly unreliable
         const suspiciousPools = pools.filter(p =>
-            p._suspiciousPercent || Math.abs(p.changePercent) > 200 || p.changePercent < -80
+            p._suspiciousPercent || Math.abs(p.changePercent) > 100 || p.changePercent < -70
         );
 
         if (suspiciousPools.length === 0) {
@@ -458,9 +463,10 @@ class GeckoTerminalService {
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
 
         // Flag suspicious percentage changes for later OHLCV-based correction
-        // Values over 200% or under -80% should be verified with OHLCV data
+        // Values over 100% or under -70% should be verified with OHLCV data
+        // Very aggressive threshold since GeckoTerminal is highly unreliable
         let suspiciousPercent = false;
-        if (Math.abs(priceChange24h) > 200 || priceChange24h < -80) {
+        if (Math.abs(priceChange24h) > 100 || priceChange24h < -70) {
             console.log(`[GeckoTerminal] Flagging suspicious change for ${attrs.name}: ${priceChange24h}%`);
             suspiciousPercent = true;
         }

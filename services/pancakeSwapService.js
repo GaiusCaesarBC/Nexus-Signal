@@ -149,9 +149,10 @@ class PancakeSwapService {
         const marketCap = parseFloat(attrs.market_cap_usd) || parseFloat(attrs.fdv_usd) || 0;
 
         // Flag suspicious percentage changes for later OHLCV-based correction
-        // Values over 200% or under -80% should be verified with OHLCV data
+        // Values over 100% or under -70% should be verified with OHLCV data
+        // Very aggressive threshold since GeckoTerminal is highly unreliable
         let suspiciousPercent = false;
-        if (Math.abs(priceChange24h) > 200 || priceChange24h < -80) {
+        if (Math.abs(priceChange24h) > 100 || priceChange24h < -70) {
             console.log(`[PancakeSwap] Flagging suspicious change for ${attrs.name}: ${priceChange24h}%`);
             suspiciousPercent = true;
         }
