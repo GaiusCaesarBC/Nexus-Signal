@@ -1,23 +1,24 @@
 // server/services/pancakeSwapService.js - PancakeSwap DEX Token Service
-// Fetches top BSC tokens from PancakeSwap V3 via The Graph
+// Fetches top BSC tokens from PancakeSwap V2 via NodeReal (FREE)
 
 const axios = require('axios');
 
 class PancakeSwapService {
     constructor() {
         this.cache = new Map();
-        this.CACHE_DURATION = 2 * 60 * 1000; // 2 minutes (DEX data changes fast)
+        this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes (conserve API calls - 200/day limit)
+        this.bnbPriceCache = { price: 0, timestamp: 0 };
     }
 
-    // Lazy getter for endpoint - ensures env vars are loaded
+    // Lazy getter for endpoint - NodeReal free tier
     getEndpoint() {
-        const apiKey = process.env.THE_GRAPH_API_KEY;
-        const subgraphId = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
+        const apiKey = process.env.NODEREAL_API_KEY;
 
         if (!apiKey) {
+            console.log('[PancakeSwap] NODEREAL_API_KEY not configured');
             return null;
         }
-        return `https://gateway.thegraph.com/api/${apiKey}/subgraphs/id/${subgraphId}`;
+        return `https://open-platform.nodereal.io/${apiKey}/pancakeswap-free/graphql`;
     }
 
     getCached(key) {
@@ -36,7 +37,50 @@ class PancakeSwapService {
     }
 
     /**
-     * Get top tokens by volume from PancakeSwap
+     * Get BNB price in USD (needed to convert derivedETH to USD)
+     */
+    async getBnbPrice() {
+        // Cache BNB price for 5 minutes
+        if (this.bnbPriceCache.price > 0 &&
+            Date.now() - this.bnbPriceCache.timestamp < 5 * 60 * 1000) {
+            return this.bnbPriceCache.price;
+        }
+
+        const endpoint = this.getEndpoint();
+        if (!endpoint) return 240; // Fallback BNB price
+
+        try {
+            // WBNB contract address on BSC
+            const query = `
+                query GetBnbPrice {
+                    bundle(id: "1") {
+                        ethPrice
+                    }
+                }
+            `;
+
+            const response = await axios.post(
+                endpoint,
+                { query },
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000
+                }
+            );
+
+            const bnbPrice = parseFloat(response.data?.data?.bundle?.ethPrice) || 240;
+            this.bnbPriceCache = { price: bnbPrice, timestamp: Date.now() };
+            console.log(`[PancakeSwap] BNB price: $${bnbPrice.toFixed(2)}`);
+            return bnbPrice;
+
+        } catch (error) {
+            console.error('[PancakeSwap] Error fetching BNB price:', error.message);
+            return this.bnbPriceCache.price || 240;
+        }
+    }
+
+    /**
+     * Get top tokens by liquidity from PancakeSwap V2
      * Returns tokens with price data and 24h changes
      */
     async getTopTokens(limit = 100) {
@@ -44,39 +88,41 @@ class PancakeSwapService {
         console.log('[PancakeSwap] getTopTokens called, endpoint:', endpoint ? 'configured' : 'NOT configured');
 
         if (!endpoint) {
-            console.log('[PancakeSwap] No API key configured - THE_GRAPH_API_KEY:', process.env.THE_GRAPH_API_KEY ? 'set' : 'NOT set');
+            console.log('[PancakeSwap] No API key configured - NODEREAL_API_KEY:', process.env.NODEREAL_API_KEY ? 'set' : 'NOT set');
             return [];
         }
 
-        const cacheKey = `top-tokens-${limit}`;
+        const cacheKey = `top-tokens-v2-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) {
             console.log('[PancakeSwap] Returning cached tokens:', cached.length);
             return cached;
         }
 
-        console.log('[PancakeSwap] Fetching fresh data from The Graph...');
+        console.log('[PancakeSwap] Fetching fresh data from NodeReal...');
         try {
-            // Query for tokens with highest TVL (Total Value Locked)
-            // This gives us the most liquid/traded tokens
+            // Get BNB price first
+            const bnbPrice = await this.getBnbPrice();
+
+            // Query for tokens with highest liquidity (V2 schema)
             const query = `
                 query GetTopTokens {
                     tokens(
                         first: ${limit},
-                        orderBy: totalValueLockedUSD,
+                        orderBy: tradeVolumeUSD,
                         orderDirection: desc,
                         where: {
-                            totalValueLockedUSD_gt: "1000",
-                            derivedUSD_gt: "0"
+                            tradeVolumeUSD_gt: "10000",
+                            derivedETH_gt: "0"
                         }
                     ) {
                         id
                         symbol
                         name
                         decimals
-                        derivedUSD
-                        totalValueLockedUSD
-                        volumeUSD
+                        derivedETH
+                        tradeVolumeUSD
+                        totalLiquidity
                         txCount
                     }
                 }
@@ -100,7 +146,7 @@ class PancakeSwapService {
             console.log(`[PancakeSwap] Fetched ${tokens.length} tokens`);
 
             // Get token day data for price changes
-            const tokensWithChanges = await this.addPriceChanges(tokens, endpoint);
+            const tokensWithChanges = await this.addPriceChanges(tokens, endpoint, bnbPrice);
 
             this.setCache(cacheKey, tokensWithChanges);
             return tokensWithChanges;
@@ -112,16 +158,17 @@ class PancakeSwapService {
     }
 
     /**
-     * Add 24h price change data to tokens
+     * Add 24h price change data to tokens (V2 schema)
      */
-    async addPriceChanges(tokens, endpoint) {
+    async addPriceChanges(tokens, endpoint, bnbPrice) {
         if (!tokens.length || !endpoint) return [];
 
         try {
-            // Get timestamp for 24 hours ago
-            const timestamp24hAgo = Math.floor(Date.now() / 1000) - 86400;
+            // Get timestamp for yesterday (start of day)
+            const now = Math.floor(Date.now() / 1000);
+            const yesterday = now - 86400;
 
-            // Query for token day data to get price changes
+            // Query for token day data
             const tokenIds = tokens.slice(0, 50).map(t => `"${t.id}"`).join(',');
 
             const query = `
@@ -132,7 +179,7 @@ class PancakeSwapService {
                         orderDirection: desc,
                         where: {
                             token_in: [${tokenIds}],
-                            date_gte: ${timestamp24hAgo}
+                            date_gte: ${yesterday - 86400}
                         }
                     ) {
                         token {
@@ -140,11 +187,7 @@ class PancakeSwapService {
                         }
                         date
                         priceUSD
-                        volumeUSD
-                        open
-                        high
-                        low
-                        close
+                        dailyVolumeUSD
                     }
                 }
             `;
@@ -159,6 +202,7 @@ class PancakeSwapService {
             );
 
             // Build a map of token prices from day data
+            // We need today's price and yesterday's price to calculate change
             const priceMap = new Map();
             const dayData = response.data?.data?.tokenDayDatas || [];
 
@@ -166,31 +210,46 @@ class PancakeSwapService {
                 const tokenId = data.token?.id;
                 if (!tokenId) continue;
 
+                const priceUSD = parseFloat(data.priceUSD) || 0;
+                const date = parseInt(data.date);
+                const volume = parseFloat(data.dailyVolumeUSD) || 0;
+
                 if (!priceMap.has(tokenId)) {
                     priceMap.set(tokenId, {
-                        currentPrice: parseFloat(data.close) || parseFloat(data.priceUSD) || 0,
-                        openPrice: parseFloat(data.open) || 0,
-                        high24h: parseFloat(data.high) || 0,
-                        low24h: parseFloat(data.low) || 0,
-                        volume24h: parseFloat(data.volumeUSD) || 0
+                        currentPrice: priceUSD,
+                        previousPrice: 0,
+                        volume24h: volume
                     });
+                } else {
+                    // This is an older record, use as previous price
+                    const existing = priceMap.get(tokenId);
+                    if (existing.previousPrice === 0) {
+                        existing.previousPrice = priceUSD;
+                    }
                 }
             }
 
             // Format tokens with price change data
             return tokens.map(token => {
                 const dayInfo = priceMap.get(token.id) || {};
-                const currentPrice = parseFloat(token.derivedUSD) || 0;
-                const openPrice = dayInfo.openPrice || currentPrice;
+
+                // Calculate current price from derivedETH * BNB price
+                const derivedETH = parseFloat(token.derivedETH) || 0;
+                const currentPrice = dayInfo.currentPrice || (derivedETH * bnbPrice);
+                const previousPrice = dayInfo.previousPrice || currentPrice;
 
                 // Calculate 24h change
                 let priceChange24h = 0;
                 let priceChangePercent24h = 0;
 
-                if (openPrice > 0 && currentPrice > 0) {
-                    priceChange24h = currentPrice - openPrice;
-                    priceChangePercent24h = ((currentPrice - openPrice) / openPrice) * 100;
+                if (previousPrice > 0 && currentPrice > 0) {
+                    priceChange24h = currentPrice - previousPrice;
+                    priceChangePercent24h = ((currentPrice - previousPrice) / previousPrice) * 100;
                 }
+
+                // Calculate liquidity in USD
+                const totalLiquidity = parseFloat(token.totalLiquidity) || 0;
+                const liquidityUSD = totalLiquidity * currentPrice;
 
                 return {
                     id: token.id,
@@ -199,11 +258,9 @@ class PancakeSwapService {
                     price: currentPrice,
                     change: priceChange24h,
                     changePercent: priceChangePercent24h,
-                    volume: dayInfo.volume24h || parseFloat(token.volumeUSD) || 0,
-                    tvl: parseFloat(token.totalValueLockedUSD) || 0,
+                    volume: dayInfo.volume24h || parseFloat(token.tradeVolumeUSD) || 0,
+                    tvl: liquidityUSD,
                     txCount: parseInt(token.txCount) || 0,
-                    high24h: dayInfo.high24h || currentPrice,
-                    low24h: dayInfo.low24h || currentPrice,
                     source: 'pancakeswap',
                     chain: 'BSC',
                     contractAddress: token.id
@@ -214,20 +271,27 @@ class PancakeSwapService {
             console.error('[PancakeSwap] Error fetching price changes:', error.message);
 
             // Return tokens without change data
-            return tokens.map(token => ({
-                id: token.id,
-                symbol: token.symbol?.toUpperCase() || 'UNKNOWN',
-                name: token.name || token.symbol || 'Unknown Token',
-                price: parseFloat(token.derivedUSD) || 0,
-                change: 0,
-                changePercent: 0,
-                volume: parseFloat(token.volumeUSD) || 0,
-                tvl: parseFloat(token.totalValueLockedUSD) || 0,
-                txCount: parseInt(token.txCount) || 0,
-                source: 'pancakeswap',
-                chain: 'BSC',
-                contractAddress: token.id
-            }));
+            const bnbPrice = this.bnbPriceCache.price || 240;
+            return tokens.map(token => {
+                const derivedETH = parseFloat(token.derivedETH) || 0;
+                const currentPrice = derivedETH * bnbPrice;
+                const totalLiquidity = parseFloat(token.totalLiquidity) || 0;
+
+                return {
+                    id: token.id,
+                    symbol: token.symbol?.toUpperCase() || 'UNKNOWN',
+                    name: token.name || token.symbol || 'Unknown Token',
+                    price: currentPrice,
+                    change: 0,
+                    changePercent: 0,
+                    volume: parseFloat(token.tradeVolumeUSD) || 0,
+                    tvl: totalLiquidity * currentPrice,
+                    txCount: parseInt(token.txCount) || 0,
+                    source: 'pancakeswap',
+                    chain: 'BSC',
+                    contractAddress: token.id
+                };
+            });
         }
     }
 
@@ -307,6 +371,7 @@ class PancakeSwapService {
         if (!endpoint || !query) return [];
 
         try {
+            const bnbPrice = await this.getBnbPrice();
             const isAddress = query.startsWith('0x') && query.length === 42;
 
             const graphQuery = isAddress ? `
@@ -315,9 +380,9 @@ class PancakeSwapService {
                         id
                         symbol
                         name
-                        derivedUSD
-                        totalValueLockedUSD
-                        volumeUSD
+                        derivedETH
+                        tradeVolumeUSD
+                        totalLiquidity
                     }
                 }
             ` : `
@@ -325,15 +390,15 @@ class PancakeSwapService {
                     tokens(
                         first: 10,
                         where: { symbol_contains_nocase: "${query}" },
-                        orderBy: totalValueLockedUSD,
+                        orderBy: tradeVolumeUSD,
                         orderDirection: desc
                     ) {
                         id
                         symbol
                         name
-                        derivedUSD
-                        totalValueLockedUSD
-                        volumeUSD
+                        derivedETH
+                        tradeVolumeUSD
+                        totalLiquidity
                     }
                 }
             `;
@@ -350,18 +415,24 @@ class PancakeSwapService {
             const tokens = response.data?.data?.tokens || [];
 
             return tokens
-                .filter(t => parseFloat(t.derivedUSD) > 0)
-                .map(t => ({
-                    id: t.id,
-                    symbol: t.symbol?.toUpperCase(),
-                    name: t.name,
-                    price: parseFloat(t.derivedUSD),
-                    tvl: parseFloat(t.totalValueLockedUSD),
-                    volume: parseFloat(t.volumeUSD),
-                    source: 'pancakeswap',
-                    chain: 'BSC',
-                    contractAddress: t.id
-                }));
+                .filter(t => parseFloat(t.derivedETH) > 0)
+                .map(t => {
+                    const derivedETH = parseFloat(t.derivedETH) || 0;
+                    const price = derivedETH * bnbPrice;
+                    const totalLiquidity = parseFloat(t.totalLiquidity) || 0;
+
+                    return {
+                        id: t.id,
+                        symbol: t.symbol?.toUpperCase(),
+                        name: t.name,
+                        price: price,
+                        tvl: totalLiquidity * price,
+                        volume: parseFloat(t.tradeVolumeUSD),
+                        source: 'pancakeswap',
+                        chain: 'BSC',
+                        contractAddress: t.id
+                    };
+                });
 
         } catch (error) {
             console.error('[PancakeSwap] Search error:', error.message);
