@@ -195,6 +195,86 @@ const REFILL_TIERS = [
 const MAX_BALANCE = 100000;
 const LEVERAGE_OPTIONS = [1, 2, 3, 5, 7, 10, 20];
 
+// ============ PRICE SANITY CHECKS ============
+// These prevent phantom gains from bad DEX price data
+const MAX_PRICE_CHANGE_PERCENT = 500; // Reject if price changed >500% from position avg
+const MIN_VALID_PRICE = 0.0000000001; // Reject absurdly low prices
+const MAX_VALID_PRICE = 10000000; // Reject absurdly high prices ($10M cap per unit)
+
+/**
+ * Validate price sanity for paper trading
+ * Prevents phantom gains from bad data (like the $0.000003 -> $9.90 DYOR issue)
+ */
+function validatePriceSanity(currentPrice, referencePrice = null, symbol = '') {
+    const errors = [];
+
+    // Check for invalid/null price
+    if (currentPrice === null || currentPrice === undefined || isNaN(currentPrice)) {
+        errors.push(`Invalid price received for ${symbol}`);
+        return { valid: false, errors, rejected: true };
+    }
+
+    // Check for absurdly low prices (likely garbage data)
+    if (currentPrice < MIN_VALID_PRICE) {
+        errors.push(`Price $${currentPrice} is too low - likely bad data for ${symbol}`);
+        return { valid: false, errors, rejected: true };
+    }
+
+    // Check for absurdly high prices (likely garbage data)
+    if (currentPrice > MAX_VALID_PRICE) {
+        errors.push(`Price $${currentPrice} is too high - likely bad data for ${symbol}`);
+        return { valid: false, errors, rejected: true };
+    }
+
+    // If we have a reference price (position's average), check for extreme changes
+    if (referencePrice && referencePrice > 0) {
+        const changePercent = ((currentPrice - referencePrice) / referencePrice) * 100;
+        const absChange = Math.abs(changePercent);
+
+        if (absChange > MAX_PRICE_CHANGE_PERCENT) {
+            console.log(`[Price Sanity] REJECTED ${symbol}: ${changePercent.toFixed(1)}% change | Ref: $${referencePrice} -> Current: $${currentPrice}`);
+            errors.push(
+                `Price change of ${changePercent.toFixed(1)}% is unrealistic for ${symbol}. ` +
+                `This is likely due to bad price data from the API. ` +
+                `Original: $${referencePrice.toFixed(8)}, Current: $${currentPrice.toFixed(8)}`
+            );
+            return {
+                valid: false,
+                errors,
+                changePercent,
+                isSuspicious: true,
+                rejected: true
+            };
+        }
+    }
+
+    return { valid: true, errors: [], changePercent: referencePrice ? ((currentPrice - referencePrice) / referencePrice) * 100 : 0 };
+}
+
+/**
+ * Validate that the current price is reasonable for a sell/cover order
+ * Compares against the position's average price to catch bad data
+ */
+function validateSellPrice(currentPrice, position) {
+    const avgPrice = safeNumber(position.averagePrice, 0);
+    const symbol = position.symbol || 'Unknown';
+
+    // Run sanity check with reference price
+    const sanityCheck = validatePriceSanity(currentPrice, avgPrice, symbol);
+
+    if (!sanityCheck.valid) {
+        return {
+            valid: false,
+            error: sanityCheck.errors[0] || 'Price validation failed',
+            changePercent: sanityCheck.changePercent,
+            currentPrice,
+            referencePrice: avgPrice
+        };
+    }
+
+    return { valid: true, changePercent: sanityCheck.changePercent };
+}
+
 // Helper function to safely parse numbers
 function safeNumber(value, defaultValue = 0) {
     const num = parseFloat(value);
@@ -310,9 +390,20 @@ async function closePosition(account, position, triggerType, currentPrice) {
     const leverage = safeNumber(position.leverage, 1);
     const avgPrice = safeNumber(position.averagePrice, currentPrice);
     const quantity = safeNumber(position.quantity, 0);
-    
+
+    // ============ PRICE SANITY CHECK FOR AUTO-CLOSE ============
+    // Skip validation for liquidation (must execute) but validate for TP/SL
+    if (triggerType !== 'liquidation') {
+        const priceValidation = validateSellPrice(currentPrice, position);
+        if (!priceValidation.valid) {
+            console.log(`[Paper Trading] AUTO-CLOSE SKIPPED (${triggerType}) for ${position.symbol}: Bad price data - ${priceValidation.error}`);
+            // Return null to indicate the position should NOT be closed
+            return null;
+        }
+    }
+
     const margin = safeNumber(avgPrice * quantity, 0);
-    
+
     let profitLoss, profitLossPercent;
     
     if (positionType === 'short') {
@@ -886,19 +977,36 @@ router.post('/sell', auth, async (req, res) => {
         const position = account.positions.find(
             p => p.symbol === symbol.toUpperCase() && p.type === type && (p.positionType || 'long') === 'long'
         );
-        
+
         if (!position) {
             return res.status(400).json({ error: `You don't own any ${symbol}` });
         }
-        
+
         const positionQuantity = safeNumber(position.quantity, 0);
         if (safeQuantity > positionQuantity) {
             return res.status(400).json({ error: `Insufficient shares. You own ${positionQuantity}` });
         }
-        
+
+        // ============ PRICE SANITY CHECK ============
+        // Prevent phantom gains from bad DEX price data
+        const priceValidation = validateSellPrice(safePrice, position);
+        if (!priceValidation.valid) {
+            console.log(`[Paper Trading] REJECTED SELL for ${symbol}: ${priceValidation.error}`);
+            return res.status(400).json({
+                error: priceValidation.error,
+                errorType: 'PRICE_SANITY_CHECK',
+                details: {
+                    currentPrice: priceValidation.currentPrice,
+                    positionAvgPrice: priceValidation.referencePrice,
+                    changePercent: priceValidation.changePercent,
+                    maxAllowedChange: MAX_PRICE_CHANGE_PERCENT
+                }
+            });
+        }
+
         const positionLeverage = safeNumber(position.leverage, 1);
         const avgPrice = safeNumber(position.averagePrice, safePrice);
-        
+
         const marginUsed = safeNumber(avgPrice * safeQuantity, 0);
         const priceChange = safePrice - avgPrice;
         const percentChange = avgPrice > 0 ? priceChange / avgPrice : 0;
@@ -1056,21 +1164,39 @@ router.post('/cover', auth, async (req, res) => {
         if (priceResult.price === null) {
             return res.status(400).json({ error: `Could not fetch price for ${symbol}` });
         }
-        
+
         const safePrice = safeNumber(priceResult.price, 0);
+
+        // ============ PRICE SANITY CHECK ============
+        // Prevent phantom gains from bad DEX price data
+        const priceValidation = validateSellPrice(safePrice, position);
+        if (!priceValidation.valid) {
+            console.log(`[Paper Trading] REJECTED COVER for ${symbol}: ${priceValidation.error}`);
+            return res.status(400).json({
+                error: priceValidation.error,
+                errorType: 'PRICE_SANITY_CHECK',
+                details: {
+                    currentPrice: priceValidation.currentPrice,
+                    positionAvgPrice: priceValidation.referencePrice,
+                    changePercent: priceValidation.changePercent,
+                    maxAllowedChange: MAX_PRICE_CHANGE_PERCENT
+                }
+            });
+        }
+
         const positionLeverage = safeNumber(position.leverage, 1);
         const avgPrice = safeNumber(position.averagePrice, safePrice);
-        
+
         const marginUsed = safeNumber(avgPrice * safeQuantity, 0);
         const priceChange = avgPrice - safePrice;
         const percentChange = avgPrice > 0 ? priceChange / avgPrice : 0;
-        
+
         const profitLoss = safeNumber(marginUsed * percentChange * positionLeverage, 0);
         const profitLossPercent = safeNumber(percentChange * positionLeverage * 100, 0);
         const proceeds = safeNumber(marginUsed + profitLoss, marginUsed);
-        
+
         account.cashBalance = safeNumber(account.cashBalance, 0) + Math.max(0, proceeds);
-        
+
         if (safeQuantity >= positionQuantity) {
             account.positions = account.positions.filter(
                 p => !(p.symbol === symbol.toUpperCase() && p.type === type && p.positionType === 'short')
@@ -1291,42 +1417,50 @@ if (price && price > 0) {
             
             // Check for TP/SL/Trailing/Liquidation triggers
             const triggers = checkPositionTriggers(position);
-            
+
             if (triggers.liquidation) {
                 const result = await closePosition(account, position, 'liquidation', position.currentPrice);
-                triggeredPositions.push({ 
-                    symbol: position.symbol, 
-                    type: 'liquidation',
-                    ...result
-                });
-                positionsToRemove.push(position._id);
+                if (result) { // Only add if closePosition succeeded (not null due to bad price)
+                    triggeredPositions.push({
+                        symbol: position.symbol,
+                        type: 'liquidation',
+                        ...result
+                    });
+                    positionsToRemove.push(position._id);
+                }
             } else if (triggers.takeProfit) {
                 const result = await closePosition(account, position, 'take_profit', position.currentPrice);
-                triggeredPositions.push({ 
-                    symbol: position.symbol, 
-                    type: 'take_profit',
-                    targetPrice: position.takeProfit,
-                    ...result
-                });
-                positionsToRemove.push(position._id);
+                if (result) { // Only add if closePosition succeeded
+                    triggeredPositions.push({
+                        symbol: position.symbol,
+                        type: 'take_profit',
+                        targetPrice: position.takeProfit,
+                        ...result
+                    });
+                    positionsToRemove.push(position._id);
+                }
             } else if (triggers.stopLoss) {
                 const result = await closePosition(account, position, 'stop_loss', position.currentPrice);
-                triggeredPositions.push({ 
-                    symbol: position.symbol, 
-                    type: 'stop_loss',
-                    targetPrice: position.stopLoss,
-                    ...result
-                });
-                positionsToRemove.push(position._id);
+                if (result) { // Only add if closePosition succeeded
+                    triggeredPositions.push({
+                        symbol: position.symbol,
+                        type: 'stop_loss',
+                        targetPrice: position.stopLoss,
+                        ...result
+                    });
+                    positionsToRemove.push(position._id);
+                }
             } else if (triggers.trailingStop) {
                 const result = await closePosition(account, position, 'trailing_stop', position.currentPrice);
-                triggeredPositions.push({ 
-                    symbol: position.symbol, 
-                    type: 'trailing_stop',
-                    trailingStopPrice: position.trailingStopPrice,
-                    ...result
-                });
-                positionsToRemove.push(position._id);
+                if (result) { // Only add if closePosition succeeded
+                    triggeredPositions.push({
+                        symbol: position.symbol,
+                        type: 'trailing_stop',
+                        trailingStopPrice: position.trailingStopPrice,
+                        ...result
+                    });
+                    positionsToRemove.push(position._id);
+                }
             }
         }
         
