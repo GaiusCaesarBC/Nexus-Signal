@@ -144,7 +144,7 @@ class ScreenerService {
                 results.sort((a, b) => a.changePercent - b.changePercent);
             }
 
-            console.log(`[Screener] Combined crypto results: ${results.length} tokens (${pancakeSwapData.length} from DexScreener BSC, ${coinGeckoData.length} from CoinGecko)`);
+            console.log(`[Screener] Combined crypto results: ${results.length} tokens (${pancakeSwapData.length} from GeckoTerminal BSC, ${coinGeckoData.length} from CoinGecko)`);
 
             this.setCache(cacheKey, results);
             return results;
@@ -197,7 +197,7 @@ class ScreenerService {
     // Fetch data from PancakeSwap (BSC DEX tokens)
     async fetchPancakeSwapData(filters = {}) {
         try {
-            console.log('[Screener] Fetching DexScreener BSC data with filters:', filters);
+            console.log('[Screener] Fetching GeckoTerminal BSC data with filters:', filters);
             const tokens = await pancakeSwapService.getTokens({
                 sortBy: 'changePercent',
                 order: 'desc',
@@ -205,7 +205,7 @@ class ScreenerService {
                 limit: 100,
                 changeFilter: filters.changeFilter || 'all'
             });
-            console.log(`[Screener] DexScreener returned ${tokens.length} BSC tokens`);
+            console.log(`[Screener] GeckoTerminal returned ${tokens.length} BSC tokens`);
 
             // Format results to match CoinGecko structure
             return tokens.map(token => ({
