@@ -18,8 +18,14 @@ const PredictionSchema = new mongoose.Schema({
     },
     assetType: {
         type: String,
-        enum: ['stock', 'crypto'],
+        enum: ['stock', 'crypto', 'dex'],
         default: 'stock'
+    },
+    // DEX token specific info
+    dexInfo: {
+        network: String,      // 'bsc', 'eth', 'solana', etc.
+        poolAddress: String,  // GeckoTerminal pool address
+        contractAddress: String // Token contract address
     },
     // Prediction data at time of creation
     currentPrice: {
