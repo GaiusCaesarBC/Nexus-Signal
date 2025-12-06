@@ -648,6 +648,8 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
         // 🔥 FETCH BROKERAGE/REAL PORTFOLIO STATS
         let brokerageStats = {
             totalValue: 0,
+            totalCostBasis: 0,
+            returnPercent: 0,
             connectionCount: 0,
             hasConnections: false
         };
@@ -659,16 +661,30 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             });
 
             if (brokerageConnections.length > 0) {
-                const totalValue = brokerageConnections.reduce((sum, conn) => {
-                    return sum + (conn.cachedPortfolio?.totalValue || 0);
-                }, 0);
+                let totalValue = 0;
+                let totalCostBasis = 0;
+
+                brokerageConnections.forEach(conn => {
+                    const holdings = conn.cachedPortfolio?.holdings || [];
+                    holdings.forEach(h => {
+                        totalValue += h.value || 0;
+                        totalCostBasis += h.costBasis || h.value || 0; // Fall back to value if no cost basis
+                    });
+                });
+
+                // Calculate return percentage
+                const returnPercent = totalCostBasis > 0
+                    ? ((totalValue - totalCostBasis) / totalCostBasis) * 100
+                    : 0;
 
                 brokerageStats = {
                     totalValue: totalValue,
+                    totalCostBasis: totalCostBasis,
+                    returnPercent: returnPercent,
                     connectionCount: brokerageConnections.length,
                     hasConnections: true
                 };
-                console.log(`[Profile] Brokerage stats for ${user.username}: $${totalValue.toFixed(2)} across ${brokerageConnections.length} connections`);
+                console.log(`[Profile] Brokerage stats for ${user.username}: $${totalValue.toFixed(2)} (${returnPercent.toFixed(2)}% return) across ${brokerageConnections.length} connections`);
             }
         } catch (brokError) {
             console.warn('[Profile] Could not fetch brokerage stats:', brokError.message);
