@@ -6,6 +6,16 @@ const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 
+// Import badge mapping to merge gamification badges
+let BADGE_MAPPING;
+try {
+    BADGE_MAPPING = require('../config/badgeMapping').BADGE_MAPPING;
+    console.log('[Vault] Loaded badge mapping:', Object.keys(BADGE_MAPPING).length, 'badges');
+} catch (error) {
+    console.error('[Vault] Could not load badgeMapping:', error.message);
+    BADGE_MAPPING = {};
+}
+
 // Import vault items - make sure this file exists at server/data/vaultItems.js
 let VAULT_ITEMS;
 try {
@@ -208,6 +218,40 @@ router.get('/items', auth, async (req, res) => {
             });
         };
 
+        // Merge gamification badges with vault badges
+        // This ensures badges earned through achievements show up in the vault
+        const gamificationBadges = user.gamification?.badges || [];
+        const vaultBadgeIds = (VAULT_ITEMS.badges || []).map(b => b.id);
+
+        // Create badge entries for gamification badges not in vault items
+        const extraBadges = gamificationBadges
+            .filter(badgeId => !vaultBadgeIds.includes(badgeId))
+            .map(badgeId => {
+                const config = BADGE_MAPPING[badgeId] || {};
+                return {
+                    id: badgeId,
+                    name: config.name || badgeId.replace('badge-', '').replace(/-/g, ' '),
+                    description: config.description || 'Earned through achievements',
+                    type: 'badge',
+                    rarity: config.rarity || 'common',
+                    cost: 0,
+                    icon: 'award',
+                    // These are automatically owned since they're from gamification
+                    owned: true,
+                    equipped: vault.equippedBadges?.includes(badgeId),
+                    canUnlock: true,
+                    canAfford: true
+                };
+            });
+
+        // Build vault badges with status, then add extra gamification badges
+        const allBadges = [
+            ...buildItemsWithStatus(VAULT_ITEMS.badges || []),
+            ...extraBadges
+        ];
+
+        console.log(`[Vault] Gamification badges: ${gamificationBadges.length}, Extra badges added: ${extraBadges.length}`);
+
         const responseData = {
             success: true,
             userCoins: userCoins,
@@ -222,7 +266,7 @@ router.get('/items', auth, async (req, res) => {
                 avatarBorders: buildItemsWithStatus(VAULT_ITEMS.avatarBorders || []),
                 perks: buildItemsWithStatus(VAULT_ITEMS.perks || []),
                 profileThemes: buildItemsWithStatus(VAULT_ITEMS.profileThemes || []),
-                badges: buildItemsWithStatus(VAULT_ITEMS.badges || [])
+                badges: allBadges
             }
         };
 
