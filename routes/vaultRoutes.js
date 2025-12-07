@@ -218,39 +218,45 @@ router.get('/items', auth, async (req, res) => {
             });
         };
 
-        // Merge gamification badges with vault badges
-        // This ensures badges earned through achievements show up in the vault
+        // Merge ALL badge sources with vault badges
+        // Sources: gamification.badges, vault.equippedBadges, vault.ownedItems (badge-*)
         const gamificationBadges = user.gamification?.badges || [];
+        const equippedBadges = vault.equippedBadges || [];
+        const ownedBadgeItems = (vault.ownedItems || []).filter(id => id.startsWith('badge-'));
+
+        // Combine all badge sources (deduplicated)
+        const allUserBadges = [...new Set([...gamificationBadges, ...equippedBadges, ...ownedBadgeItems])];
+
         const vaultBadgeIds = (VAULT_ITEMS.badges || []).map(b => b.id);
 
-        // Create badge entries for gamification badges not in vault items
-        const extraBadges = gamificationBadges
+        // Create badge entries for badges not in vault items
+        const extraBadges = allUserBadges
             .filter(badgeId => !vaultBadgeIds.includes(badgeId))
             .map(badgeId => {
                 const config = BADGE_MAPPING[badgeId] || {};
                 return {
                     id: badgeId,
-                    name: config.name || badgeId.replace('badge-', '').replace(/-/g, ' '),
-                    description: config.description || 'Earned through achievements',
+                    name: config.name || badgeId.replace('badge-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    description: config.description || 'Special badge',
                     type: 'badge',
-                    rarity: config.rarity || 'common',
+                    rarity: config.rarity || 'legendary',
                     cost: 0,
                     icon: 'award',
-                    // These are automatically owned since they're from gamification
+                    // These are owned if they're in any of our sources
                     owned: true,
-                    equipped: vault.equippedBadges?.includes(badgeId),
+                    equipped: equippedBadges.includes(badgeId),
                     canUnlock: true,
                     canAfford: true
                 };
             });
 
-        // Build vault badges with status, then add extra gamification badges
+        // Build vault badges with status, then add extra badges
         const allBadges = [
             ...buildItemsWithStatus(VAULT_ITEMS.badges || []),
             ...extraBadges
         ];
 
-        console.log(`[Vault] Gamification badges: ${gamificationBadges.length}, Extra badges added: ${extraBadges.length}`);
+        console.log(`[Vault] User badges - Gamification: ${gamificationBadges.length}, Equipped: ${equippedBadges.length}, Owned: ${ownedBadgeItems.length}, Extra added: ${extraBadges.length}`);
 
         const responseData = {
             success: true,
