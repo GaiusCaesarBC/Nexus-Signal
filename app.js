@@ -99,12 +99,21 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// --- Stripe Webhook (needs raw body - MUST be before express.json) ---
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
-
 // --- Middleware ---
 app.use(helmet());
-app.use(express.json({ limit: '10kb' }));
+
+// --- JSON parsing with Stripe webhook exception ---
+// Stripe webhooks need raw body for signature verification
+app.use((req, res, next) => {
+    if (req.originalUrl === '/api/stripe/webhook') {
+        next(); // Skip JSON parsing for webhook
+    } else {
+        express.json({ limit: '10kb' })(req, res, next);
+    }
+});
+
+// Raw body parser specifically for Stripe webhook
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(mongoSanitize());
