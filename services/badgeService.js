@@ -122,6 +122,23 @@ class BadgeService {
             user.gamification.badges.push(badgeId);
             user.gamification.badgesEarned = (user.gamification.badgesEarned || 0) + 1;
 
+            // ALSO add to vault.ownedItems so it shows as "owned" in EquippedItemsPage
+            if (!user.vault) {
+                user.vault = {
+                    ownedItems: ['border-bronze', 'theme-default'],
+                    equippedBorder: 'border-bronze',
+                    equippedTheme: 'theme-default',
+                    equippedBadges: [],
+                    activePerks: []
+                };
+            }
+            if (!user.vault.ownedItems) {
+                user.vault.ownedItems = ['border-bronze', 'theme-default'];
+            }
+            if (!user.vault.ownedItems.includes(badgeId)) {
+                user.vault.ownedItems.push(badgeId);
+            }
+
             // Award XP and Coins
             if (badgeConfig.xpReward) {
                 const GamificationService = require('./gamificationService');
@@ -193,6 +210,23 @@ class BadgeService {
             // Grant badge
             user.gamification.badges.push(badgeId);
             user.gamification.badgesEarned = (user.gamification.badgesEarned || 0) + 1;
+
+            // ALSO add to vault.ownedItems so it shows as "owned" in EquippedItemsPage
+            if (!user.vault) {
+                user.vault = {
+                    ownedItems: ['border-bronze', 'theme-default'],
+                    equippedBorder: 'border-bronze',
+                    equippedTheme: 'theme-default',
+                    equippedBadges: [],
+                    activePerks: []
+                };
+            }
+            if (!user.vault.ownedItems) {
+                user.vault.ownedItems = ['border-bronze', 'theme-default'];
+            }
+            if (!user.vault.ownedItems.includes(badgeId)) {
+                user.vault.ownedItems.push(badgeId);
+            }
 
             // Award XP and Coins
             if (badgeConfig.xpReward) {
