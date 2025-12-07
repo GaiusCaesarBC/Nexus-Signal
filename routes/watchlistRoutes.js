@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
+const { checkUsageLimit, requireSubscription } = require('../middleware/subscriptionMiddleware');
 
 // In-memory watchlist storage (replace with database in production)
 const watchlists = {};
@@ -333,8 +334,8 @@ router.get('/', auth, async (req, res) => {
 
 // @route   POST /api/watchlist
 // @desc    Add stock OR crypto to watchlist
-// @access  Private
-router.post('/', auth, async (req, res) => {
+// @access  Private (Starter+ required, limited by plan)
+router.post('/', auth, requireSubscription('starter'), checkUsageLimit('watchlistAssets'), async (req, res) => {
     try {
         const userId = req.user.id;
         let { symbol, type } = req.body;

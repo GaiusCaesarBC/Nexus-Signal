@@ -4,12 +4,13 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/authMiddleware');
+const { requireSubscription } = require('../middleware/subscriptionMiddleware');
 const whaleService = require('../services/whaleService');
 
 // @route   GET /api/whale/alerts
 // @desc    Get all whale/insider alerts (combined feed)
-// @access  Private
-router.get('/alerts', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/alerts', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 50;
         const types = req.query.types ? req.query.types.split(',') : ['insider', 'crypto', 'options', 'congress'];
@@ -31,8 +32,8 @@ router.get('/alerts', auth, async (req, res) => {
 
 // @route   GET /api/whale/insider
 // @desc    Get insider trading data (SEC Form 4)
-// @access  Private
-router.get('/insider', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/insider', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 50;
         
@@ -67,8 +68,8 @@ router.get('/insider', auth, async (req, res) => {
 
 // @route   GET /api/whale/insider/:symbol
 // @desc    Get insider trading for a specific stock
-// @access  Private
-router.get('/insider/:symbol', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/insider/:symbol', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const { symbol } = req.params;
         const limit = parseInt(req.query.limit) || 20;
@@ -101,8 +102,8 @@ router.get('/insider/:symbol', auth, async (req, res) => {
 
 // @route   GET /api/whale/crypto
 // @desc    Get crypto whale transactions
-// @access  Private
-router.get('/crypto', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/crypto', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 50;
         const minValue = parseInt(req.query.minValue) || 1000000;
@@ -143,8 +144,8 @@ router.get('/crypto', auth, async (req, res) => {
 
 // @route   GET /api/whale/crypto/:symbol
 // @desc    Get whale transactions for a specific crypto
-// @access  Private
-router.get('/crypto/:symbol', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/crypto/:symbol', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const { symbol } = req.params;
         const limit = parseInt(req.query.limit) || 30;
@@ -170,8 +171,8 @@ router.get('/crypto/:symbol', auth, async (req, res) => {
 
 // @route   GET /api/whale/options
 // @desc    Get unusual options activity
-// @access  Private
-router.get('/options', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/options', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 30;
         const sentiment = req.query.sentiment; // 'bullish', 'bearish', or undefined for all
@@ -214,8 +215,8 @@ router.get('/options', auth, async (req, res) => {
 
 // @route   GET /api/whale/options/:symbol
 // @desc    Get unusual options for a specific stock
-// @access  Private
-router.get('/options/:symbol', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/options/:symbol', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const { symbol } = req.params;
         const limit = parseInt(req.query.limit) || 20;
@@ -241,8 +242,8 @@ router.get('/options/:symbol', auth, async (req, res) => {
 
 // @route   GET /api/whale/exchange-flows
 // @desc    Get exchange inflow/outflow data
-// @access  Private
-router.get('/exchange-flows', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/exchange-flows', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 20;
         
@@ -273,8 +274,8 @@ router.get('/exchange-flows', auth, async (req, res) => {
 
 // @route   GET /api/whale/hedge-funds
 // @desc    Get hedge fund activity (13F filings)
-// @access  Private
-router.get('/hedge-funds', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/hedge-funds', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 20;
         
@@ -309,8 +310,8 @@ router.get('/hedge-funds', auth, async (req, res) => {
 
 // @route   GET /api/whale/congress
 // @desc    Get congressional trading data
-// @access  Private
-router.get('/congress', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/congress', auth, requireSubscription('premium'), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 30;
         const party = req.query.party; // 'D', 'R', or undefined for all
@@ -350,8 +351,8 @@ router.get('/congress', auth, async (req, res) => {
 
 // @route   GET /api/whale/summary
 // @desc    Get overall market whale activity summary
-// @access  Private
-router.get('/summary', auth, async (req, res) => {
+// @access  Private (Premium+ required)
+router.get('/summary', auth, requireSubscription('premium'), async (req, res) => {
     try {
         console.log(`[Whale API] Fetching whale summary`);
         

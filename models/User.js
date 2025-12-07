@@ -256,6 +256,21 @@ const UserSchema = new mongoose.Schema({
         lastSyncedAt: { type: Date, default: null }
     },
 
+    // ============ SUBSCRIPTION ============
+    subscription: {
+        status: {
+            type: String,
+            enum: ['free', 'starter', 'pro', 'premium', 'elite'],
+            default: 'free'
+        },
+        stripeCustomerId: { type: String, default: null },
+        stripeSubscriptionId: { type: String, default: null },
+        stripePriceId: { type: String, default: null },
+        currentPeriodStart: { type: Date, default: null },
+        currentPeriodEnd: { type: Date, default: null },
+        cancelAtPeriodEnd: { type: Boolean, default: false }
+    },
+
     // ============ TWO-FACTOR AUTHENTICATION ============
     twoFactor: {
         enabled: { type: Boolean, default: false },
@@ -1143,6 +1158,11 @@ UserSchema.index({ 'vault.equippedTheme': 1 });
 // Index for wallet queries
 UserSchema.index({ 'wallet.address': 1 }, { sparse: true });
 UserSchema.index({ 'wallet.isWalletLinked': 1 });
+
+// Index for subscription queries
+UserSchema.index({ 'subscription.status': 1 });
+UserSchema.index({ 'subscription.stripeCustomerId': 1 }, { sparse: true });
+UserSchema.index({ 'subscription.currentPeriodEnd': 1 });
 
 // ============ WALLET HELPER METHODS ============
 

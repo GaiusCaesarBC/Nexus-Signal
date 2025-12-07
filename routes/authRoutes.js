@@ -9,6 +9,7 @@ const User = require('../models/User');
 const auth = require('../middleware/authMiddleware');
 const { upload, cloudinary } = require('../config/cloudinaryConfig');
 const { strictBotProtection } = require('../middleware/botProtection');
+const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
 
 // ✅ Cookie settings that work for BOTH localhost and production
 const getCookieOptions = () => {
@@ -33,7 +34,20 @@ router.get('/me', auth, async (req, res) => {
             return res.status(404).json({ msg: 'User not found' });
         }
         console.log(`[Auth Route /me] Successfully fetched user: ${user.email}`);
-        res.json(user);
+
+        // Get user's subscription plan and limits
+        const userPlan = user.subscription?.status || 'free';
+        const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
+
+        // Return user with subscription info
+        res.json({
+            ...user.toObject(),
+            subscription: {
+                ...user.subscription?.toObject?.() || user.subscription || {},
+                status: userPlan,
+                planLimits: planLimits
+            }
+        });
     } catch (err) {
         console.error('[Auth Route /me] Server error:', err.message);
         res.status(500).send('Server Error');

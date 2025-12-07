@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/authMiddleware');
+const { requireFeature } = require('../middleware/subscriptionMiddleware');
 const Anthropic = require('@anthropic-ai/sdk');
 
 // Initialize Anthropic client
@@ -12,11 +13,11 @@ const anthropic = new Anthropic({
 
 // @route   POST /api/chat/message
 // @desc    Send a message to Claude AI and get response
-// @access  Private
+// @access  Private (Pro+ required)
 // @route   POST /api/chat/message
 // @desc    Send a message to Claude AI and get response
-// @access  Private
-router.post('/message', auth, async (req, res) => {
+// @access  Private (Pro+ required)
+router.post('/message', auth, requireFeature('hasAIChat'), async (req, res) => {
     try {
         const { message, conversationHistory } = req.body;  // ✅ GET HISTORY
 
@@ -139,8 +140,8 @@ What would you like to explore?`;
 });
 // @route   POST /api/chat/conversation
 // @desc    Have a multi-turn conversation with Claude (with history)
-// @access  Private
-router.post('/conversation', auth, async (req, res) => {
+// @access  Private (Pro+ required)
+router.post('/conversation', auth, requireFeature('hasAIChat'), async (req, res) => {
     try {
         const { messages } = req.body; // Array of {role, content} objects
 

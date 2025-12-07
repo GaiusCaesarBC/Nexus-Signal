@@ -3,12 +3,13 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/authMiddleware');
+const { requireSubscription } = require('../middleware/subscriptionMiddleware');
 const screenerService = require('../services/screenerService');
 
 // @route   GET /api/screener/stocks
 // @desc    Screen stocks with filters
-// @access  Private
-router.get('/stocks', auth, async (req, res) => {
+// @access  Private (Starter+ required)
+router.get('/stocks', auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
@@ -29,8 +30,8 @@ router.get('/stocks', auth, async (req, res) => {
 
 // @route   GET /api/screener/crypto
 // @desc    Screen crypto with filters (CoinGecko + PancakeSwap combined)
-// @access  Private
-router.get('/crypto', auth, async (req, res) => {
+// @access  Private (Starter+ required)
+router.get('/crypto', auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
@@ -62,8 +63,8 @@ router.get('/crypto', auth, async (req, res) => {
 
 // @route   GET /api/screener/pancakeswap
 // @desc    Screen BSC tokens from PancakeSwap DEX only
-// @access  Private
-router.get('/pancakeswap', auth, async (req, res) => {
+// @access  Private (Starter+ required)
+router.get('/pancakeswap', auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,

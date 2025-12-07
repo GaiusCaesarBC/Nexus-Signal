@@ -24,6 +24,7 @@ const whaleRoutes = require('./routes/whaleRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const publicStatsRoutes = require('./routes/publicStats');
 const postRoutes = require('./routes/postRoutes'); // ✅ NEW - Posts/Social Feed
+const stripeRoutes = require('./routes/stripeRoutes'); // 💳 Stripe Payments
 
 // --- Database Connection Setup ---
 const connectDB = async () => {
@@ -97,6 +98,9 @@ const apiLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// --- Stripe Webhook (needs raw body - MUST be before express.json) ---
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
 // --- Middleware ---
 app.use(helmet());
@@ -184,6 +188,7 @@ app.use('/api/posts', postRoutes); // ✅ NEW - Posts/Social Feed
 app.use('/api/wallet', walletRoutes); // Wallet Connection
 app.use('/api/brokerage', brokerageRoutes); // Brokerage Connections (Kraken, Plaid)
 app.use('/api/2fa', twoFactorRoutes); // Two-Factor Authentication
+app.use('/api/stripe', stripeRoutes); // 💳 Stripe Payments & Subscriptions
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 

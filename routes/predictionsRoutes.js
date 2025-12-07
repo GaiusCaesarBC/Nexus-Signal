@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
+const { checkUsageLimit, requireSubscription } = require('../middleware/subscriptionMiddleware');
 const Prediction = require('../models/Prediction');
 const GamificationService = require('../services/gamificationService');
 
@@ -523,8 +524,8 @@ router.get('/active/:symbol', async (req, res) => {
 
 // @route   POST /api/predictions/predict
 // @desc    Get or create prediction for a stock/crypto/DEX
-// @access  Private
-router.post('/predict', auth, async (req, res) => {
+// @access  Private (Starter+ required, limited by plan)
+router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('dailySignals', 'Prediction'), async (req, res) => {
     try {
         let { symbol, days = 7, assetType, poolAddress, network, contractAddress } = req.body;
 
