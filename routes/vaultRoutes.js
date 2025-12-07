@@ -453,8 +453,13 @@ router.post('/equip/:itemId', auth, async (req, res) => {
         const vault = initializeUserVault(user);
 
         // Check if owned (unless it's a free item)
-        if (!vault.ownedItems.includes(itemId) && item.cost > 0) {
-            return res.status(400).json({ error: 'You do not own this item' });
+        if (!vault.ownedItems.includes(itemId)) {
+            if (item.cost > 0) {
+                return res.status(400).json({ error: 'You do not own this item' });
+            }
+            // Free item - add to ownedItems when claiming
+            vault.ownedItems.push(itemId);
+            console.log(`[Vault] Free item ${itemId} claimed by ${user.username}`);
         }
 
         // Equip based on type
