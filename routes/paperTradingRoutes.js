@@ -322,10 +322,14 @@ function calculatePortfolioStats(account) {
     
     const cashBalance = safeNumber(account.cashBalance, 100000);
     const initialBalance = safeNumber(account.initialBalance, 100000);
-    
+    const totalRefillAmount = safeNumber(account.totalRefillAmount, 0);
+
     account.portfolioValue = safeNumber(cashBalance + positionsValue, initialBalance);
-    account.totalProfitLoss = safeNumber(account.portfolioValue - initialBalance, 0);
-    account.totalProfitLossPercent = initialBalance > 0 ? 
+
+    // Calculate total P/L from TRADES ONLY (exclude refill amounts)
+    // This ensures refilling doesn't artificially inflate the return percentage
+    account.totalProfitLoss = safeNumber(account.portfolioValue - initialBalance - totalRefillAmount, 0);
+    account.totalProfitLossPercent = initialBalance > 0 ?
         safeNumber((account.totalProfitLoss / initialBalance) * 100, 0) : 0;
     account.winRate = safeNumber(account.totalTrades, 0) > 0 ? 
         safeNumber((safeNumber(account.winningTrades, 0) / safeNumber(account.totalTrades, 1)) * 100, 0) : 0;
