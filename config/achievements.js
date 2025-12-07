@@ -763,7 +763,7 @@ const ACHIEVEMENTS = {
         category: 'coins',
         rarity: 'rare',
         points: 100,
-        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 1000
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 1000
     },
 
     COIN_HOARDER: {
@@ -774,7 +774,7 @@ const ACHIEVEMENTS = {
         category: 'coins',
         rarity: 'epic',
         points: 250,
-        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 5000
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 5000
     },
 
     COIN_TYCOON: {
@@ -785,7 +785,40 @@ const ACHIEVEMENTS = {
         category: 'coins',
         rarity: 'legendary',
         points: 500,
-        check: (stats, gamification) => (gamification?.totalEarned || 0) >= 10000
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 10000
+    },
+
+    COIN_MOGUL: {
+        id: 'coin_mogul',
+        name: 'Coin Mogul',
+        description: 'Earn 50,000 Nexus Coins total',
+        icon: '👑',
+        category: 'coins',
+        rarity: 'legendary',
+        points: 1000,
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 50000
+    },
+
+    COIN_EMPEROR: {
+        id: 'coin_emperor',
+        name: 'Coin Emperor',
+        description: 'Earn 100,000 Nexus Coins total',
+        icon: '🏆',
+        category: 'coins',
+        rarity: 'legendary',
+        points: 2500,
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 100000
+    },
+
+    COIN_LEGEND: {
+        id: 'coin_legend',
+        name: 'Coin Legend',
+        description: 'Earn 500,000 Nexus Coins total',
+        icon: '🌟',
+        category: 'coins',
+        rarity: 'mythic',
+        points: 5000,
+        check: (stats, gamification) => (gamification?.totalCoinsEarned || 0) >= 500000
     },
 
     RICH: {
@@ -797,6 +830,28 @@ const ACHIEVEMENTS = {
         rarity: 'epic',
         points: 500,
         check: (stats, gamification) => (gamification?.nexusCoins || 0) >= 5000
+    },
+
+    MEGA_RICH: {
+        id: 'mega_rich',
+        name: 'Mega Rich',
+        description: 'Have 100,000 Nexus Coins at once',
+        icon: '💵',
+        category: 'coins',
+        rarity: 'legendary',
+        points: 1500,
+        check: (stats, gamification) => (gamification?.nexusCoins || 0) >= 100000
+    },
+
+    ULTRA_RICH: {
+        id: 'ultra_rich',
+        name: 'Ultra Rich',
+        description: 'Have 500,000 Nexus Coins at once',
+        icon: '💰',
+        category: 'coins',
+        rarity: 'mythic',
+        points: 3000,
+        check: (stats, gamification) => (gamification?.nexusCoins || 0) >= 500000
     },
 
     // ============================================

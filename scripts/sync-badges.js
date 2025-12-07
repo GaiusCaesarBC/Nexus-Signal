@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * One-time script to sync gamification.badges to vault.ownedItems
- * Run this to fix existing users who have badges that aren't showing as "owned"
+ * One-time script to sync gamification.badges to vault.ownedItems AND vault.equippedBadges
+ * Run this to fix existing users who have badges that aren't showing as "owned" or "equipped"
  *
  * Usage: node scripts/sync-badges.js
  */
@@ -32,6 +32,7 @@ async function syncBadges() {
 
         let updatedCount = 0;
         let badgesSynced = 0;
+        let badgesEquipped = 0;
 
         for (const user of users) {
             const gamificationBadges = user.gamification?.badges || [];
@@ -51,16 +52,28 @@ async function syncBadges() {
             if (!user.vault.ownedItems) {
                 user.vault.ownedItems = ['border-bronze', 'theme-default'];
             }
+            if (!user.vault.equippedBadges) {
+                user.vault.equippedBadges = [];
+            }
 
             let userUpdated = false;
 
-            // Sync each badge to vault.ownedItems
+            // Sync each badge to vault.ownedItems AND vault.equippedBadges
             for (const badgeId of gamificationBadges) {
+                // Sync to ownedItems
                 if (!user.vault.ownedItems.includes(badgeId)) {
                     user.vault.ownedItems.push(badgeId);
                     badgesSynced++;
                     userUpdated = true;
-                    console.log(`  Syncing badge ${badgeId} for user ${user.username || user.email}`);
+                    console.log(`  Syncing badge ${badgeId} to ownedItems for user ${user.username || user.email}`);
+                }
+
+                // Auto-equip if there's room (less than 5 equipped)
+                if (user.vault.equippedBadges.length < 5 && !user.vault.equippedBadges.includes(badgeId)) {
+                    user.vault.equippedBadges.push(badgeId);
+                    badgesEquipped++;
+                    userUpdated = true;
+                    console.log(`  Auto-equipped badge ${badgeId} for user ${user.username || user.email}`);
                 }
             }
 
@@ -72,7 +85,8 @@ async function syncBadges() {
 
         console.log('\n=== Sync Complete ===');
         console.log(`Users updated: ${updatedCount}`);
-        console.log(`Badges synced: ${badgesSynced}`);
+        console.log(`Badges synced to ownedItems: ${badgesSynced}`);
+        console.log(`Badges auto-equipped: ${badgesEquipped}`);
 
         await mongoose.disconnect();
         console.log('Disconnected from MongoDB');

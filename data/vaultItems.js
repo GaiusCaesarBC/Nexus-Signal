@@ -1383,12 +1383,12 @@ unlockRequirement: { type: 'level', value: 100 }
         {
             id: 'badge-centurion',
             name: 'Centurion',
-            description: 'Reached Level 100 - true dedication',
+            description: 'Complete 100 trades - trading veteran',
             type: 'badge',
             rarity: 'legendary',
             cost: 0,
             icon: 'shield',
-            unlockRequirement: { type: 'level', value: 100 }
+            unlockRequirement: { type: 'stats', stat: 'totalTrades', value: 100 }
         },
         {
             id: 'badge-millionaire',

@@ -139,6 +139,15 @@ class BadgeService {
                 user.vault.ownedItems.push(badgeId);
             }
 
+            // Auto-equip badge if there's room (less than 5 equipped)
+            if (!user.vault.equippedBadges) {
+                user.vault.equippedBadges = [];
+            }
+            if (user.vault.equippedBadges.length < 5 && !user.vault.equippedBadges.includes(badgeId)) {
+                user.vault.equippedBadges.push(badgeId);
+                console.log(`[BadgeService] Auto-equipped badge ${badgeId} for user ${user._id}`);
+            }
+
             // Award XP and Coins
             if (badgeConfig.xpReward) {
                 const GamificationService = require('./gamificationService');
@@ -147,7 +156,7 @@ class BadgeService {
 
             if (badgeConfig.coinReward) {
                 user.gamification.nexusCoins += badgeConfig.coinReward;
-                user.gamification.totalEarned += badgeConfig.coinReward;
+                user.gamification.totalCoinsEarned = (user.gamification.totalCoinsEarned || 0) + badgeConfig.coinReward;
             }
 
             // Save user
@@ -228,6 +237,15 @@ class BadgeService {
                 user.vault.ownedItems.push(badgeId);
             }
 
+            // Auto-equip badge if there's room (less than 5 equipped)
+            if (!user.vault.equippedBadges) {
+                user.vault.equippedBadges = [];
+            }
+            if (user.vault.equippedBadges.length < 5 && !user.vault.equippedBadges.includes(badgeId)) {
+                user.vault.equippedBadges.push(badgeId);
+                console.log(`[BadgeService] Auto-equipped badge ${badgeId} for user ${user._id}`);
+            }
+
             // Award XP and Coins
             if (badgeConfig.xpReward) {
                 const GamificationService = require('./gamificationService');
@@ -236,7 +254,7 @@ class BadgeService {
 
             if (badgeConfig.coinReward) {
                 user.gamification.nexusCoins += badgeConfig.coinReward;
-                user.gamification.totalEarned += badgeConfig.coinReward;
+                user.gamification.totalCoinsEarned = (user.gamification.totalCoinsEarned || 0) + badgeConfig.coinReward;
             }
 
             await user.save();
