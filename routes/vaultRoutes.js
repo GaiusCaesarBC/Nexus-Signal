@@ -99,10 +99,26 @@ const getAllItems = () => {
     ];
 };
 
-// Helper: Find item by ID
+// Helper: Find item by ID (checks VAULT_ITEMS and BADGE_MAPPING)
 const findItemById = (itemId) => {
     const allItems = getAllItems();
-    return allItems.find(item => item.id === itemId);
+    let item = allItems.find(item => item.id === itemId);
+
+    // If not found in VAULT_ITEMS and it's a badge, check BADGE_MAPPING
+    if (!item && itemId.startsWith('badge-') && BADGE_MAPPING[itemId]) {
+        const badgeConfig = BADGE_MAPPING[itemId];
+        item = {
+            id: itemId,
+            name: badgeConfig.name || itemId.replace('badge-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            description: badgeConfig.description || 'Special badge',
+            type: 'badge',
+            rarity: badgeConfig.rarity || 'legendary',
+            cost: 0,
+            icon: 'award'
+        };
+    }
+
+    return item;
 };
 
 // ✅ Helper: Check if user meets unlock requirements (using real level)
