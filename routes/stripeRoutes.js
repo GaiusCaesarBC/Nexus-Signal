@@ -7,12 +7,30 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const User = require('../models/User');
 const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
 
-// Price mapping
-const PRICE_TO_PLAN = {
-    [process.env.STRIPE_PRICE_STARTER]: 'starter',
-    [process.env.STRIPE_PRICE_PRO]: 'pro',
-    [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-    [process.env.STRIPE_PRICE_ELITE]: 'elite'
+// Price mapping - Use a function to get fresh env vars
+const getPlanFromPriceId = (priceId) => {
+    // Direct mapping from environment variables
+    const priceMapping = {
+        [process.env.STRIPE_PRICE_STARTER]: 'starter',
+        [process.env.STRIPE_PRICE_PRO]: 'pro',
+        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
+        [process.env.STRIPE_PRICE_ELITE]: 'elite'
+    };
+
+    // Also check hardcoded price IDs as fallback (from PricingPage.js)
+    const hardcodedMapping = {
+        'price_1SV9d8CtdTItnGjydNZsbXl3': 'starter',
+        'price_1SV9dTCtdTItnGjycfSxQtAg': 'pro',
+        'price_1SV9doCtdTItnGjyYb8yG97j': 'premium',
+        'price_1SV9eACtdTItnGjyzSNaNYhP': 'elite'
+    };
+
+    console.log(`[Stripe] Looking up plan for price ID: ${priceId}`);
+    console.log(`[Stripe] Env price IDs: starter=${process.env.STRIPE_PRICE_STARTER}, pro=${process.env.STRIPE_PRICE_PRO}, premium=${process.env.STRIPE_PRICE_PREMIUM}, elite=${process.env.STRIPE_PRICE_ELITE}`);
+
+    const plan = priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
+    console.log(`[Stripe] Resolved plan: ${plan}`);
+    return plan;
 };
 
 // @route   POST /api/stripe/create-checkout-session
@@ -72,8 +90,13 @@ router.post('/create-checkout-session', auth, async (req, res) => {
 // @route   POST /api/stripe/webhook
 // @desc    Handle Stripe webhooks
 // @access  Public (but verified)
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+// NOTE: Raw body parsing is handled in app.js BEFORE express.json() middleware
+router.post('/webhook', async (req, res) => {
     const sig = req.headers['stripe-signature'];
+    console.log(`[Stripe Webhook] Received webhook request`);
+    console.log(`[Stripe Webhook] Signature: ${sig ? 'present' : 'MISSING'}`);
+    console.log(`[Stripe Webhook] Body type: ${typeof req.body}, isBuffer: ${Buffer.isBuffer(req.body)}`);
+    console.log(`[Stripe Webhook] Secret configured: ${process.env.STRIPE_WEBHOOK_SECRET ? 'yes' : 'NO'}`);
     
     let event;
     
@@ -95,35 +118,51 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             const userId = session.metadata.userId;
             const subscriptionId = session.subscription;
 
+            console.log(`[Stripe Webhook] checkout.session.completed for user ${userId}`);
+            console.log(`[Stripe Webhook] Subscription ID: ${subscriptionId}`);
+
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
             const priceId = subscription.items.data[0].price.id;
-            const plan = PRICE_TO_PLAN[priceId] || 'starter';
+            const plan = getPlanFromPriceId(priceId);
 
-            await User.findByIdAndUpdate(userId, {
+            console.log(`[Stripe Webhook] Updating user ${userId} to plan: ${plan}`);
+
+            const updatedUser = await User.findByIdAndUpdate(userId, {
                 'subscription.status': plan,
                 'subscription.stripeSubscriptionId': subscriptionId,
-                'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000)
-            });
+                'subscription.stripeCustomerId': session.customer,
+                'subscription.stripePriceId': priceId,
+                'subscription.currentPeriodStart': new Date(subscription.current_period_start * 1000),
+                'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
+                'subscription.cancelAtPeriodEnd': false
+            }, { new: true });
 
             console.log(`✅ Subscription created for user ${userId}: ${plan}`);
+            console.log(`[Stripe Webhook] Updated user subscription:`, updatedUser?.subscription);
             break;
         }
 
         case 'customer.subscription.updated': {
             const subscription = event.data.object;
             const customerId = subscription.customer;
-            
+
+            console.log(`[Stripe Webhook] customer.subscription.updated for customer ${customerId}`);
+
             const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
             if (user) {
                 const priceId = subscription.items.data[0].price.id;
-                const plan = PRICE_TO_PLAN[priceId] || 'starter';
+                const plan = getPlanFromPriceId(priceId);
 
                 user.subscription.status = plan;
+                user.subscription.stripePriceId = priceId;
+                user.subscription.currentPeriodStart = new Date(subscription.current_period_start * 1000);
                 user.subscription.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
                 user.subscription.cancelAtPeriodEnd = subscription.cancel_at_period_end;
                 await user.save();
 
                 console.log(`✅ Subscription updated for user ${user._id}: ${plan}`);
+            } else {
+                console.log(`[Stripe Webhook] No user found with stripeCustomerId: ${customerId}`);
             }
             break;
         }
