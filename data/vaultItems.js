@@ -416,7 +416,7 @@ unlockRequirement: { type: 'level', value: 100 }
             glowColor: 'rgba(236, 72, 153, 1)',
             animation: 'reality-break',
             effects: { realityShatter: true, dimensionalTear: true, cosmicEnergy: true, timeDistortion: true, multiverse: true },
-            unlockRequirement: { type: 'level', value: 150 }
+            unlockRequirement: { type: 'level', value: 100 }
         },
         {
             id: 'border-eternal-sovereign',
@@ -429,7 +429,7 @@ unlockRequirement: { type: 'level', value: 100 }
             glowColor: 'rgba(251, 191, 36, 1)',
             animation: 'sovereign-aura',
             effects: { crownOfLight: true, royalAura: true, divineMandate: true, eternalFlame: true, cosmicThrone: true },
-            unlockRequirement: { type: 'level', value: 200 }
+            unlockRequirement: { type: 'level', value: 100 }
         
             },
         // ╔══════════════════════════════════════════════════════════════╗
