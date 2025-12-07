@@ -13,6 +13,7 @@ const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const journalRoutes = require('./routes/journalRoutes');
 const screenerRoutes = require('./routes/screenerRoutes');
@@ -25,6 +26,146 @@ const searchRoutes = require('./routes/searchRoutes');
 const publicStatsRoutes = require('./routes/publicStats');
 const postRoutes = require('./routes/postRoutes'); // ✅ NEW - Posts/Social Feed
 const stripeRoutes = require('./routes/stripeRoutes'); // 💳 Stripe Payments
+
+// ============================================
+// STRIPE WEBHOOK - MUST BE BEFORE ANY BODY PARSING MIDDLEWARE
+// ============================================
+const User = require('./models/User');
+const { PLAN_LIMITS } = require('./middleware/subscriptionMiddleware');
+
+// Price mapping function for webhook
+const getPlanFromPriceId = (priceId) => {
+    const priceMapping = {
+        [process.env.STRIPE_PRICE_STARTER]: 'starter',
+        [process.env.STRIPE_PRICE_PRO]: 'pro',
+        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
+        [process.env.STRIPE_PRICE_ELITE]: 'elite'
+    };
+    const hardcodedMapping = {
+        'price_1SV9d8CtdTItnGjydNZsbXl3': 'starter',
+        'price_1SV9dTCtdTItnGjycfSxQtAg': 'pro',
+        'price_1SV9doCtdTItnGjyYb8yG97j': 'premium',
+        'price_1SV9eACtdTItnGjyzSNaNYhP': 'elite'
+    };
+    return priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
+};
+
+// Stripe webhook endpoint - raw body parser applied inline
+app.post('/api/stripe/webhook',
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+        const sig = req.headers['stripe-signature'];
+        console.log(`[Stripe Webhook] Received webhook request`);
+        console.log(`[Stripe Webhook] Signature: ${sig ? 'present' : 'MISSING'}`);
+        console.log(`[Stripe Webhook] Body type: ${typeof req.body}, isBuffer: ${Buffer.isBuffer(req.body)}`);
+        console.log(`[Stripe Webhook] Secret configured: ${process.env.STRIPE_WEBHOOK_SECRET ? 'yes' : 'NO'}`);
+
+        let event;
+
+        try {
+            event = stripe.webhooks.constructEvent(
+                req.body,
+                sig,
+                process.env.STRIPE_WEBHOOK_SECRET
+            );
+            console.log(`[Stripe Webhook] ✅ Signature verified! Event type: ${event.type}`);
+        } catch (err) {
+            console.error('Webhook signature verification failed:', err.message);
+            return res.status(400).send(`Webhook Error: ${err.message}`);
+        }
+
+        // Handle the event
+        try {
+            switch (event.type) {
+                case 'checkout.session.completed': {
+                    const session = event.data.object;
+                    const userId = session.metadata.userId;
+                    const subscriptionId = session.subscription;
+
+                    console.log(`[Stripe Webhook] checkout.session.completed for user ${userId}`);
+                    console.log(`[Stripe Webhook] Subscription ID: ${subscriptionId}`);
+
+                    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+                    const priceId = subscription.items.data[0].price.id;
+                    const plan = getPlanFromPriceId(priceId);
+
+                    console.log(`[Stripe Webhook] Updating user ${userId} to plan: ${plan}`);
+
+                    const updatedUser = await User.findByIdAndUpdate(userId, {
+                        'subscription.status': plan,
+                        'subscription.stripeSubscriptionId': subscriptionId,
+                        'subscription.stripeCustomerId': session.customer,
+                        'subscription.stripePriceId': priceId,
+                        'subscription.currentPeriodStart': new Date(subscription.current_period_start * 1000),
+                        'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
+                        'subscription.cancelAtPeriodEnd': false
+                    }, { new: true });
+
+                    console.log(`✅ Subscription created for user ${userId}: ${plan}`);
+                    console.log(`[Stripe Webhook] Updated user subscription:`, updatedUser?.subscription);
+                    break;
+                }
+
+                case 'customer.subscription.updated': {
+                    const subscription = event.data.object;
+                    const customerId = subscription.customer;
+
+                    console.log(`[Stripe Webhook] customer.subscription.updated for customer ${customerId}`);
+
+                    const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+                    if (user) {
+                        const priceId = subscription.items.data[0].price.id;
+                        const plan = getPlanFromPriceId(priceId);
+
+                        user.subscription.status = plan;
+                        user.subscription.stripePriceId = priceId;
+                        user.subscription.currentPeriodStart = new Date(subscription.current_period_start * 1000);
+                        user.subscription.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+                        user.subscription.cancelAtPeriodEnd = subscription.cancel_at_period_end;
+                        await user.save();
+
+                        console.log(`✅ Subscription updated for user ${user._id}: ${plan}`);
+                    } else {
+                        console.log(`[Stripe Webhook] No user found with stripeCustomerId: ${customerId}`);
+                    }
+                    break;
+                }
+
+                case 'customer.subscription.deleted': {
+                    const subscription = event.data.object;
+                    const customerId = subscription.customer;
+
+                    const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+                    if (user) {
+                        user.subscription.status = 'free';
+                        user.subscription.stripeSubscriptionId = null;
+                        user.subscription.currentPeriodEnd = null;
+                        await user.save();
+
+                        console.log(`✅ Subscription canceled for user ${user._id}`);
+                    }
+                    break;
+                }
+
+                case 'invoice.payment_failed': {
+                    const invoice = event.data.object;
+                    const customerId = invoice.customer;
+                    console.log(`[Stripe Webhook] Payment failed for customer ${customerId}`);
+                    // Could notify user or mark subscription as past_due
+                    break;
+                }
+
+                default:
+                    console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+            }
+        } catch (handlerError) {
+            console.error(`[Stripe Webhook] Error handling event:`, handlerError);
+            // Still return 200 so Stripe doesn't retry
+        }
+
+        res.json({ received: true });
+    }
+);
 
 // --- Database Connection Setup ---
 const connectDB = async () => {
@@ -102,18 +243,9 @@ const apiLimiter = rateLimit({
 // --- Middleware ---
 app.use(helmet());
 
-// --- JSON parsing with Stripe webhook exception ---
-// Stripe webhooks need raw body for signature verification
-app.use((req, res, next) => {
-    if (req.originalUrl === '/api/stripe/webhook') {
-        next(); // Skip JSON parsing for webhook
-    } else {
-        express.json({ limit: '10kb' })(req, res, next);
-    }
-});
-
-// Raw body parser specifically for Stripe webhook
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+// --- JSON parsing ---
+// Note: Stripe webhook is handled BEFORE this middleware in app.js
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(mongoSanitize());
