@@ -282,41 +282,61 @@ function safeNumber(value, defaultValue = 0) {
 }
 
 // Calculate portfolio stats with leverage support
+// Leverage P/L Formula:
+//   - margin = entry_price × quantity (what you put up as collateral)
+//   - leveraged_exposure = margin × leverage (total market exposure)
+//   - base_pnl = (current_price - entry_price) × quantity (unleveraged P/L)
+//   - leveraged_pnl = base_pnl × leverage (your actual P/L)
+//   - current_value = margin + leveraged_pnl (what your margin is worth now)
+//   - P/L % = leveraged_pnl / margin × 100 (return on your margin)
 function calculatePortfolioStats(account) {
     let positionsValue = 0;
-    
+
     if (!account.positions) account.positions = [];
-    
+
     account.positions.forEach(pos => {
         const currentPrice = safeNumber(pos.currentPrice, 0);
         const averagePrice = safeNumber(pos.averagePrice, currentPrice);
         const quantity = safeNumber(pos.quantity, 0);
         const positionType = pos.positionType || 'long';
         const leverage = safeNumber(pos.leverage, 1);
-        
+
+        // Margin = what you put up as collateral (entry price × quantity)
         const margin = safeNumber(averagePrice * quantity, 0);
-        
-        const priceChangePercent = averagePrice > 0 
-            ? (currentPrice - averagePrice) / averagePrice 
+
+        // Percent change in underlying asset price
+        const priceChangePercent = averagePrice > 0
+            ? (currentPrice - averagePrice) / averagePrice
             : 0;
-        
+
         if (positionType === 'short') {
+            // For shorts: profit when price goes DOWN
             const basePnL = (averagePrice - currentPrice) * quantity;
             pos.profitLoss = safeNumber(basePnL * leverage, 0);
+            // Short P/L% is inverted: price down = positive return
             pos.profitLossPercent = safeNumber(-priceChangePercent * leverage * 100, 0);
         } else {
+            // For longs: profit when price goes UP
             const basePnL = (currentPrice - averagePrice) * quantity;
             pos.profitLoss = safeNumber(basePnL * leverage, 0);
             pos.profitLossPercent = safeNumber(priceChangePercent * leverage * 100, 0);
         }
-        
-        const posValue = safeNumber(margin + pos.profitLoss, margin);
-        positionsValue += Math.max(0, posValue);
-        
+
+        // Current value = margin (what you put in) + P/L (what you gained/lost)
+        const currentValue = safeNumber(margin + pos.profitLoss, margin);
+        pos.currentValue = Math.max(0, currentValue); // Floor at 0 (can't go negative)
+        pos.marginUsed = margin; // Track the margin separately for clarity
+
+        // Add to portfolio value (floored at 0 per position)
+        positionsValue += pos.currentValue;
+
+        // Leveraged exposure = total market position size (for display purposes)
         pos.leveragedValue = safeNumber(margin * leverage, margin);
-        
+
+        // Liquidation check: if losses exceed 90% of margin, position is liquidated
         if (leverage > 1 && pos.profitLoss < -(margin * 0.9)) {
             pos.isLiquidated = true;
+            pos.currentValue = 0; // Liquidated = lost everything
         }
     });
     
