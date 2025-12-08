@@ -364,8 +364,8 @@ async function updateUserStats(userIds) {
                 user.stats.totalPredictions = totalPredictionsCount;
                 user.stats.correctPredictions = accuracy.correctPredictions || 0;
                 user.stats.predictionAccuracy = accuracy.accuracy || 0;
-                user.stats.totalTrades = resolvedCount;
-                user.stats.winRate = accuracy.accuracy || 0;
+                // Note: totalTrades is set by paper trading, NOT predictions
+                // winRate for predictions is tracked as predictionAccuracy
 
                 // Calculate streak
                 const recentPredictions = await Prediction.find({

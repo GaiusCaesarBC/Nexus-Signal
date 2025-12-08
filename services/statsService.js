@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Portfolio = require('../models/Portfolio');
+const PaperTradingAccount = require('../models/PaperTradingAccount');
 
 /**
  * Calculate and update user stats from their portfolio
@@ -8,17 +9,22 @@ const updateUserStats = async (userId) => {
     try {
         const user = await User.findById(userId);
         const portfolio = await Portfolio.findOne({ user: userId });
+        // Get paper trading account for actual trade count
+        const paperAccount = await PaperTradingAccount.findOne({ user: userId });
 
         if (!user) {
             console.error('[StatsService] User not found:', userId);
             return;
         }
 
+        // Get totalTrades from paper trading account (actual trades, not current positions)
+        const actualTotalTrades = paperAccount?.totalTrades || 0;
+
         if (!portfolio || !portfolio.holdings || portfolio.holdings.length === 0) {
-            // User has no holdings, set stats to zero
+            // User has no holdings, but may still have trade history
             user.stats = {
-                totalTrades: 0,
-                winRate: 0,
+                totalTrades: actualTotalTrades,  // Use paper trading account
+                winRate: paperAccount?.winRate || 0,
                 totalReturn: 0,
                 totalReturnPercent: 0,
                 bestTrade: 0,
@@ -28,7 +34,7 @@ const updateUserStats = async (userId) => {
                 lastUpdated: Date.now()
             };
             await user.save();
-            console.log(`[StatsService] Reset stats for user ${userId} (no holdings)`);
+            console.log(`[StatsService] Reset stats for user ${userId} (no holdings, ${actualTotalTrades} trades)`);
             return;
         }
 
@@ -58,10 +64,13 @@ const updateUserStats = async (userId) => {
         });
 
         // Update user stats
-        user.stats.totalTrades = portfolio.holdings.length;
+        // totalTrades = actual trades from paper trading account, NOT current positions
+        user.stats.totalTrades = actualTotalTrades;
         user.stats.totalReturn = totalGainLoss;
         user.stats.totalReturnPercent = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0;
-        user.stats.winRate = user.stats.totalTrades > 0 ? (wins / user.stats.totalTrades) * 100 : 0;
+        // winRate from paper trading if available, else calculate from holdings P/L
+        const holdingsCount = portfolio.holdings.length;
+        user.stats.winRate = paperAccount?.winRate || (holdingsCount > 0 ? (wins / holdingsCount) * 100 : 0);
         user.stats.bestTrade = bestTradePercent;
         user.stats.worstTrade = worstTradePercent;
         user.stats.lastUpdated = Date.now();

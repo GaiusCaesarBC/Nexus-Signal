@@ -151,42 +151,62 @@ router.get('/leaderboard', async (req, res) => {
             .sort({ [sortField]: -1 })
             .limit(parseInt(limit));
 
+        // Fetch paper trading accounts to get actual trade counts
+        const userIds = users.map(u => u._id);
+        const paperAccounts = await PaperTradingAccount.find({ user: { $in: userIds } })
+            .select('user totalTrades winningTrades losingTrades winRate');
+
+        // Create a map of userId -> paper trading stats
+        const paperStatsMap = {};
+        paperAccounts.forEach(account => {
+            paperStatsMap[account.user.toString()] = {
+                totalTrades: account.totalTrades || 0,
+                winRate: account.winRate || 0,
+                winningTrades: account.winningTrades || 0,
+                losingTrades: account.losingTrades || 0
+            };
+        });
+
         // Map to leaderboard format with all enhanced fields
-        const leaderboard = users.map((user, index) => ({
-            rank: index + 1,
-            
-            // Identity
-            userId: user._id,
-            username: user.username,
-            displayName: user.profile?.displayName || user.username || 'Anonymous Trader',
-            avatar: user.profile?.avatar || '',
-            badges: user.profile?.badges || [],
-            
-            // Stats
-            totalReturn: user.stats?.totalReturnPercent || 0,
-            winRate: user.stats?.winRate || 0,
-            totalTrades: user.stats?.totalTrades || 0,
-            currentStreak: user.stats?.currentStreak || 0,
-            longestStreak: user.stats?.longestStreak || 0,
-            avgTradeReturn: user.stats?.avgTradeReturn || 0,
-            
-            // Gamification
-            level: user.gamification?.level || 1,
-            xp: user.gamification?.xp || 0,
-            title: user.gamification?.title || 'Rookie Trader',
-            
-            // Social
-            followersCount: user.social?.followersCount || 0,
-            followingCount: user.social?.followingCount || 0,
-            
-            // 🔥 NEW: Vault equipped items (INCLUDING equippedTheme!)
-            equippedBadges: user.vault?.equippedBadges || [],
-            equippedBorder: user.vault?.equippedBorder || 'border-bronze',
-            equippedTheme: user.vault?.equippedTheme || 'default',
-            
-            // Meta
-            memberSince: user.createdAt
-        }));
+        const leaderboard = users.map((user, index) => {
+            const paperStats = paperStatsMap[user._id.toString()] || {};
+
+            return {
+                rank: index + 1,
+
+                // Identity
+                userId: user._id,
+                username: user.username,
+                displayName: user.profile?.displayName || user.username || 'Anonymous Trader',
+                avatar: user.profile?.avatar || '',
+                badges: user.profile?.badges || [],
+
+                // Stats - use paper trading totalTrades, fallback to user.stats
+                totalReturn: user.stats?.totalReturnPercent || 0,
+                winRate: paperStats.winRate || user.stats?.winRate || 0,
+                totalTrades: paperStats.totalTrades || 0,  // Actual trades from paper trading
+                currentStreak: user.stats?.currentStreak || 0,
+                longestStreak: user.stats?.longestStreak || 0,
+                avgTradeReturn: user.stats?.avgTradeReturn || 0,
+
+                // Gamification
+                level: user.gamification?.level || 1,
+                xp: user.gamification?.xp || 0,
+                title: user.gamification?.title || 'Rookie Trader',
+
+                // Social
+                followersCount: user.social?.followersCount || 0,
+                followingCount: user.social?.followingCount || 0,
+
+                // 🔥 NEW: Vault equipped items (INCLUDING equippedTheme!)
+                equippedBadges: user.vault?.equippedBadges || [],
+                equippedBorder: user.vault?.equippedBorder || 'border-bronze',
+                equippedTheme: user.vault?.equippedTheme || 'default',
+
+                // Meta
+                memberSince: user.createdAt
+            };
+        });
 
         // Return with metadata
         res.json(leaderboard);
