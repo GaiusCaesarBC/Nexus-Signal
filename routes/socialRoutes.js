@@ -108,27 +108,15 @@ equippedTheme: user.vault?.equippedTheme || 'default',
 // @access  Public
 router.get('/leaderboard', async (req, res) => {
     try {
-        const { 
+        const {
             period = 'all',      // today, week, month, all
-            limit = 100, 
+            limit = 100,
             sortBy = 'totalReturnPercent'  // totalReturnPercent, winRate, currentStreak, xp, totalTrades
         } = req.query;
 
-        // Map frontend sortBy to database field
-        const sortFieldMap = {
-            'totalReturnPercent': 'stats.totalReturnPercent',
-            'winRate': 'stats.winRate',
-            'currentStreak': 'stats.currentStreak',
-            'xp': 'gamification.xp',
-            'totalTrades': 'stats.totalTrades',
-            // Legacy support
-            'returns': 'stats.totalReturnPercent',
-            'accuracy': 'stats.winRate',
-            'streak': 'stats.currentStreak',
-            'trades': 'stats.totalTrades'
-        };
-
-        const sortField = sortFieldMap[sortBy] || 'stats.totalReturnPercent';
+        // Get start date for time period filtering
+        const startDate = getDateRangeForPeriod(period);
+        const isTimePeriod = period !== 'all' && startDate;
 
         // Build query - show public profiles OR profiles with no isPublic field
         let query = {
@@ -138,42 +126,87 @@ router.get('/leaderboard', async (req, res) => {
             ]
         };
 
-        // For time-based filtering, we need users with activity in that period
-        // This requires checking their recent trades - for now we'll use lastActive or createdAt
-        const startDate = getDateRangeForPeriod(period);
-        if (startDate) {
-            query['stats.lastTradeDate'] = { $gte: startDate };
-        }
-
-        // Fetch users with all relevant fields including vault
+        // Fetch all users with relevant fields
         const users = await User.find(query)
             .select('username profile stats gamification social vault createdAt')
-            .sort({ [sortField]: -1 })
-            .limit(parseInt(limit));
+            .limit(500); // Get more users initially, we'll filter and sort after calculating period stats
 
-        // Fetch paper trading accounts to get actual trade counts
+        // Fetch paper trading accounts with orders for time-period calculations
         const userIds = users.map(u => u._id);
         const paperAccounts = await PaperTradingAccount.find({ user: { $in: userIds } })
-            .select('user totalTrades winningTrades losingTrades winRate');
+            .select('user totalTrades winningTrades losingTrades winRate totalProfitLossPercent orders currentStreak portfolioValue initialBalance');
 
-        // Create a map of userId -> paper trading stats
+        // Create a map of userId -> paper trading stats (calculated based on time period)
         const paperStatsMap = {};
+
         paperAccounts.forEach(account => {
-            paperStatsMap[account.user.toString()] = {
-                totalTrades: account.totalTrades || 0,
-                winRate: account.winRate || 0,
-                winningTrades: account.winningTrades || 0,
-                losingTrades: account.losingTrades || 0
-            };
+            const userId = account.user.toString();
+
+            if (isTimePeriod) {
+                // Calculate stats for the specific time period from orders
+                const ordersInPeriod = (account.orders || []).filter(order => {
+                    // Only count sell orders (completed trades with P/L)
+                    if (order.side !== 'sell' && order.side !== 'cover') return false;
+                    const orderDate = new Date(order.createdAt);
+                    return orderDate >= startDate;
+                });
+
+                const totalTrades = ordersInPeriod.length;
+                const winningTrades = ordersInPeriod.filter(o => (o.profitLoss || 0) > 0).length;
+                const losingTrades = ordersInPeriod.filter(o => (o.profitLoss || 0) < 0).length;
+                const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+
+                // Calculate total P/L for the period
+                const totalProfitLoss = ordersInPeriod.reduce((sum, o) => sum + (o.profitLoss || 0), 0);
+                // Calculate return % based on initial balance
+                const initialBalance = account.initialBalance || 100000;
+                const totalReturnPercent = (totalProfitLoss / initialBalance) * 100;
+
+                // Calculate current streak within period
+                let currentStreak = 0;
+                const sortedOrders = ordersInPeriod.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                for (const order of sortedOrders) {
+                    if ((order.profitLoss || 0) > 0) {
+                        currentStreak++;
+                    } else {
+                        break;
+                    }
+                }
+
+                paperStatsMap[userId] = {
+                    totalTrades,
+                    winRate,
+                    winningTrades,
+                    losingTrades,
+                    totalReturnPercent,
+                    currentStreak,
+                    hasActivity: totalTrades > 0
+                };
+            } else {
+                // Use all-time stats directly from the account
+                paperStatsMap[userId] = {
+                    totalTrades: account.totalTrades || 0,
+                    winRate: account.winRate || 0,
+                    winningTrades: account.winningTrades || 0,
+                    losingTrades: account.losingTrades || 0,
+                    totalReturnPercent: account.totalProfitLossPercent || 0,
+                    currentStreak: account.currentStreak || 0,
+                    hasActivity: (account.totalTrades || 0) > 0
+                };
+            }
         });
 
-        // Map to leaderboard format with all enhanced fields
-        const leaderboard = users.map((user, index) => {
-            const paperStats = paperStatsMap[user._id.toString()] || {};
+        // Map to leaderboard format with calculated stats
+        let leaderboard = users.map(user => {
+            const paperStats = paperStatsMap[user._id.toString()] || {
+                totalTrades: 0,
+                winRate: 0,
+                totalReturnPercent: 0,
+                currentStreak: 0,
+                hasActivity: false
+            };
 
             return {
-                rank: index + 1,
-
                 // Identity
                 userId: user._id,
                 username: user.username,
@@ -181,15 +214,16 @@ router.get('/leaderboard', async (req, res) => {
                 avatar: user.profile?.avatar || '',
                 badges: user.profile?.badges || [],
 
-                // Stats - use paper trading totalTrades, fallback to user.stats
-                totalReturn: user.stats?.totalReturnPercent || 0,
-                winRate: paperStats.winRate || user.stats?.winRate || 0,
-                totalTrades: paperStats.totalTrades || 0,  // Actual trades from paper trading
-                currentStreak: user.stats?.currentStreak || 0,
+                // Stats from paper trading (period-specific or all-time)
+                totalReturn: paperStats.totalReturnPercent,
+                winRate: paperStats.winRate,
+                totalTrades: paperStats.totalTrades,
+                currentStreak: paperStats.currentStreak,
                 longestStreak: user.stats?.longestStreak || 0,
                 avgTradeReturn: user.stats?.avgTradeReturn || 0,
+                hasActivity: paperStats.hasActivity,
 
-                // Gamification
+                // Gamification (always all-time)
                 level: user.gamification?.level || 1,
                 xp: user.gamification?.xp || 0,
                 title: user.gamification?.title || 'Rookie Trader',
@@ -198,7 +232,7 @@ router.get('/leaderboard', async (req, res) => {
                 followersCount: user.social?.followersCount || 0,
                 followingCount: user.social?.followingCount || 0,
 
-                // 🔥 NEW: Vault equipped items (INCLUDING equippedTheme!)
+                // Vault equipped items
                 equippedBadges: user.vault?.equippedBadges || [],
                 equippedBorder: user.vault?.equippedBorder || 'border-bronze',
                 equippedTheme: user.vault?.equippedTheme || 'default',
@@ -207,6 +241,33 @@ router.get('/leaderboard', async (req, res) => {
                 memberSince: user.createdAt
             };
         });
+
+        // For time periods, only show users who had activity in that period
+        if (isTimePeriod) {
+            leaderboard = leaderboard.filter(entry => entry.hasActivity);
+        }
+
+        // Sort based on the requested field
+        const sortFieldMap = {
+            'totalReturnPercent': 'totalReturn',
+            'returns': 'totalReturn',
+            'winRate': 'winRate',
+            'accuracy': 'winRate',
+            'currentStreak': 'currentStreak',
+            'streak': 'currentStreak',
+            'xp': 'xp',
+            'totalTrades': 'totalTrades',
+            'trades': 'totalTrades'
+        };
+        const sortField = sortFieldMap[sortBy] || 'totalReturn';
+
+        leaderboard.sort((a, b) => (b[sortField] || 0) - (a[sortField] || 0));
+
+        // Apply limit and add ranks
+        leaderboard = leaderboard.slice(0, parseInt(limit)).map((entry, index) => ({
+            ...entry,
+            rank: index + 1
+        }));
 
         // Return with metadata
         res.json(leaderboard);
