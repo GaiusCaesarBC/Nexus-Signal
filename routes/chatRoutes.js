@@ -16,7 +16,8 @@ const anthropic = new Anthropic({
 
 // Extract chart markers from AI response [CHART:SYMBOL:TIMEFRAME]
 const extractChartMarkers = (text) => {
-    const chartRegex = /\[CHART:([A-Z0-9\-]+)(?::(\w+))?\]/g;
+    // Case-insensitive regex to match [CHART:SYMBOL] or [CHART:SYMBOL:TIMEFRAME]
+    const chartRegex = /\[CHART:([A-Za-z0-9\-]+)(?::(\w+))?\]/gi;
     const markers = [];
     let match;
 
@@ -24,7 +25,7 @@ const extractChartMarkers = (text) => {
         markers.push({
             fullMatch: match[0],
             symbol: match[1].toUpperCase(),
-            timeframe: match[2] || '1D'
+            timeframe: (match[2] || '1D').toUpperCase()
         });
     }
 
@@ -123,25 +124,36 @@ CRITICAL:
 
 User: ${req.user.name}
 
-CHART FEATURE:
-When discussing a specific stock or crypto, include a chart marker to show a price chart.
+CHART FEATURE - IMPORTANT:
+You MUST include a chart marker when discussing ANY specific stock or crypto ticker.
 Format: [CHART:SYMBOL] or [CHART:SYMBOL:TIMEFRAME]
+
 Examples:
-- [CHART:AAPL] - Shows Apple daily chart
-- [CHART:TSLA:1W] - Shows Tesla weekly chart
-- [CHART:BTC-USD] - Shows Bitcoin daily chart
-- [CHART:NVDA:1M] - Shows NVIDIA monthly chart
+- [CHART:AAPL] - Apple daily chart
+- [CHART:TSLA:1W] - Tesla weekly chart
+- [CHART:BTC-USD] - Bitcoin daily chart
+- [CHART:NVDA:1M] - NVIDIA monthly chart
 
 Timeframes: 1D (daily, default), 1W (weekly), 1M (monthly)
 
-WHEN TO USE CHARTS:
-- When analyzing a specific stock's price action
-- When asked "how is X doing" or "should I buy X"
-- When discussing technical analysis of a specific ticker
-- When comparing performance (show chart for main stock discussed)
-- DO NOT use charts for general market questions or educational content
+ALWAYS USE CHARTS WHEN:
+- User asks about a specific stock (AAPL, TSLA, NVDA, etc.)
+- User asks "how is X doing" or "should I buy X"
+- User asks about any crypto (BTC, ETH, etc.)
+- Discussing price action or technical analysis
 
-Place the chart marker on its own line, usually after your initial analysis paragraph.
+DO NOT use charts for:
+- General market questions ("is the market up?")
+- Educational content ("what is a P/E ratio?")
+- Questions without specific tickers
+
+Place [CHART:SYMBOL] on its own line after your analysis paragraph. Example response:
+
+"NVDA has been showing strong momentum lately...
+
+[CHART:NVDA]
+
+Key points to consider..."
 
 Guidelines:
 - Keep responses under 300 words
