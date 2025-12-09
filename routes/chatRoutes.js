@@ -12,7 +12,7 @@ const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// ============ CHART HELPERS ============
+// ============ CHART & SCENARIO HELPERS ============
 
 // Extract chart markers from AI response [CHART:SYMBOL:TIMEFRAME]
 const extractChartMarkers = (text) => {
@@ -30,6 +30,27 @@ const extractChartMarkers = (text) => {
     }
 
     return markers;
+};
+
+// Extract scenario markers from AI response [SCENARIO:SYMBOL:CURRENT:BULLISH:NEUTRAL:BEARISH]
+const extractScenarioMarkers = (text) => {
+    // Match [SCENARIO:SYMBOL:CURRENT:BULLISH:NEUTRAL:BEARISH]
+    const scenarioRegex = /\[SCENARIO:([A-Za-z0-9\-]+):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)\]/gi;
+    const scenarios = [];
+    let match;
+
+    while ((match = scenarioRegex.exec(text)) !== null) {
+        scenarios.push({
+            fullMatch: match[0],
+            symbol: match[1].toUpperCase(),
+            currentPrice: parseFloat(match[2]),
+            bullish: parseFloat(match[3]),
+            neutral: parseFloat(match[4]),
+            bearish: parseFloat(match[5])
+        });
+    }
+
+    return scenarios;
 };
 
 // Fetch chart data for all markers
@@ -147,13 +168,36 @@ DO NOT use charts for:
 - Educational content ("what is a P/E ratio?")
 - Questions without specific tickers
 
-Place [CHART:SYMBOL] on its own line after your analysis paragraph. Example response:
+Place [CHART:SYMBOL] on its own line after your analysis paragraph.
 
-"NVDA has been showing strong momentum lately...
+SCENARIO FEATURE - PRICE TARGETS:
+When giving price predictions or discussing bullish/bearish cases, include a scenario marker.
+Format: [SCENARIO:SYMBOL:CURRENT_PRICE:BULLISH_TARGET:NEUTRAL_TARGET:BEARISH_TARGET]
+
+Examples:
+- [SCENARIO:AAPL:195:220:200:175] - Apple at $195, targets $220 bull / $200 base / $175 bear
+- [SCENARIO:NVDA:140:180:150:120] - NVIDIA scenarios
+- [SCENARIO:BTC-USD:97000:120000:100000:80000] - Bitcoin scenarios
+
+ALWAYS include [SCENARIO:...] when:
+- User asks "should I buy X" or "what's your price target"
+- Discussing potential upside/downside
+- Giving bullish/bearish/neutral outlook
+- User asks about where a stock could go
+
+Example response with both chart and scenario:
+
+"NVDA has been showing strong momentum...
 
 [CHART:NVDA]
 
-Key points to consider..."
+Based on current technical indicators, here are my price scenarios:
+
+[SCENARIO:NVDA:140:180:155:115]
+
+**Bullish case ($180):** If AI demand continues...
+**Base case ($155):** Most likely outcome...
+**Bearish case ($115):** If market corrects..."
 
 Guidelines:
 - Keep responses under 300 words
@@ -219,10 +263,36 @@ Answer the user's question directly and specifically.`;
             aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
         }
 
-        // Return the response with charts
+        // Extract scenario markers
+        const scenarioMarkers = extractScenarioMarkers(aiResponse);
+        let scenarios = [];
+
+        if (scenarioMarkers.length > 0) {
+            console.log(`[Chat] 🎯 Found ${scenarioMarkers.length} scenario marker(s):`, scenarioMarkers.map(m => m.symbol));
+
+            // Add scenarios to response
+            scenarios = scenarioMarkers.map(marker => ({
+                symbol: marker.symbol,
+                currentPrice: marker.currentPrice,
+                bullish: marker.bullish,
+                neutral: marker.neutral,
+                bearish: marker.bearish
+            }));
+
+            // Remove scenario markers from the text (frontend will render actual scenario charts)
+            scenarioMarkers.forEach(marker => {
+                aiResponse = aiResponse.replace(marker.fullMatch, '').trim();
+            });
+
+            // Clean up any double newlines left behind
+            aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
+        }
+
+        // Return the response with charts and scenarios
         res.json({
             response: aiResponse,
             charts: charts,
+            scenarios: scenarios,
             timestamp: new Date().toISOString(),
             model: 'claude-sonnet-4-20250514'
         });
