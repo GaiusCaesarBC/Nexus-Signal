@@ -34,19 +34,30 @@ const extractChartMarkers = (text) => {
 
 // Extract scenario markers from AI response [SCENARIO:SYMBOL:CURRENT:BULLISH:NEUTRAL:BEARISH]
 const extractScenarioMarkers = (text) => {
+    // More flexible regex - handles $, commas, and decimals
     // Match [SCENARIO:SYMBOL:CURRENT:BULLISH:NEUTRAL:BEARISH]
-    const scenarioRegex = /\[SCENARIO:([A-Za-z0-9\-]+):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)\]/gi;
+    const scenarioRegex = /\[SCENARIO:([A-Za-z0-9\-]+):\$?([\d,]+(?:\.\d+)?):\$?([\d,]+(?:\.\d+)?):\$?([\d,]+(?:\.\d+)?):\$?([\d,]+(?:\.\d+)?)\]/gi;
     const scenarios = [];
     let match;
 
+    // Debug: Log if we find any SCENARIO text at all
+    if (text.includes('[SCENARIO')) {
+        console.log('[Chat] 🔍 Found SCENARIO text in response');
+        const scenarioStart = text.indexOf('[SCENARIO');
+        console.log('[Chat] 🔍 Scenario snippet:', text.substring(scenarioStart, scenarioStart + 100));
+    }
+
     while ((match = scenarioRegex.exec(text)) !== null) {
+        // Remove commas from numbers before parsing
+        const parsePrice = (str) => parseFloat(str.replace(/,/g, ''));
+
         scenarios.push({
             fullMatch: match[0],
             symbol: match[1].toUpperCase(),
-            currentPrice: parseFloat(match[2]),
-            bullish: parseFloat(match[3]),
-            neutral: parseFloat(match[4]),
-            bearish: parseFloat(match[5])
+            currentPrice: parsePrice(match[2]),
+            bullish: parsePrice(match[3]),
+            neutral: parsePrice(match[4]),
+            bearish: parsePrice(match[5])
         });
     }
 
@@ -170,20 +181,25 @@ DO NOT use charts for:
 
 Place [CHART:SYMBOL] on its own line after your analysis paragraph.
 
-SCENARIO FEATURE - PRICE TARGETS:
-When giving price predictions or discussing bullish/bearish cases, include a scenario marker.
+SCENARIO FEATURE - PRICE TARGETS (CRITICAL):
+You MUST include a scenario marker when giving ANY price predictions or discussing bullish/bearish cases.
 Format: [SCENARIO:SYMBOL:CURRENT_PRICE:BULLISH_TARGET:NEUTRAL_TARGET:BEARISH_TARGET]
 
+IMPORTANT: Use ONLY numbers without dollar signs or commas in the marker!
 Examples:
 - [SCENARIO:AAPL:195:220:200:175] - Apple at $195, targets $220 bull / $200 base / $175 bear
 - [SCENARIO:NVDA:140:180:150:120] - NVIDIA scenarios
 - [SCENARIO:BTC-USD:97000:120000:100000:80000] - Bitcoin scenarios
+- [SCENARIO:TSLA:250:320:270:200] - Tesla scenarios
 
-ALWAYS include [SCENARIO:...] when:
+YOU MUST ALWAYS include [SCENARIO:...] when:
 - User asks "should I buy X" or "what's your price target"
-- Discussing potential upside/downside
+- Discussing potential upside/downside for ANY stock
 - Giving bullish/bearish/neutral outlook
 - User asks about where a stock could go
+- Making ANY recommendation about a stock
+
+Place the scenario marker on its own line AFTER describing your price targets.
 
 Example response with both chart and scenario:
 
