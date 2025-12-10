@@ -275,8 +275,9 @@ class GeckoTerminalService {
             const ohlcvData = response.data?.data?.attributes?.ohlcv_list || [];
 
             // Format: [timestamp, open, high, low, close, volume]
+            // GeckoTerminal returns Unix seconds, convert to milliseconds for JavaScript Date
             const results = ohlcvData.map(candle => ({
-                time: candle[0],
+                time: candle[0] * 1000, // Convert seconds to milliseconds
                 open: parseFloat(candle[1]),
                 high: parseFloat(candle[2]),
                 low: parseFloat(candle[3]),
