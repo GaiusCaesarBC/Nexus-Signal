@@ -654,6 +654,32 @@ router.post('/verify-login', async (req, res) => {
         user.twoFactor.pendingCode = null;
         user.twoFactor.pendingCodeExpires = null;
         user.twoFactor.failedAttempts = 0;
+
+        // ✅ CHECK LOGIN STREAK on 2FA login completion
+        let dailyBonus = null;
+        try {
+            const loginResult = await user.checkLoginStreak();
+            console.log('[2FA] Login streak check:', loginResult);
+
+            if (loginResult.isNewDay) {
+                dailyBonus = {
+                    isNewDay: true,
+                    streak: loginResult.streak,
+                    maxStreak: loginResult.maxStreak,
+                    bonusXp: loginResult.bonusXp || 0,
+                    bonusCoins: loginResult.bonusCoins || 0
+                };
+            } else {
+                dailyBonus = {
+                    isNewDay: false,
+                    streak: loginResult.streak,
+                    maxStreak: loginResult.maxStreak
+                };
+            }
+        } catch (streakError) {
+            console.error('[2FA] Streak check error:', streakError.message);
+        }
+
         await user.save();
 
         // Generate full JWT
@@ -664,7 +690,7 @@ router.post('/verify-login', async (req, res) => {
         const cookieOptions = getCookieOptions();
         res.cookie('token', token, cookieOptions);
 
-        console.log(`[2FA] Login verified for user ${user.username}`);
+        console.log(`[2FA] Login verified for user ${user.username}. Streak: ${dailyBonus?.streak || 0}`);
 
         res.json({
             success: true,
@@ -674,7 +700,8 @@ router.post('/verify-login', async (req, res) => {
                 id: user.id,
                 email: user.email,
                 username: user.username
-            }
+            },
+            dailyBonus: dailyBonus
         });
     } catch (error) {
         console.error('[2FA] Verify login error:', error);

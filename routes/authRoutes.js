@@ -262,6 +262,32 @@ router.post(
             }
 
             // ✅ NO 2FA - Proceed with normal login
+
+            // ✅ CHECK LOGIN STREAK on every login
+            let dailyBonus = null;
+            try {
+                const loginResult = await user.checkLoginStreak();
+                console.log('[Auth Route /login] Login streak check:', loginResult);
+
+                if (loginResult.isNewDay) {
+                    dailyBonus = {
+                        isNewDay: true,
+                        streak: loginResult.streak,
+                        maxStreak: loginResult.maxStreak,
+                        bonusXp: loginResult.bonusXp || 0,
+                        bonusCoins: loginResult.bonusCoins || 0
+                    };
+                } else {
+                    dailyBonus = {
+                        isNewDay: false,
+                        streak: loginResult.streak,
+                        maxStreak: loginResult.maxStreak
+                    };
+                }
+            } catch (streakError) {
+                console.error('[Auth Route /login] Streak check error:', streakError.message);
+            }
+
             const payload = { user: { id: user.id } };
             jwt.sign(
                 payload,
@@ -285,10 +311,11 @@ router.post(
                             id: user.id,
                             email: user.email,
                             username: user.username
-                        }
+                        },
+                        dailyBonus: dailyBonus
                     });
 
-                    console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued.`);
+                    console.log(`[Auth Route /login] Login successful for ${email}. HttpOnly cookie issued. Streak: ${dailyBonus?.streak || 0}`);
                 }
             );
         } catch (err) {
