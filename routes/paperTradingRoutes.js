@@ -1427,17 +1427,25 @@ router.post('/refresh-prices', auth, async (req, res) => {
         const positionsToRemove = [];
         
         // Fetch all prices using the correct method name
-        const allSymbols = account.positions.map(p => p.symbol);
+        const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
         const batchPrices = await priceService.getBatchPrices(allSymbols);
-        
+
+        console.log(`[Paper Trading] Fetched prices for ${batchPrices.size} symbols:`, Object.fromEntries(batchPrices));
+
         // Update prices and check triggers
         for (const position of account.positions) {
-           // getBatchPrices returns a Map with just the price value (not an object)
-const price = batchPrices.get(position.symbol);
-if (price && price > 0) {
-    position.currentPrice = safeNumber(price, position.currentPrice);
-    position.lastUpdated = new Date();
-}
+            // getBatchPrices returns a Map with UPPERCASE keys
+            const symbolKey = position.symbol.toUpperCase();
+            const price = batchPrices.get(symbolKey);
+            const oldPrice = position.currentPrice;
+
+            if (price && price > 0) {
+                position.currentPrice = safeNumber(price, position.currentPrice);
+                position.lastUpdated = new Date();
+                console.log(`[Paper Trading] ${position.symbol}: $${oldPrice} → $${position.currentPrice}`);
+            } else {
+                console.log(`[Paper Trading] No price found for ${position.symbol} (key: ${symbolKey})`);
+            }
             
             // Check for TP/SL/Trailing/Liquidation triggers
             const triggers = checkPositionTriggers(position);
@@ -1498,11 +1506,17 @@ if (price && price > 0) {
         calculatePortfolioStats(account);
         account.lastUpdated = new Date();
         await account.save();
-        
+
+        // Log P/L for each position after calculation
+        account.positions.forEach(pos => {
+            console.log(`[Paper Trading] ${pos.symbol} P/L: $${pos.profitLoss?.toFixed(2)} (${pos.profitLossPercent?.toFixed(2)}%) | Entry: $${pos.averagePrice} → Current: $${pos.currentPrice}`);
+        });
+        console.log(`[Paper Trading] Total Portfolio P/L: $${account.totalProfitLoss?.toFixed(2)} (${account.totalProfitLossPercent?.toFixed(2)}%)`);
+
         if (triggeredPositions.length > 0) {
             await updateUserStats(req.user.id);
         }
-        
+
         console.log(`[Paper Trading] Refreshed ${account.positions.length} positions | ${triggeredPositions.length} auto-closed`);
         
         res.json({ 
