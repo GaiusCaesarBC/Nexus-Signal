@@ -7,9 +7,9 @@ const auth = require('../middleware/authMiddleware');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
-// Cache for chart data
+// Cache for chart data (Alpha Vantage Pro - higher rate limits)
 const chartDataCache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 15 * 1000; // 15 seconds for Pro users
 
 // Helper: Check if symbol is crypto
 const isCrypto = (symbol) => {
