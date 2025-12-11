@@ -289,6 +289,41 @@ const twoFactorRoutes = require('./routes/twoFactorRoutes'); // Two-Factor Authe
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
 
+// Comprehensive health check endpoint for monitoring
+app.get('/health', async (req, res) => {
+    const health = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || 'development',
+        checks: {}
+    };
+
+    // Check MongoDB connection
+    try {
+        const mongoose = require('mongoose');
+        if (mongoose.connection.readyState === 1) {
+            health.checks.database = { status: 'connected' };
+        } else {
+            health.checks.database = { status: 'disconnected' };
+            health.status = 'degraded';
+        }
+    } catch (err) {
+        health.checks.database = { status: 'error', message: err.message };
+        health.status = 'unhealthy';
+    }
+
+    // Check memory usage
+    const memUsage = process.memoryUsage();
+    health.checks.memory = {
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB'
+    };
+
+    const statusCode = health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503;
+    res.status(statusCode).json(health);
+});
+
 // --- ROUTE MOUNTING (with /api prefix) ---
 app.use('/api/auth', authRoutes);
 app.use('/api/auth', onboardingRoutes);
