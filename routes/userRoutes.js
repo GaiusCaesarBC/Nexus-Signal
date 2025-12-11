@@ -128,7 +128,7 @@ router.post(
   }
 );
 
-// @route   GET api/auth/me
+// @route   GET api/users/me
 // @desc    Get authenticated user (for token validation)
 // @access  Private
 // This route now uses '/me' path to match common frontend convention
@@ -142,8 +142,57 @@ router.get('/me', auth, async (req, res) => {
         }
         res.json(user);
     } catch (err) {
-        console.error('Server Error in /api/auth/me:', err.message);
+        console.error('Server Error in /api/users/me:', err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/users/me/full
+// @desc    Get authenticated user's full profile data
+// @access  Private
+router.get('/me/full', auth, async (req, res) => {
+    try {
+        console.log(`[User Routes /me/full] Fetching full profile for user ID: ${req.user.id}`);
+        const user = await User.findById(req.user.id)
+            .select('-password')
+            .populate('social.followers', 'username profile.avatar profile.displayName')
+            .populate('social.following', 'username profile.avatar profile.displayName');
+
+        if (!user) {
+            return res.status(404).json({ msg: 'User not found' });
+        }
+
+        res.json(user);
+    } catch (err) {
+        console.error('[User Routes /me/full] Server error:', err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   PUT api/users/profile
+// @desc    Update user profile
+// @access  Private
+router.put('/profile', auth, async (req, res) => {
+    try {
+        const { displayName, bio, isPublic, showPortfolio } = req.body;
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        if (displayName !== undefined) user.profile.displayName = displayName;
+        if (bio !== undefined) user.profile.bio = bio;
+        if (isPublic !== undefined) user.profile.isPublic = isPublic;
+        if (showPortfolio !== undefined) user.profile.showPortfolio = showPortfolio;
+
+        await user.save();
+        console.log(`[User Routes /profile] Profile updated for user: ${user.username}`);
+
+        res.json({ success: true, profile: user.profile });
+    } catch (error) {
+        console.error('[User Routes /profile] Error:', error);
+        res.status(500).json({ error: 'Failed to update profile' });
     }
 });
 
