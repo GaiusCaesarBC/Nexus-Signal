@@ -11,6 +11,9 @@ const cryptoCache = new LRUCache({
     ttl: 1000 * 60 * 10, // 10 minutes cache
 });
 
+// ML Service URL for real predictions
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
+
 // --- CRITICAL FIXES HERE ---
 // Get CoinGecko API Key and Base URL from environment variables
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -129,14 +132,71 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
 
         const lastClosePrice = historicalData[historicalData.length - 1].close;
 
-        // --- PREDICTION LOGIC ---
-        // Replace this mock with your actual prediction logic from cryptoRoutes.js if desired
-        // For now, let's ensure data fetching works, then integrate the prediction engine.
-        const predictedPrice = lastClosePrice * (1 + (Math.random() - 0.5) * 0.05);
-        const predictedDirection = predictedPrice > lastClosePrice ? 'Up' : 'Down';
-        const confidence = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
-        const predictionMessage = `Based on recent crypto trends, the model predicts a ${predictedDirection} movement for ${symbol.toUpperCase()}.`;
-        // --- END PREDICTION LOGIC (or MOCK) ---
+        // --- ML PREDICTION LOGIC ---
+        let predictedPrice = lastClosePrice;
+        let predictedDirection = 'Neutral';
+        let confidence = 50;
+        let predictionMessage = '';
+        let signalStrength = 'weak';
+        let isActionable = false;
+
+        try {
+            console.log(`[CryptoController] Calling ML service for ${symbol.toUpperCase()} prediction`);
+
+            const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
+                symbol: symbol.toUpperCase(),
+                days: 7,
+                type: 'crypto'
+            }, { timeout: 30000 });
+
+            if (mlResponse.data && mlResponse.data.prediction) {
+                const ml = mlResponse.data;
+                const mlPrediction = ml.prediction;
+
+                // Extract ML prediction data
+                confidence = mlPrediction.confidence || 50;
+                signalStrength = mlPrediction.signal_strength || 'weak';
+                isActionable = mlPrediction.is_actionable !== undefined ? mlPrediction.is_actionable : false;
+
+                // Determine direction - handle NEUTRAL from ML
+                const mlDirection = mlPrediction.direction || 'NEUTRAL';
+                if (mlDirection === 'UP') {
+                    predictedDirection = 'Up';
+                } else if (mlDirection === 'DOWN') {
+                    predictedDirection = 'Down';
+                } else {
+                    predictedDirection = 'Neutral';
+                }
+
+                // Calculate predicted price from ML's percentage change
+                const percentChange = mlPrediction.price_change_percent || 0;
+                predictedPrice = lastClosePrice * (1 + percentChange / 100);
+
+                // Build prediction message based on signal strength
+                if (signalStrength === 'strong') {
+                    predictionMessage = `Strong ${predictedDirection.toLowerCase()} signal detected for ${symbol.toUpperCase()}. AI confidence: ${confidence.toFixed(1)}%`;
+                } else if (signalStrength === 'moderate') {
+                    predictionMessage = `Moderate ${predictedDirection.toLowerCase()} signal for ${symbol.toUpperCase()}. Proceed with caution. AI confidence: ${confidence.toFixed(1)}%`;
+                } else {
+                    predictionMessage = ml.warning || `No clear signal for ${symbol.toUpperCase()}. Consider waiting for better market conditions.`;
+                }
+
+                console.log(`[CryptoController] ML prediction for ${symbol}: ${predictedDirection}, confidence: ${confidence}%, signal: ${signalStrength}`);
+            }
+        } catch (mlError) {
+            console.log(`[CryptoController] ML service unavailable for ${symbol}:`, mlError.message);
+            // Fallback to basic technical analysis if ML fails
+            const priceChange = historicalData.length > 1
+                ? (lastClosePrice - historicalData[0].close) / historicalData[0].close
+                : 0;
+            predictedDirection = priceChange > 0 ? 'Up' : priceChange < 0 ? 'Down' : 'Neutral';
+            confidence = 45; // Low confidence for fallback
+            signalStrength = 'weak';
+            isActionable = false;
+            predictedPrice = lastClosePrice * (1 + priceChange * 0.1); // Conservative projection
+            predictionMessage = `Basic trend analysis for ${symbol.toUpperCase()}. ML service unavailable - limited confidence.`;
+        }
+        // --- END ML PREDICTION LOGIC ---
 
         const result = {
             symbol: symbol.toUpperCase(),
@@ -145,7 +205,11 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
             predictedPrice,
             predictedDirection,
             confidence,
-            predictionMessage
+            predictionMessage,
+            currentPrice: lastClosePrice,
+            percentageChange: ((predictedPrice - lastClosePrice) / lastClosePrice) * 100,
+            signalStrength,
+            isActionable
         };
 
         cryptoCache.set(cacheKey, result);

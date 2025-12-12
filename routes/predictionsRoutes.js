@@ -7,6 +7,7 @@ const auth = require('../middleware/authMiddleware');
 const { checkUsageLimit, requireSubscription } = require('../middleware/subscriptionMiddleware');
 const Prediction = require('../models/Prediction');
 const GamificationService = require('../services/gamificationService');
+const { sanitizeSymbol, encodeSymbolForUrl, validateSymbol } = require('../utils/symbolValidation');
 
 const priceService = require('../services/priceService');
 const stockDataService = require('../services/stockDataService');
@@ -460,7 +461,17 @@ function calculateLiveConfidence(prediction, currentPrice) {
 // @access  Public
 router.get('/active/:symbol', async (req, res) => {
     try {
-        const symbol = req.params.symbol.toUpperCase();
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
         
         // Find an active (non-expired) prediction for this symbol
         const activePrediction = await Prediction.findOne({
@@ -533,7 +544,17 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
             return res.status(400).json({ error: 'Symbol is required' });
         }
 
-        const originalSymbol = symbol.toUpperCase().trim();
+        // Validate symbol to prevent SSRF/injection attacks
+        const validationResult = validateSymbol(symbol);
+        if (!validationResult.valid) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationResult.error
+            });
+        }
+
+        const originalSymbol = validationResult.sanitized;
 
         // Detect DEX tokens (format: SYMBOL:network like DYOR:bsc)
         let dexInfo = null;
@@ -678,9 +699,14 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     const mlConfidence = ml.prediction?.confidence || ml.confidence || 70;
                     
                     let validDirection = mlDirection.toUpperCase();
-                    if (validDirection !== 'UP' && validDirection !== 'DOWN') {
+                    if (validDirection !== 'UP' && validDirection !== 'DOWN' && validDirection !== 'NEUTRAL') {
                         validDirection = mlTargetPrice >= mlCurrentPrice ? 'UP' : 'DOWN';
                     }
+
+                    // Get signal strength from ML
+                    const mlSignalStrength = ml.prediction?.signal_strength || ml.signal_strength;
+                    const mlIsActionable = ml.prediction?.is_actionable !== undefined ? ml.prediction.is_actionable : ml.is_actionable;
+                    const mlWarning = ml.warning;
                     
                     // Use fresh price, not ML's potentially stale price
                     const finalCurrentPrice = currentPrice || mlCurrentPrice;
@@ -694,23 +720,27 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     }
                     
                     if (finalCurrentPrice && finalTargetPrice) {
-    predictionData = {
-        symbol: dbSymbol,
-        current_price: parseFloat(finalCurrentPrice),
-        prediction: {
-           target_price: parseFloat(finalTargetPrice),
-direction: validDirection,
-price_change: parseFloat(finalPriceChange),
-            price_change_percent: parseFloat(finalPercentChange.toFixed(2)),
-            confidence: parseFloat(mlConfidence),
-            days: days
-        },
-                            analysis: ml.analysis || {
-                                trend: validDirection === 'UP' ? 'Bullish' : 'Bearish',
-                                volatility: 'Moderate',
-                                risk_level: 'Medium'
+                        predictionData = {
+                            symbol: dbSymbol,
+                            current_price: parseFloat(finalCurrentPrice),
+                            prediction: {
+                                target_price: parseFloat(finalTargetPrice),
+                                direction: validDirection,
+                                price_change: parseFloat(finalPriceChange),
+                                price_change_percent: parseFloat(finalPercentChange.toFixed(2)),
+                                confidence: parseFloat(mlConfidence),
+                                days: days,
+                                // Signal strength fields from ML
+                                signal_strength: mlSignalStrength,
+                                is_actionable: mlIsActionable
                             },
-                            indicators: formattedIndicators // ✅ FIXED: Use formattedIndicators, not empty object
+                            analysis: ml.analysis || {
+                                trend: validDirection === 'UP' ? 'Bullish' : (validDirection === 'NEUTRAL' ? 'Neutral' : 'Bearish'),
+                                volatility: 'Moderate',
+                                risk_level: validDirection === 'NEUTRAL' ? 'Low Signal' : 'Medium'
+                            },
+                            indicators: formattedIndicators,
+                            warning: mlWarning // Include warning for weak signals
                         };
                     }
                 }
@@ -1133,9 +1163,20 @@ router.get('/health', auth, async (req, res) => {
 
 router.get('/price/:symbol', auth, async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const { type } = req.query;
-        
+
         const result = await getFreshPrice(symbol, type || (priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock'));
         
         if (result.price === null) {
