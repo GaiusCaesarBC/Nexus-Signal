@@ -170,6 +170,65 @@ const initializeUserVault = (user) => {
     return user.vault;
 };
 
+// @route   GET /api/vault/badges
+// @desc    Get user's owned badges and equipped badge
+// @access  Private
+router.get('/badges', auth, async (req, res) => {
+    try {
+        const user = await User.findById(getUserId(req));
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Initialize vault if needed
+        const vault = await ensureVault(user);
+
+        // Get all badge items
+        const allBadges = VAULT_ITEMS.badges || [];
+
+        // Filter to only owned badges
+        const ownedBadgeIds = (vault.ownedItems || []).filter(id => id.startsWith('badge-'));
+        const ownedBadges = allBadges.filter(badge => ownedBadgeIds.includes(badge.id));
+
+        // Also include gamification badges from BADGE_MAPPING
+        const gamificationBadges = [];
+        if (user.gamification?.badges) {
+            for (const badgeId of user.gamification.badges) {
+                const badgeInfo = BADGE_MAPPING[badgeId];
+                if (badgeInfo) {
+                    gamificationBadges.push({
+                        id: badgeId,
+                        name: badgeInfo.name,
+                        description: badgeInfo.description,
+                        icon: badgeInfo.icon,
+                        rarity: badgeInfo.rarity || 'common',
+                        type: 'achievement'
+                    });
+                }
+            }
+        }
+
+        // Combine vault badges and gamification badges
+        const allOwnedBadges = [...ownedBadges, ...gamificationBadges];
+
+        // Get equipped badge
+        const equippedBadgeId = vault.equippedBadges?.[0] || user.gamification?.equippedBadge || null;
+        let equippedBadge = null;
+        if (equippedBadgeId) {
+            equippedBadge = allOwnedBadges.find(b => b.id === equippedBadgeId) || null;
+        }
+
+        res.json({
+            badges: allOwnedBadges,
+            ownedBadges: allOwnedBadges,
+            equippedBadge: equippedBadge
+        });
+    } catch (error) {
+        console.error('[Vault] Error getting badges:', error);
+        res.status(500).json({ error: 'Failed to get badges' });
+    }
+});
+
 // @route   GET /api/vault/items
 // @desc    Get all vault items with user ownership status
 // @access  Private
