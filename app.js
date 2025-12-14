@@ -285,6 +285,7 @@ const leaderboardRoutes = require('./routes/leaderboardRoutes')
 const walletRoutes = require('./routes/walletRoutes'); // Wallet Connection
 const brokerageRoutes = require('./routes/brokerageRoutes'); // Brokerage Connections (Kraken, Plaid)
 const twoFactorRoutes = require('./routes/twoFactorRoutes'); // Two-Factor Authentication
+const earningsRoutes = require('./routes/earningsRoutes'); // Earnings Calendar
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -365,6 +366,7 @@ app.use('/api/wallet', walletRoutes); // Wallet Connection
 app.use('/api/brokerage', brokerageRoutes); // Brokerage Connections (Kraken, Plaid)
 app.use('/api/2fa', twoFactorRoutes); // Two-Factor Authentication
 app.use('/api/stripe', stripeRoutes); // 💳 Stripe Payments & Subscriptions
+app.use('/api/earnings', earningsRoutes); // 📅 Earnings Calendar
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
