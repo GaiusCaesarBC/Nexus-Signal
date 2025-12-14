@@ -6,6 +6,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const Portfolio = require('../models/Portfolio');
 const axios = require('axios');
 const GamificationService = require('../services/gamificationService');
+const { sanitizeSymbol, validateSymbol } = require('../utils/symbolValidation');
 
 /**
  * GET /api/portfolio
@@ -127,12 +128,24 @@ router.get('/leaderboard', async (req, res) => {
  */
 router.post('/buy', authMiddleware, async (req, res) => {
     try {
-        const { symbol, quantity, price, assetType = 'stock' } = req.body;
+        const { quantity, price, assetType = 'stock' } = req.body;
 
-        if (!symbol || !quantity || !price) {
+        if (!req.body.symbol || !quantity || !price) {
             return res.status(400).json({
                 success: false,
                 error: 'Symbol, quantity, and price are required'
+            });
+        }
+
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.body.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
             });
         }
 
@@ -144,9 +157,9 @@ router.post('/buy', authMiddleware, async (req, res) => {
         }
 
         const portfolio = await Portfolio.getOrCreate(req.user.id);
-        
+
         // Use the buyAsset method from the model
-        await portfolio.buyAsset(symbol.toUpperCase(), parseFloat(quantity), parseFloat(price), assetType);
+        await portfolio.buyAsset(symbol, parseFloat(quantity), parseFloat(price), assetType);
         
         // 🎮 GAMIFICATION: Track trade (buying is always neutral at start)
         try {
@@ -195,12 +208,24 @@ router.post('/buy', authMiddleware, async (req, res) => {
  */
 router.post('/sell', authMiddleware, async (req, res) => {
     try {
-        const { symbol, quantity } = req.body;
+        const { quantity } = req.body;
 
-        if (!symbol || !quantity) {
+        if (!req.body.symbol || !quantity) {
             return res.status(400).json({
                 success: false,
                 error: 'Symbol and quantity are required'
+            });
+        }
+
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.body.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
             });
         }
 
@@ -212,8 +237,8 @@ router.post('/sell', authMiddleware, async (req, res) => {
         }
 
         const portfolio = await Portfolio.getOrCreate(req.user.id);
-        
-        const holding = portfolio.holdings.find(h => h.symbol === symbol.toUpperCase());
+
+        const holding = portfolio.holdings.find(h => h.symbol === symbol);
         if (!holding) {
             return res.status(404).json({
                 success: false,
@@ -235,7 +260,7 @@ router.post('/sell', authMiddleware, async (req, res) => {
         const profitable = profit > 0;
 
         // Sell the asset
-        await portfolio.sellAsset(symbol.toUpperCase(), parseFloat(quantity), currentPrice);
+        await portfolio.sellAsset(symbol, parseFloat(quantity), currentPrice);
         
         // 🎮 GAMIFICATION: Track profitable/unprofitable trade
         try {
@@ -296,12 +321,24 @@ router.post('/sell', authMiddleware, async (req, res) => {
  */
 router.post('/holdings', authMiddleware, async (req, res) => {
     try {
-        const { symbol, shares, averagePrice, assetType = 'stock' } = req.body;
+        const { shares, averagePrice, assetType = 'stock' } = req.body;
 
-        if (!symbol || !shares || !averagePrice) {
+        if (!req.body.symbol || !shares || !averagePrice) {
             return res.status(400).json({
                 success: false,
                 error: 'Symbol, shares, and average price are required'
+            });
+        }
+
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.body.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
             });
         }
 
@@ -313,9 +350,9 @@ router.post('/holdings', authMiddleware, async (req, res) => {
         }
 
         const portfolio = await Portfolio.getOrCreate(req.user.id);
-        
+
         const existingHolding = portfolio.holdings.find(
-            h => h.symbol.toUpperCase() === symbol.toUpperCase()
+            h => h.symbol === symbol
         );
 
         if (existingHolding) {
@@ -327,7 +364,7 @@ router.post('/holdings', authMiddleware, async (req, res) => {
 
         let currentPrice = parseFloat(averagePrice);
         try {
-            const priceData = await getCurrentPrice(symbol.toUpperCase(), assetType);
+            const priceData = await getCurrentPrice(symbol, assetType);
             currentPrice = priceData.price;
         } catch (error) {
             console.warn(`Could not fetch current price for ${symbol}, using purchase price`);
@@ -335,7 +372,7 @@ router.post('/holdings', authMiddleware, async (req, res) => {
 
         // Add new holding manually
         portfolio.holdings.push({
-            symbol: symbol.toUpperCase(),
+            symbol: symbol,
             quantity: parseFloat(shares),
             purchasePrice: parseFloat(averagePrice),
             currentPrice: currentPrice,
@@ -648,5 +685,150 @@ async function getCryptoPrice(symbol) {
     
     throw new Error(`Crypto price not found for ${symbol}`);
 }
+
+/**
+ * GET /api/portfolio/analytics
+ * Comprehensive portfolio analytics
+ */
+router.get('/analytics', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Get portfolio data
+        const portfolio = await Portfolio.getOrCreate(userId);
+
+        // Get paper trading data
+        const PaperTradingAccount = require('../models/PaperTradingAccount');
+        const paperAccount = await PaperTradingAccount.findOne({ user: userId });
+
+        // Get prediction data
+        const Prediction = require('../models/Prediction');
+        const predictions = await Prediction.find({
+            user: userId,
+            status: { $in: ['correct', 'incorrect'] }
+        }).sort({ createdAt: -1 }).limit(50);
+
+        // Calculate allocation by asset type
+        const allocationByType = {};
+        let totalValue = 0;
+
+        for (const holding of portfolio.holdings) {
+            const type = holding.assetType || 'stock';
+            const value = (holding.quantity || 0) * (holding.currentPrice || 0);
+            totalValue += value;
+
+            if (!allocationByType[type]) {
+                allocationByType[type] = { value: 0, count: 0, holdings: [] };
+            }
+            allocationByType[type].value += value;
+            allocationByType[type].count++;
+            allocationByType[type].holdings.push({
+                symbol: holding.symbol,
+                value,
+                percent: 0 // Will calculate after
+            });
+        }
+
+        // Calculate percentages
+        for (const type in allocationByType) {
+            allocationByType[type].percent = totalValue > 0
+                ? ((allocationByType[type].value / totalValue) * 100).toFixed(2)
+                : 0;
+            for (const h of allocationByType[type].holdings) {
+                h.percent = totalValue > 0
+                    ? ((h.value / totalValue) * 100).toFixed(2)
+                    : 0;
+            }
+        }
+
+        // Paper trading stats
+        const paperTradingStats = paperAccount ? {
+            totalTrades: paperAccount.totalTrades || 0,
+            winningTrades: paperAccount.winningTrades || 0,
+            losingTrades: paperAccount.losingTrades || 0,
+            winRate: paperAccount.winRate || 0,
+            biggestWin: paperAccount.biggestWin || 0,
+            biggestLoss: paperAccount.biggestLoss || 0,
+            portfolioValue: paperAccount.portfolioValue || 0,
+            cashBalance: paperAccount.cashBalance || 0,
+            totalPL: paperAccount.totalPL || 0,
+            currentStreak: paperAccount.currentStreak || 0,
+            bestStreak: paperAccount.bestStreak || 0
+        } : null;
+
+        // Prediction accuracy
+        const correctPredictions = predictions.filter(p => p.status === 'correct').length;
+        const predictionAccuracy = predictions.length > 0
+            ? ((correctPredictions / predictions.length) * 100).toFixed(1)
+            : 0;
+
+        // Calculate performance metrics
+        const performanceMetrics = {
+            totalHoldings: portfolio.holdings.length,
+            portfolioValue: portfolio.totalValue || 0,
+            totalGainLoss: portfolio.totalGainLoss || 0,
+            totalGainLossPercent: portfolio.totalGainLossPercent || 0,
+            topGainer: null,
+            topLoser: null
+        };
+
+        // Find top gainer and loser
+        let maxGain = -Infinity;
+        let maxLoss = Infinity;
+
+        for (const holding of portfolio.holdings) {
+            const gainPercent = ((holding.currentPrice - holding.purchasePrice) / holding.purchasePrice) * 100;
+            if (gainPercent > maxGain) {
+                maxGain = gainPercent;
+                performanceMetrics.topGainer = {
+                    symbol: holding.symbol,
+                    gainPercent: gainPercent.toFixed(2)
+                };
+            }
+            if (gainPercent < maxLoss) {
+                maxLoss = gainPercent;
+                performanceMetrics.topLoser = {
+                    symbol: holding.symbol,
+                    lossPercent: gainPercent.toFixed(2)
+                };
+            }
+        }
+
+        // Risk metrics (simplified)
+        const riskMetrics = {
+            diversificationScore: Math.min(100, portfolio.holdings.length * 10), // Simple diversification score
+            concentrationRisk: portfolio.holdings.length > 0
+                ? (portfolio.holdings.reduce((max, h) => {
+                    const value = h.quantity * h.currentPrice;
+                    return Math.max(max, value);
+                }, 0) / totalValue * 100).toFixed(1)
+                : 0,
+            assetTypeCount: Object.keys(allocationByType).length
+        };
+
+        res.json({
+            success: true,
+            analytics: {
+                overview: performanceMetrics,
+                allocation: allocationByType,
+                paperTrading: paperTradingStats,
+                predictions: {
+                    total: predictions.length,
+                    correct: correctPredictions,
+                    accuracy: predictionAccuracy
+                },
+                risk: riskMetrics
+            }
+        });
+
+    } catch (error) {
+        console.error('[Portfolio Analytics] Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch analytics',
+            message: error.message
+        });
+    }
+});
 
 module.exports = router;
