@@ -1385,4 +1385,183 @@ router.get('/cleanup/stats', auth, async (req, res) => {
     }
 });
 
+// @route   GET /api/predictions/accuracy-dashboard
+// @desc    Get comprehensive accuracy dashboard data
+// @access  Private
+router.get('/accuracy-dashboard', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const now = new Date();
+
+        // Get all resolved predictions for the user
+        const allPredictions = await Prediction.find({
+            user: userId,
+            status: { $in: ['correct', 'incorrect'] }
+        }).sort({ createdAt: -1 });
+
+        // Get pending predictions
+        const pendingPredictions = await Prediction.find({
+            user: userId,
+            status: 'pending'
+        }).sort({ expiresAt: 1 });
+
+        // Calculate overall stats
+        const totalResolved = allPredictions.length;
+        const correctCount = allPredictions.filter(p => p.status === 'correct').length;
+        const overallAccuracy = totalResolved > 0 ? (correctCount / totalResolved) * 100 : 0;
+        const avgConfidence = totalResolved > 0
+            ? allPredictions.reduce((sum, p) => sum + (p.confidence || 0), 0) / totalResolved
+            : 0;
+
+        // Calculate accuracy by asset type
+        const byAssetType = {};
+        ['stock', 'crypto', 'dex'].forEach(type => {
+            const typePredictions = allPredictions.filter(p => p.assetType === type);
+            const typeCorrect = typePredictions.filter(p => p.status === 'correct').length;
+            byAssetType[type] = {
+                total: typePredictions.length,
+                correct: typeCorrect,
+                accuracy: typePredictions.length > 0 ? (typeCorrect / typePredictions.length) * 100 : 0
+            };
+        });
+
+        // Calculate accuracy by direction
+        const byDirection = {};
+        ['UP', 'DOWN'].forEach(dir => {
+            const dirPredictions = allPredictions.filter(p => p.direction === dir);
+            const dirCorrect = dirPredictions.filter(p => p.status === 'correct').length;
+            byDirection[dir] = {
+                total: dirPredictions.length,
+                correct: dirCorrect,
+                accuracy: dirPredictions.length > 0 ? (dirCorrect / dirPredictions.length) * 100 : 0
+            };
+        });
+
+        // Calculate accuracy over time (last 30 days, grouped by week)
+        const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+        const recentPredictions = allPredictions.filter(p => p.createdAt >= thirtyDaysAgo);
+
+        const weeklyStats = [];
+        for (let i = 0; i < 4; i++) {
+            const weekStart = new Date(now - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+            const weekEnd = new Date(now - i * 7 * 24 * 60 * 60 * 1000);
+            const weekPredictions = recentPredictions.filter(p =>
+                p.createdAt >= weekStart && p.createdAt < weekEnd
+            );
+            const weekCorrect = weekPredictions.filter(p => p.status === 'correct').length;
+            weeklyStats.unshift({
+                week: `Week ${4 - i}`,
+                startDate: weekStart.toISOString().split('T')[0],
+                total: weekPredictions.length,
+                correct: weekCorrect,
+                accuracy: weekPredictions.length > 0 ? (weekCorrect / weekPredictions.length) * 100 : 0
+            });
+        }
+
+        // Get best performing symbols (min 2 predictions)
+        const symbolStats = {};
+        allPredictions.forEach(p => {
+            if (!symbolStats[p.symbol]) {
+                symbolStats[p.symbol] = { total: 0, correct: 0, avgReturn: 0, returns: [] };
+            }
+            symbolStats[p.symbol].total++;
+            if (p.status === 'correct') symbolStats[p.symbol].correct++;
+            if (p.outcome?.actualChangePercent) {
+                symbolStats[p.symbol].returns.push(p.outcome.actualChangePercent);
+            }
+        });
+
+        const symbolPerformance = Object.entries(symbolStats)
+            .filter(([_, stats]) => stats.total >= 2)
+            .map(([symbol, stats]) => ({
+                symbol,
+                total: stats.total,
+                correct: stats.correct,
+                accuracy: (stats.correct / stats.total) * 100,
+                avgReturn: stats.returns.length > 0
+                    ? stats.returns.reduce((a, b) => a + b, 0) / stats.returns.length
+                    : 0
+            }))
+            .sort((a, b) => b.accuracy - a.accuracy);
+
+        const bestSymbols = symbolPerformance.slice(0, 5);
+        const worstSymbols = [...symbolPerformance].sort((a, b) => a.accuracy - b.accuracy).slice(0, 5);
+
+        // Calculate current streak
+        let currentStreak = 0;
+        let streakType = null;
+        for (const prediction of allPredictions) {
+            if (streakType === null) {
+                streakType = prediction.status;
+                currentStreak = 1;
+            } else if (prediction.status === streakType) {
+                currentStreak++;
+            } else {
+                break;
+            }
+        }
+
+        // Get recent predictions with outcomes (last 10)
+        const recentWithOutcomes = allPredictions.slice(0, 10).map(p => ({
+            _id: p._id,
+            symbol: p.symbol,
+            assetType: p.assetType,
+            direction: p.direction,
+            confidence: p.confidence,
+            status: p.status,
+            currentPrice: p.currentPrice,
+            targetPrice: p.targetPrice,
+            outcome: p.outcome,
+            createdAt: p.createdAt,
+            expiresAt: p.expiresAt
+        }));
+
+        // Get platform stats for comparison
+        const platformStats = await Prediction.getPlatformAccuracy();
+
+        res.json({
+            success: true,
+            overview: {
+                totalPredictions: totalResolved,
+                correctPredictions: correctCount,
+                incorrectPredictions: totalResolved - correctCount,
+                pendingPredictions: pendingPredictions.length,
+                accuracy: Math.round(overallAccuracy * 100) / 100,
+                avgConfidence: Math.round(avgConfidence * 100) / 100
+            },
+            streak: {
+                current: currentStreak,
+                type: streakType // 'correct' or 'incorrect'
+            },
+            byAssetType,
+            byDirection,
+            weeklyTrend: weeklyStats,
+            bestSymbols,
+            worstSymbols,
+            recentPredictions: recentWithOutcomes,
+            pendingPredictions: pendingPredictions.slice(0, 5).map(p => ({
+                _id: p._id,
+                symbol: p.symbol,
+                direction: p.direction,
+                confidence: p.confidence,
+                targetPrice: p.targetPrice,
+                expiresAt: p.expiresAt
+            })),
+            platformComparison: {
+                platformAccuracy: platformStats.accuracy,
+                userAccuracy: Math.round(overallAccuracy * 100) / 100,
+                difference: Math.round((overallAccuracy - platformStats.accuracy) * 100) / 100
+            }
+        });
+
+    } catch (error) {
+        console.error('[Predictions] Accuracy dashboard error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch accuracy dashboard',
+            message: error.message
+        });
+    }
+});
+
 module.exports = router;
