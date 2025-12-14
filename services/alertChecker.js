@@ -2,8 +2,10 @@
 
 const cron = require('node-cron');
 const Alert = require('../models/Alert');
-const Notification = require('../models/Notification'); // We'll create this next
+const Notification = require('../models/Notification');
+const User = require('../models/User');
 const axios = require('axios');
+const { sendPriceAlertEmail } = require('./emailService');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -164,8 +166,28 @@ function getAlertMessage(alert) {
 }
 
 async function sendEmailNotification(alert) {
-    // TODO: Implement email sending using nodemailer
-    console.log(`[AlertChecker] Would send email for alert ${alert._id}`);
+    try {
+        // Get user's email
+        const user = await User.findById(alert.user).select('email username');
+        if (!user || !user.email) {
+            console.log(`[AlertChecker] No email found for user ${alert.user}`);
+            return false;
+        }
+
+        const result = await sendPriceAlertEmail(
+            user.email,
+            user.username || 'Trader',
+            alert
+        );
+
+        if (result) {
+            console.log(`[AlertChecker] Email sent to ${user.email} for ${alert.symbol} alert`);
+        }
+        return result;
+    } catch (error) {
+        console.error(`[AlertChecker] Error sending email notification:`, error.message);
+        return false;
+    }
 }
 
 async function sendPushNotification(alert) {

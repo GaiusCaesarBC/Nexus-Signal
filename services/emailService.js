@@ -318,9 +318,148 @@ async function sendBackupCodes(email, username, backupCodes) {
     }
 }
 
+/**
+ * Send price alert notification via email
+ * @param {string} email - Recipient email address
+ * @param {string} username - User's username
+ * @param {Object} alert - Alert object with details
+ * @returns {Promise<boolean>} Success status
+ */
+async function sendPriceAlertEmail(email, username, alert) {
+    if (!process.env.SENDGRID_API_KEY) {
+        console.warn('[Email] SendGrid API key not configured - skipping alert email');
+        return false;
+    }
+
+    // Determine alert type styling
+    const isUp = alert.type === 'price_above';
+    const emoji = isUp ? '🚀' : '📉';
+    const color = isUp ? '#10b981' : '#ef4444';
+    const direction = isUp ? 'above' : 'below';
+
+    const formattedPrice = alert.triggeredPrice?.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: alert.triggeredPrice < 1 ? 8 : 2
+    });
+
+    const formattedTarget = alert.targetPrice?.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: alert.targetPrice < 1 ? 8 : 2
+    });
+
+    const msg = {
+        to: email,
+        from: {
+            email: FROM_EMAIL,
+            name: FROM_NAME
+        },
+        subject: `${emoji} ${alert.symbol} Price Alert - ${direction} ${formattedTarget}`,
+        text: `${alert.symbol} has reached ${formattedPrice}!\n\nYour alert for ${alert.symbol} to go ${direction} ${formattedTarget} has been triggered.\n\nCurrent Price: ${formattedPrice}\nTarget: ${formattedTarget}\n\n- The Nexus Signal Team`,
+        html: `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0f172a; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" max-width="500" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 16px; border: 1px solid ${color}40; max-width: 500px;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px; text-align: center;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">${emoji}</div>
+                            <div style="font-size: 28px; font-weight: 800; color: ${color};">
+                                ${alert.symbol} ALERT
+                            </div>
+                            <div style="color: #64748b; font-size: 14px; margin-top: 8px;">
+                                Price ${direction} target reached!
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 20px 40px;">
+                            <p style="color: #e0e6ed; font-size: 16px; margin: 0 0 20px;">
+                                Hey ${username},
+                            </p>
+                            <p style="color: #94a3b8; font-size: 14px; margin: 0 0 30px;">
+                                Your price alert for <strong style="color: ${color};">${alert.symbol}</strong> has been triggered!
+                            </p>
+
+                            <!-- Price Box -->
+                            <div style="background: ${color}15; border: 2px solid ${color}40; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 20px;">
+                                <div style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                                    Current Price
+                                </div>
+                                <div style="font-size: 32px; font-weight: 800; color: ${color};">
+                                    ${formattedPrice}
+                                </div>
+                            </div>
+
+                            <!-- Target Info -->
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                                <div style="background: rgba(100, 116, 139, 0.1); border-radius: 8px; padding: 16px; flex: 1; text-align: center;">
+                                    <div style="color: #64748b; font-size: 11px; text-transform: uppercase; margin-bottom: 4px;">Target</div>
+                                    <div style="color: #e0e6ed; font-size: 16px; font-weight: 600;">${formattedTarget}</div>
+                                </div>
+                            </div>
+
+                            ${alert.customMessage ? `
+                            <div style="background: rgba(0, 173, 239, 0.1); border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                                <p style="color: #94a3b8; font-size: 13px; margin: 0; font-style: italic;">
+                                    "${alert.customMessage}"
+                                </p>
+                            </div>
+                            ` : ''}
+
+                            <div style="text-align: center; margin-top: 24px;">
+                                <a href="https://nexussignal.ai/predictions" style="display: inline-block; background: linear-gradient(135deg, #00adef 0%, #00ff88 100%); color: #0f172a; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 700; font-size: 14px;">
+                                    View on Nexus Signal
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 40px 40px; border-top: 1px solid rgba(100, 116, 139, 0.2);">
+                            <p style="color: #64748b; font-size: 12px; margin: 0; text-align: center;">
+                                You received this because you set up a price alert on Nexus Signal.<br>
+                                <a href="https://nexussignal.ai/settings" style="color: #00adef; text-decoration: none;">Manage your alerts</a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+        `
+    };
+
+    try {
+        await sgMail.send(msg);
+        console.log(`[Email] Price alert sent to ${email} for ${alert.symbol}`);
+        return true;
+    } catch (error) {
+        console.error('[Email] Error sending price alert:', error.message);
+        return false;
+    }
+}
+
 module.exports = {
     generateVerificationCode,
     send2FACode,
     send2FAEnabledNotification,
-    sendBackupCodes
+    sendBackupCodes,
+    sendPriceAlertEmail
 };
