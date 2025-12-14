@@ -296,15 +296,106 @@ function isLikelyCrypto(query) {
 // GET /api/search?q=AAPL - Unified search endpoint
 router.get('/', async (req, res) => {
     try {
-        const { q, type } = req.query;
-        
+        const { q, type, network: queryNetwork } = req.query;
+
         if (!q || q.trim().length < 1) {
             return res.json({ stocks: [], crypto: [], query: '' });
         }
 
         const query = q.trim();
+
+        // ============ CONTRACT ADDRESS DETECTION ============
+        // EVM address: 0x followed by 40 hex characters
+        // Solana address: Base58 encoded, 32-44 characters (no 0x prefix)
+        const isEvmAddress = /^0x[a-fA-F0-9]{40}$/i.test(query);
+        const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query) && !query.startsWith('0x');
+
+        if (isEvmAddress || isSolanaAddress) {
+            console.log(`[Search] Contract address detected: ${query.substring(0, 10)}...`);
+
+            try {
+                // Determine which networks to search
+                let networksToSearch = [];
+                if (isSolanaAddress) {
+                    networksToSearch = ['solana'];
+                } else if (queryNetwork) {
+                    networksToSearch = [queryNetwork.toLowerCase()];
+                } else {
+                    // Search all EVM networks
+                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax'];
+                }
+
+                // Search for token by contract address across networks
+                const searchPromises = networksToSearch.map(async (network) => {
+                    try {
+                        // First try to get token info directly
+                        const tokenInfo = await geckoTerminalService.getTokenPrice(network, query.toLowerCase());
+                        if (tokenInfo && tokenInfo.price > 0) {
+                            return {
+                                symbol: tokenInfo.symbol,
+                                name: tokenInfo.name || tokenInfo.symbol,
+                                type: 'crypto',
+                                source: 'geckoterminal',
+                                chain: network.toUpperCase(),
+                                network: network,
+                                tokenAddress: query.toLowerCase(),
+                                price: tokenInfo.price,
+                                priceChange24h: tokenInfo.priceChange24h
+                            };
+                        }
+
+                        // Fallback: search using the address as query
+                        const searchResults = await geckoTerminalService.search(query, network, false);
+                        if (searchResults && searchResults.length > 0) {
+                            const match = searchResults.find(r =>
+                                r.contractAddress?.toLowerCase() === query.toLowerCase()
+                            ) || searchResults[0];
+
+                            if (match && match.price > 0) {
+                                return {
+                                    symbol: match.symbol,
+                                    name: match.name || match.symbol,
+                                    type: 'crypto',
+                                    source: 'geckoterminal',
+                                    chain: match.chain || network.toUpperCase(),
+                                    network: network,
+                                    tokenAddress: match.contractAddress || query.toLowerCase(),
+                                    poolAddress: match.poolAddress,
+                                    price: match.price,
+                                    priceChange24h: match.changePercent
+                                };
+                            }
+                        }
+                        return null;
+                    } catch (err) {
+                        return null;
+                    }
+                });
+
+                const addressResults = await Promise.all(searchPromises);
+                const validResults = addressResults.filter(r => r !== null);
+
+                if (validResults.length > 0) {
+                    console.log(`[Search] Found ${validResults.length} tokens by contract address`);
+
+                    return res.json({
+                        query,
+                        stocks: [],
+                        crypto: validResults,
+                        searchType: 'contract_address',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    console.log(`[Search] No token found for contract address: ${query.substring(0, 10)}...`);
+                }
+            } catch (caError) {
+                console.log('[Search] Contract address search error:', caError.message);
+            }
+        }
+        // ============ END CONTRACT ADDRESS DETECTION ============
+
         const cacheKey = `search-${query.toLowerCase()}-${type || 'all'}`;
-        
+
         // Check cache
         const cached = getCachedResult(cacheKey);
         if (cached) {
