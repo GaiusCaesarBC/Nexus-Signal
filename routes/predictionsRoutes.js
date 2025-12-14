@@ -302,7 +302,21 @@ async function getFreshPrice(symbol, assetType, dexInfo = null) {
 
                 console.log(`[Price] DEX token: ${tokenSymbol} on ${network}`);
 
-                // If we have pool address, get direct pool data
+                // PRIORITY 1: If we have contract address, get token price directly (most reliable)
+                if (dexInfo?.contractAddress) {
+                    const tokenData = await geckoTerminalService.getTokenPrice(network, dexInfo.contractAddress);
+                    if (tokenData?.price > 0) {
+                        console.log(`[Price] ✅ Fresh ${tokenSymbol} from GeckoTerminal token: $${tokenData.price}`);
+                        return {
+                            price: tokenData.price,
+                            source: 'geckoterminal-token',
+                            network: network,
+                            contractAddress: dexInfo.contractAddress
+                        };
+                    }
+                }
+
+                // PRIORITY 2: If we have pool address, get direct pool data
                 if (dexInfo?.poolAddress) {
                     const poolData = await geckoTerminalService.getPoolData(network, dexInfo.poolAddress);
                     if (poolData?.price) {
@@ -311,7 +325,7 @@ async function getFreshPrice(symbol, assetType, dexInfo = null) {
                     }
                 }
 
-                // Search for the token
+                // PRIORITY 3: Search by symbol (fallback)
                 const searchResults = await geckoTerminalService.search(tokenSymbol, network, false);
                 if (searchResults && searchResults.length > 0) {
                     // Find best match (exact symbol match preferred)
@@ -652,7 +666,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
             network = parts[1]?.toLowerCase() || network || 'bsc';
             assetType = 'dex';
             dexInfo = { network, poolAddress, contractAddress };
-            console.log(`[Predictions] DEX token detected: ${symbol} on ${network}`);
+            console.log(`[Predictions] DEX token detected: ${symbol} on ${network}, contractAddress: ${contractAddress || 'none'}, poolAddress: ${poolAddress || 'none'}`);
         } else if (assetType === 'dex') {
             // Explicit DEX type passed
             symbol = originalSymbol;
