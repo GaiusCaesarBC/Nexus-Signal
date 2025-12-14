@@ -42,15 +42,44 @@ router.get('/', async (req, res) => {
             }
         } catch (e) { /* No valid token, that's fine */ }
 
-        // Add isLiked flag for current user (if authenticated)
-        const postsWithLikeStatus = posts.map(post => ({
-            ...post,
-            isLiked: userId ? post.likes?.some(id => id.toString() === userId) : false
-        }));
+        // Add reaction/bookmark status for current user (if authenticated)
+        const postsWithStatus = posts.map(post => {
+            // Get user's reaction
+            let userReaction = null;
+            if (userId && post.reactions) {
+                for (const [type, users] of Object.entries(post.reactions)) {
+                    if (users?.some(id => id.toString() === userId)) {
+                        userReaction = type;
+                        break;
+                    }
+                }
+            }
+
+            // Calculate reaction counts
+            const reactionCounts = post.reactions ? {
+                like: post.reactions.like?.length || 0,
+                rocket: post.reactions.rocket?.length || 0,
+                fire: post.reactions.fire?.length || 0,
+                diamond: post.reactions.diamond?.length || 0,
+                bull: post.reactions.bull?.length || 0,
+                bear: post.reactions.bear?.length || 0,
+                money: post.reactions.money?.length || 0
+            } : { like: post.likesCount || 0 };
+
+            return {
+                ...post,
+                isLiked: userId ? post.likes?.some(id => id.toString() === userId) : false,
+                userReaction,
+                reactionCounts,
+                totalReactions: Object.values(reactionCounts).reduce((a, b) => a + b, 0),
+                isBookmarked: userId ? post.bookmarkedBy?.some(id => id.toString() === userId) : false,
+                bookmarkCount: post.bookmarkedBy?.length || 0
+            };
+        });
 
         res.json({
             success: true,
-            posts: postsWithLikeStatus,
+            posts: postsWithStatus,
             hasMore: posts.length === parseInt(limit)
         });
     } catch (error) {
@@ -177,6 +206,151 @@ router.post('/:id/comment', auth, async (req, res) => {
     } catch (error) {
         console.error('[Posts] Comment error:', error);
         res.status(500).json({ error: 'Failed to add comment' });
+    }
+});
+
+// @route   POST /api/posts/:id/react
+// @desc    Add/remove a reaction to a post
+// @access  Private
+router.post('/:id/react', auth, async (req, res) => {
+    try {
+        const { reaction } = req.body;
+        const validReactions = ['like', 'rocket', 'fire', 'diamond', 'bull', 'bear', 'money'];
+
+        if (!reaction || !validReactions.includes(reaction)) {
+            return res.status(400).json({ error: 'Invalid reaction type' });
+        }
+
+        const post = await Post.findById(req.params.id);
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        const userId = req.user.id;
+
+        // Initialize reactions if not exists
+        if (!post.reactions) {
+            post.reactions = { like: [], rocket: [], fire: [], diamond: [], bull: [], bear: [], money: [] };
+        }
+
+        // Check if user already has this reaction
+        const hasReaction = post.reactions[reaction]?.some(id => id.toString() === userId);
+
+        // Remove user from all reactions first (can only have one reaction per post)
+        for (const type of validReactions) {
+            if (post.reactions[type]) {
+                post.reactions[type] = post.reactions[type].filter(id => id.toString() !== userId);
+            }
+        }
+
+        let added = false;
+        if (!hasReaction) {
+            // Add the new reaction
+            post.reactions[reaction].push(userId);
+            added = true;
+        }
+
+        // Update legacy likes count for compatibility
+        post.likesCount = post.reactions.like?.length || 0;
+
+        await post.save();
+
+        // Calculate reaction counts
+        const reactionCounts = {};
+        for (const type of validReactions) {
+            reactionCounts[type] = post.reactions[type]?.length || 0;
+        }
+
+        res.json({
+            success: true,
+            added,
+            reaction: added ? reaction : null,
+            reactionCounts,
+            totalReactions: Object.values(reactionCounts).reduce((a, b) => a + b, 0)
+        });
+    } catch (error) {
+        console.error('[Posts] React error:', error);
+        res.status(500).json({ error: 'Failed to react to post' });
+    }
+});
+
+// @route   POST /api/posts/:id/bookmark
+// @desc    Bookmark/unbookmark a post
+// @access  Private
+router.post('/:id/bookmark', auth, async (req, res) => {
+    try {
+        const post = await Post.findById(req.params.id);
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        const userId = req.user.id;
+
+        // Initialize bookmarkedBy if not exists
+        if (!post.bookmarkedBy) {
+            post.bookmarkedBy = [];
+        }
+
+        const isBookmarked = post.bookmarkedBy.some(id => id.toString() === userId);
+
+        if (isBookmarked) {
+            // Remove bookmark
+            post.bookmarkedBy = post.bookmarkedBy.filter(id => id.toString() !== userId);
+        } else {
+            // Add bookmark
+            post.bookmarkedBy.push(userId);
+        }
+
+        await post.save();
+
+        res.json({
+            success: true,
+            bookmarked: !isBookmarked,
+            bookmarkCount: post.bookmarkedBy.length
+        });
+    } catch (error) {
+        console.error('[Posts] Bookmark error:', error);
+        res.status(500).json({ error: 'Failed to bookmark post' });
+    }
+});
+
+// @route   GET /api/posts/bookmarks
+// @desc    Get user's bookmarked posts
+// @access  Private
+router.get('/bookmarks', auth, async (req, res) => {
+    try {
+        const { limit = 10, skip = 0 } = req.query;
+
+        const posts = await Post.find({
+            bookmarkedBy: req.user.id,
+            deleted: { $ne: true }
+        })
+            .sort({ createdAt: -1 })
+            .skip(parseInt(skip))
+            .limit(parseInt(limit))
+            .populate('user', 'username profile gamification')
+            .lean();
+
+        // Add bookmark status
+        const postsWithStatus = posts.map(post => ({
+            ...post,
+            isBookmarked: true,
+            userReaction: post.reactions ?
+                Object.keys(post.reactions).find(type =>
+                    post.reactions[type]?.some(id => id.toString() === req.user.id)
+                ) : null
+        }));
+
+        res.json({
+            success: true,
+            posts: postsWithStatus,
+            hasMore: posts.length === parseInt(limit)
+        });
+    } catch (error) {
+        console.error('[Posts] Get bookmarks error:', error);
+        res.status(500).json({ error: 'Failed to get bookmarks' });
     }
 });
 
