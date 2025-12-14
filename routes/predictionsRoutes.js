@@ -793,6 +793,8 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
             priceChange: predictionData.prediction.price_change,
             priceChangePercent: predictionData.prediction.price_change_percent,
             confidence: predictionData.prediction.confidence,
+            signalStrength: predictionData.prediction.signal_strength || 'moderate',
+            isActionable: predictionData.prediction.is_actionable !== false,
             timeframe: days,
             indicators: formattedIndicators,
             analysis: {

@@ -38,8 +38,18 @@ const PredictionSchema = new mongoose.Schema({
     },
     direction: {
         type: String,
-        enum: ['UP', 'DOWN'],
+        enum: ['UP', 'DOWN', 'NEUTRAL'],
         required: true
+    },
+    // Signal strength from ML model
+    signalStrength: {
+        type: String,
+        enum: ['strong', 'moderate', 'weak'],
+        default: 'moderate'
+    },
+    isActionable: {
+        type: Boolean,
+        default: true
     },
     priceChange: {
         type: Number,
@@ -258,9 +268,15 @@ PredictionSchema.statics.getUserAccuracy = async function(userId) {
 };
 
 // Static method to get overall platform accuracy
+// Only counts actionable predictions (excludes NEUTRAL and weak signals)
 PredictionSchema.statics.getPlatformAccuracy = async function() {
     const predictions = await this.find({
-        status: { $in: ['correct', 'incorrect'] }
+        status: { $in: ['correct', 'incorrect'] },
+        direction: { $in: ['UP', 'DOWN'] }, // Exclude NEUTRAL
+        $or: [
+            { isActionable: true },
+            { isActionable: { $exists: false } } // Include old predictions without this field
+        ]
     });
 
     if (predictions.length === 0) {
