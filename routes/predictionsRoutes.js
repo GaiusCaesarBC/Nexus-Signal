@@ -59,8 +59,8 @@ router.get('/symbols/search', async (req, res) => {
                 } else if (queryNetwork) {
                     networksToSearch = [queryNetwork.toLowerCase()];
                 } else {
-                    // Search all EVM networks
-                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax'];
+                    // Search all EVM networks (including newer L2s)
+                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax', 'abstract', 'optimism', 'linea', 'zksync', 'scroll', 'blast', 'mantle', 'manta-pacific'];
                 }
 
                 // Search for token by contract address across networks
