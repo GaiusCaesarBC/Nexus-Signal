@@ -32,8 +32,9 @@ function appendDebugLog(label, obj) {
 // @access  Public
 router.get('/symbols/search', async (req, res) => {
     try {
-        const { q, type } = req.query;
-        const query = (q || '').toUpperCase().trim();
+        const { q, type, network: queryNetwork } = req.query;
+        const query = (q || '').trim();
+        const queryUpper = query.toUpperCase();
 
         if (!query || query.length < 1) {
             return res.json({ symbols: [] });
@@ -41,11 +42,98 @@ router.get('/symbols/search', async (req, res) => {
 
         const results = [];
 
+        // ============ CONTRACT ADDRESS DETECTION ============
+        // EVM address: 0x followed by 40 hex characters
+        // Solana address: Base58 encoded, 32-44 characters (no 0x prefix)
+        const isEvmAddress = /^0x[a-fA-F0-9]{40}$/i.test(query);
+        const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query) && !query.startsWith('0x');
+
+        if (isEvmAddress || isSolanaAddress) {
+            console.log(`[Predictions] Contract address detected: ${query.substring(0, 10)}...`);
+
+            try {
+                // Determine which networks to search
+                let networksToSearch = [];
+                if (isSolanaAddress) {
+                    networksToSearch = ['solana'];
+                } else if (queryNetwork) {
+                    networksToSearch = [queryNetwork.toLowerCase()];
+                } else {
+                    // Search all EVM networks
+                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax'];
+                }
+
+                // Search for token by contract address across networks
+                const searchPromises = networksToSearch.map(async (network) => {
+                    try {
+                        // First try to get token info directly
+                        const tokenInfo = await geckoTerminalService.getTokenPrice(network, query.toLowerCase());
+                        if (tokenInfo && tokenInfo.price > 0) {
+                            return {
+                                symbol: `${tokenInfo.symbol}:${network}`,
+                                name: tokenInfo.name || tokenInfo.symbol,
+                                type: 'dex',
+                                chain: network.toUpperCase(),
+                                price: tokenInfo.price,
+                                contractAddress: query.toLowerCase(),
+                                network: network,
+                                priceChange24h: tokenInfo.priceChange24h
+                            };
+                        }
+
+                        // Fallback: search using the address as query
+                        const searchResults = await geckoTerminalService.search(query, network, false);
+                        if (searchResults && searchResults.length > 0) {
+                            const match = searchResults.find(r =>
+                                r.contractAddress?.toLowerCase() === query.toLowerCase()
+                            ) || searchResults[0];
+
+                            if (match && match.price > 0) {
+                                return {
+                                    symbol: `${match.symbol}:${network}`,
+                                    name: match.name || match.symbol,
+                                    type: 'dex',
+                                    chain: match.chain || network.toUpperCase(),
+                                    price: match.price,
+                                    contractAddress: match.contractAddress || query.toLowerCase(),
+                                    poolAddress: match.poolAddress,
+                                    network: network
+                                };
+                            }
+                        }
+                        return null;
+                    } catch (err) {
+                        return null;
+                    }
+                });
+
+                const addressResults = await Promise.all(searchPromises);
+                const validResults = addressResults.filter(r => r !== null);
+
+                if (validResults.length > 0) {
+                    results.push(...validResults);
+                    console.log(`[Predictions] Found ${validResults.length} tokens by contract address`);
+
+                    // Return immediately for contract address searches
+                    return res.json({
+                        symbols: results,
+                        query: query,
+                        searchType: 'contract_address'
+                    });
+                } else {
+                    console.log(`[Predictions] No token found for contract address: ${query.substring(0, 10)}...`);
+                }
+            } catch (caError) {
+                console.log('[Predictions] Contract address search error:', caError.message);
+            }
+        }
+        // ============ END CONTRACT ADDRESS DETECTION ============
+
         // Search crypto symbols (CoinGecko)
         if (!type || type === 'crypto' || type === 'all') {
             const cryptoSymbols = Array.from(priceService.CRYPTO_SYMBOLS);
             const matchingCrypto = cryptoSymbols.filter(s =>
-                s.startsWith(query) || s.includes(query)
+                s.startsWith(queryUpper) || s.includes(queryUpper)
             ).slice(0, 15).map(s => ({
                 symbol: s,
                 name: priceService.COINGECKO_IDS[s] ?
@@ -56,12 +144,12 @@ router.get('/symbols/search', async (req, res) => {
         }
 
         // Search DEX tokens (GeckoTerminal) - only if query is 2+ chars
-        if ((!type || type === 'dex' || type === 'all') && query.length >= 2) {
+        if ((!type || type === 'dex' || type === 'all') && queryUpper.length >= 2) {
             try {
                 // Search across multiple networks in parallel
                 const networks = ['bsc', 'eth', 'solana'];
                 const dexSearchPromises = networks.map(network =>
-                    geckoTerminalService.search(query, network, false).catch(() => [])
+                    geckoTerminalService.search(queryUpper, network, false).catch(() => [])
                 );
 
                 const dexResults = await Promise.all(dexSearchPromises);
@@ -70,8 +158,8 @@ router.get('/symbols/search', async (req, res) => {
                 // Filter and format DEX tokens
                 const matchingDex = allDexTokens
                     .filter(token =>
-                        token.symbol?.toUpperCase().includes(query) ||
-                        token.name?.toUpperCase().includes(query)
+                        token.symbol?.toUpperCase().includes(queryUpper) ||
+                        token.name?.toUpperCase().includes(queryUpper)
                     )
                     .filter(token => token.price > 0 && token.tvl > 1000) // Only tokens with liquidity
                     .slice(0, 15)
@@ -87,7 +175,7 @@ router.get('/symbols/search', async (req, res) => {
                     }));
 
                 results.push(...matchingDex);
-                console.log(`[Predictions] DEX search for "${query}" found ${matchingDex.length} tokens`);
+                console.log(`[Predictions] DEX search for "${queryUpper}" found ${matchingDex.length} tokens`);
             } catch (dexError) {
                 console.log('[Predictions] DEX search error:', dexError.message);
             }
@@ -129,8 +217,8 @@ router.get('/symbols/search', async (req, res) => {
             ];
 
             const matchingStocks = popularStocks.filter(s =>
-                s.symbol.startsWith(query) || s.symbol.includes(query) ||
-                s.name.toUpperCase().includes(query)
+                s.symbol.startsWith(queryUpper) || s.symbol.includes(queryUpper) ||
+                s.name.toUpperCase().includes(queryUpper)
             ).slice(0, 15).map(s => ({ ...s, type: 'stock' }));
             results.push(...matchingStocks);
         }
@@ -138,11 +226,11 @@ router.get('/symbols/search', async (req, res) => {
         // Sort by exact match first, then by type priority, then alphabetically
         results.sort((a, b) => {
             // Exact symbol match first
-            if (a.symbol === query) return -1;
-            if (b.symbol === query) return 1;
+            if (a.symbol === queryUpper) return -1;
+            if (b.symbol === queryUpper) return 1;
             // Then starts with query
-            if (a.symbol.startsWith(query) && !b.symbol.startsWith(query)) return -1;
-            if (!a.symbol.startsWith(query) && b.symbol.startsWith(query)) return 1;
+            if (a.symbol.startsWith(queryUpper) && !b.symbol.startsWith(queryUpper)) return -1;
+            if (!a.symbol.startsWith(queryUpper) && b.symbol.startsWith(queryUpper)) return 1;
             // Then by type priority (crypto > dex > stock)
             const typePriority = { crypto: 0, dex: 1, stock: 2 };
             const typeA = typePriority[a.type] ?? 3;
