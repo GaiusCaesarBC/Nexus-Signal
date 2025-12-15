@@ -1844,6 +1844,60 @@ router.delete('/alerts/:alertId', auth, async (req, res) => {
     }
 });
 
+// @route   POST /api/paper-trading/reset
+// @desc    Reset paper trading account to initial state
+router.post('/reset', auth, async (req, res) => {
+    try {
+        const account = await PaperTradingAccount.findOne({ user: req.user.id });
+
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        // Reset all fields to defaults
+        account.cashBalance = 100000;
+        account.initialBalance = 100000;
+        account.portfolioValue = 100000;
+        account.totalProfitLoss = 0;
+        account.totalProfitLossPercent = 0;
+        account.totalTrades = 0;
+        account.winningTrades = 0;
+        account.losingTrades = 0;
+        account.winRate = 0;
+        account.currentStreak = 0;
+        account.bestStreak = 0;
+        account.biggestWin = 0;
+        account.biggestLoss = 0;
+        account.takeProfitHits = 0;
+        account.stopLossHits = 0;
+        account.trailingStopHits = 0;
+        account.liquidations = 0;
+        account.refillCount = 0;
+        account.totalRefillAmount = 0;
+        account.lastRefillDate = null;
+
+        // Clear arrays
+        account.positions = [];
+        account.orders = [];
+        account.alerts = [];
+
+        account.lastUpdated = new Date();
+
+        await account.save();
+
+        console.log(`[Paper Trading] Account RESET for user ${req.user.id}`);
+
+        res.json({
+            success: true,
+            message: 'Paper trading account has been reset to $100,000',
+            account
+        });
+
+    } catch (error) {
+        console.error('[Paper Trading] Reset error:', error);
+        res.status(500).json({ error: 'Failed to reset account' });
+    }
+});
 
 // @route   GET /api/paper-trading/badge-progress
 // @desc    Check badge tracking progress (for testing)
