@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const telegramService = require('../services/telegramService');
 
