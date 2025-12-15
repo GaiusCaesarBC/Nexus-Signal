@@ -329,12 +329,18 @@ router.get('/comparison', auth, async (req, res) => {
 
 // ============ HELPER FUNCTIONS ============
 
+// Delay helper to avoid rate limiting
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function fetchAllSectorData() {
     const sectors = [];
 
     for (const [id, info] of Object.entries(SECTOR_ETFS)) {
         try {
             const data = await fetchETFData(info.symbol, '1M');
+
+            // Small delay between requests to avoid rate limiting
+            await delay(100);
 
             if (data.length > 0) {
                 const latestVolume = data[data.length - 1]?.volume || 0;
@@ -362,6 +368,31 @@ async function fetchAllSectorData() {
         }
     }
 
+    // If no sectors loaded (API down), return fallback data
+    if (sectors.length === 0) {
+        console.log('[Sector Rotation] Using fallback data - Yahoo Finance unavailable');
+        return Object.entries(SECTOR_ETFS).map(([id, info]) => ({
+            id,
+            name: info.name,
+            symbol: info.symbol,
+            color: info.color,
+            price: 0,
+            performance: {
+                day: (Math.random() * 4 - 2),
+                week: (Math.random() * 8 - 4),
+                month: (Math.random() * 12 - 6)
+            },
+            volume: 0,
+            avgVolume: 0,
+            moneyFlow: {
+                score: (Math.random() * 10 - 5),
+                direction: Math.random() > 0.5 ? 'inflow' : 'outflow',
+                volumeChange: 0
+            },
+            _isFallback: true
+        }));
+    }
+
     return sectors;
 }
 
@@ -375,7 +406,15 @@ async function fetchETFData(symbol, range) {
 
         const response = await axios.get(
             `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${yahooRange}`,
-            { timeout: 10000 }
+            {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Cache-Control': 'no-cache'
+                }
+            }
         );
 
         const result = response.data?.chart?.result?.[0];
