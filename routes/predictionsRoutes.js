@@ -12,6 +12,7 @@ const { sanitizeSymbol, encodeSymbolForUrl, validateSymbol } = require('../utils
 const priceService = require('../services/priceService');
 const stockDataService = require('../services/stockDataService');
 const geckoTerminalService = require('../services/geckoTerminalService');
+const { sendMLPredictionAlert } = require('../services/telegramScheduler');
 const fs = require('fs');
 const path = require('path');
 
@@ -933,7 +934,27 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
         } catch (gamError) {
             console.warn('[Predictions] Gamification error:', gamError.message);
         }
-        
+
+        // Send Telegram alert for high-confidence predictions (>70%)
+        const confidencePercent = predictionData.prediction.confidence;
+        if (confidencePercent >= 70) {
+            try {
+                await sendMLPredictionAlert({
+                    symbol: dbSymbol,
+                    direction: predictionData.prediction.direction,
+                    confidence: confidencePercent / 100, // Convert to 0-1 scale
+                    currentPrice: predictionData.current_price,
+                    targetPrice: predictionData.prediction.target_price,
+                    stopLoss: predictionData.prediction.stop_loss,
+                    timeframe: predictionData.prediction.timeframe || '24h',
+                    factors: predictionData.prediction.factors || []
+                });
+                console.log(`[Predictions] 📱 Telegram alert sent for ${dbSymbol} (${confidencePercent}% confidence)`);
+            } catch (telegramError) {
+                console.warn('[Predictions] Telegram alert error:', telegramError.message);
+            }
+        }
+
         res.json({
             ...predictionData,
             indicators: formattedIndicators,
