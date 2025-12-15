@@ -180,7 +180,16 @@ const connectDB = async () => {
         // ✅ START PREDICTION CHECKER - ENABLED!
         const { startPredictionChecker } = require('./services/predictionChecker');
         startPredictionChecker();
-        
+
+        // ✅ INITIALIZE TELEGRAM BOT
+        const { initializeBot } = require('./services/telegramService');
+        initializeBot();
+
+        // ✅ INITIALIZE TELEGRAM NOTIFICATION SCHEDULERS
+        const { initializeSchedulers } = require('./services/telegramScheduler');
+        // Delay scheduler start to ensure bot is fully initialized
+        setTimeout(() => initializeSchedulers(), 5000);
+
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
     }
@@ -291,6 +300,7 @@ const marketReportsRoutes = require('./routes/marketReportsRoutes'); // AI Marke
 const sectorRotationRoutes = require('./routes/sectorRotationRoutes'); // Sector Rotation
 const economicCalendarRoutes = require('./routes/economicCalendarRoutes'); // Economic Calendar
 const technicalIndicatorsRoutes = require('./routes/technicalIndicatorsRoutes'); // Technical Indicators
+const telegramRoutes = require('./routes/telegramRoutes'); // Telegram Bot Notifications
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -377,6 +387,7 @@ app.use('/api/market-reports', marketReportsRoutes); // 📈 AI Market Reports
 app.use('/api/sector-rotation', sectorRotationRoutes); // 🔄 Sector Rotation
 app.use('/api/economic-calendar', economicCalendarRoutes); // 📅 Economic Calendar
 app.use('/api/indicators', technicalIndicatorsRoutes); // 📊 Technical Indicators
+app.use('/api/telegram', telegramRoutes); // 📱 Telegram Bot Notifications
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 

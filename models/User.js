@@ -301,6 +301,20 @@ const UserSchema = new mongoose.Schema({
         enabledAt: { type: Date, default: null }
     },
 
+    // ============ TELEGRAM NOTIFICATIONS ============
+    telegramChatId: { type: String, default: null },
+    telegramUsername: { type: String, default: null },
+    telegramLinkedAt: { type: Date, default: null },
+    telegramLinkToken: { type: String, default: null },
+    telegramLinkTokenExpires: { type: Date, default: null },
+    telegramNotifications: {
+        economicEvents: { type: Boolean, default: true },
+        whaleAlerts: { type: Boolean, default: true },
+        dailySummary: { type: Boolean, default: true },
+        mlPredictions: { type: Boolean, default: true },
+        priceAlerts: { type: Boolean, default: true }
+    },
+
     // ============ TRADING STATS ============
     stats: {
         // Portfolio stats
@@ -1158,6 +1172,10 @@ UserSchema.index({ 'vault.equippedTheme': 1 });
 // Index for wallet queries
 UserSchema.index({ 'wallet.address': 1 }, { sparse: true });
 UserSchema.index({ 'wallet.isWalletLinked': 1 });
+
+// Index for telegram queries
+UserSchema.index({ telegramChatId: 1 }, { sparse: true });
+UserSchema.index({ telegramLinkToken: 1 }, { sparse: true });
 
 // Index for subscription queries
 UserSchema.index({ 'subscription.status': 1 });
