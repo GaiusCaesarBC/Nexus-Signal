@@ -286,6 +286,9 @@ const walletRoutes = require('./routes/walletRoutes'); // Wallet Connection
 const brokerageRoutes = require('./routes/brokerageRoutes'); // Brokerage Connections (Kraken, Plaid)
 const twoFactorRoutes = require('./routes/twoFactorRoutes'); // Two-Factor Authentication
 const earningsRoutes = require('./routes/earningsRoutes'); // Earnings Calendar
+const financialsRoutes = require('./routes/financialsRoutes'); // Company Financials
+const marketReportsRoutes = require('./routes/marketReportsRoutes'); // AI Market Reports
+const sectorRotationRoutes = require('./routes/sectorRotationRoutes'); // Sector Rotation
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -367,6 +370,9 @@ app.use('/api/brokerage', brokerageRoutes); // Brokerage Connections (Kraken, Pl
 app.use('/api/2fa', twoFactorRoutes); // Two-Factor Authentication
 app.use('/api/stripe', stripeRoutes); // 💳 Stripe Payments & Subscriptions
 app.use('/api/earnings', earningsRoutes); // 📅 Earnings Calendar
+app.use('/api/financials', financialsRoutes); // 📊 Company Financials
+app.use('/api/market-reports', marketReportsRoutes); // 📈 AI Market Reports
+app.use('/api/sector-rotation', sectorRotationRoutes); // 🔄 Sector Rotation
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
