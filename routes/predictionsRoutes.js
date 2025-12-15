@@ -946,7 +946,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     currentPrice: predictionData.current_price,
                     targetPrice: predictionData.prediction.target_price,
                     stopLoss: predictionData.prediction.stop_loss,
-                    timeframe: predictionData.prediction.timeframe || '24h',
+                    timeframe: `${days} day${days > 1 ? 's' : ''}`,
                     factors: predictionData.prediction.factors || []
                 });
                 console.log(`[Predictions] 📱 Telegram alert sent for ${dbSymbol} (${confidencePercent}% confidence)`);

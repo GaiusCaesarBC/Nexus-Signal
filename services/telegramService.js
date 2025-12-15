@@ -1,10 +1,11 @@
 // Telegram Bot Service for Nexus Signal Notifications
 const TelegramBot = require('node-telegram-bot-api');
 const User = require('../models/User');
+const TelegramGroup = require('../models/TelegramGroup');
 
 let bot = null;
 
-// Store linked group chat IDs (in production, store in DB)
+// In-memory cache for linked groups (synced with MongoDB)
 let linkedGroups = new Map(); // groupId -> { name, linkedAt, linkedBy, notifications }
 
 // Admin user IDs who can manage groups (set via env or hardcode yours)
@@ -160,8 +161,8 @@ const initializeBot = () => {
                     return;
                 }
 
-                // Link the group
-                linkedGroups.set(chatId.toString(), {
+                // Link the group - save to both memory and MongoDB
+                const groupData = {
                     name: msg.chat.title,
                     linkedAt: new Date(),
                     linkedBy: msg.from.username || msg.from.first_name,
@@ -172,10 +173,12 @@ const initializeBot = () => {
                         dailySummary: true,
                         mlPredictions: true
                     }
-                });
+                };
 
-                // Save to environment or DB (for persistence across restarts)
-                saveGroupsToEnv();
+                linkedGroups.set(chatId.toString(), groupData);
+
+                // Save to MongoDB for persistence across deploys
+                await saveGroupToDB(chatId, groupData);
 
                 bot.sendMessage(chatId,
                     `✅ *Group Linked Successfully!*\n\n` +
@@ -221,7 +224,9 @@ const initializeBot = () => {
                 }
 
                 linkedGroups.delete(chatId.toString());
-                saveGroupsToEnv();
+
+                // Remove from MongoDB
+                await removeGroupFromDB(chatId);
 
                 bot.sendMessage(chatId,
                     `👋 *Group Unlinked*\n\n` +
@@ -531,10 +536,10 @@ const sendToAllGroups = async (message, preferenceKey = null) => {
         } catch (error) {
             console.error(`Error sending to group ${groupId}:`, error.message);
             failed++;
-            // If bot was removed from group, unlink it
+            // If bot was removed from group, unlink it from both memory and DB
             if (error.response?.statusCode === 403) {
                 linkedGroups.delete(groupId);
-                saveGroupsToEnv();
+                removeGroupFromDB(groupId).catch(err => console.error('Error removing group from DB:', err));
             }
         }
     }
@@ -584,44 +589,58 @@ const isGroupLinked = (groupId) => {
     return linkedGroups.has(groupId.toString());
 };
 
-// ==================== GROUP PERSISTENCE ====================
+// ==================== GROUP PERSISTENCE (MongoDB) ====================
 
-// Save groups to a JSON file for persistence
-const saveGroupsToEnv = () => {
+// Save group to MongoDB
+const saveGroupToDB = async (chatId, groupData) => {
     try {
-        const fs = require('fs');
-        const path = require('path');
-        const dataPath = path.join(__dirname, '../data');
-
-        // Create data directory if it doesn't exist
-        if (!fs.existsSync(dataPath)) {
-            fs.mkdirSync(dataPath, { recursive: true });
-        }
-
-        const groupsFile = path.join(dataPath, 'telegram-groups.json');
-        const groupsData = Object.fromEntries(linkedGroups);
-        fs.writeFileSync(groupsFile, JSON.stringify(groupsData, null, 2));
-        console.log(`[Telegram] Saved ${linkedGroups.size} groups to file`);
+        await TelegramGroup.linkGroup(chatId, groupData);
+        console.log(`[Telegram] Saved group ${chatId} to database`);
     } catch (error) {
-        console.error('Error saving groups:', error);
+        console.error('Error saving group to DB:', error);
     }
 };
 
-// Load groups from JSON file on startup
-const loadGroupsFromEnv = () => {
+// Remove group from MongoDB
+const removeGroupFromDB = async (chatId) => {
     try {
-        const fs = require('fs');
-        const path = require('path');
-        const groupsFile = path.join(__dirname, '../data/telegram-groups.json');
-
-        if (fs.existsSync(groupsFile)) {
-            const data = JSON.parse(fs.readFileSync(groupsFile, 'utf8'));
-            linkedGroups = new Map(Object.entries(data));
-            console.log(`[Telegram] Loaded ${linkedGroups.size} groups from file`);
-        }
+        await TelegramGroup.unlinkGroup(chatId);
+        console.log(`[Telegram] Removed group ${chatId} from database`);
     } catch (error) {
-        console.error('Error loading groups:', error);
+        console.error('Error removing group from DB:', error);
     }
+};
+
+// Load groups from MongoDB on startup
+const loadGroupsFromDB = async () => {
+    try {
+        const groups = await TelegramGroup.getActiveGroups();
+        linkedGroups = new Map();
+
+        for (const group of groups) {
+            linkedGroups.set(group.chatId, {
+                name: group.name,
+                linkedAt: group.linkedAt,
+                linkedBy: group.linkedBy,
+                linkedByUserId: group.linkedByUserId,
+                notifications: group.notifications
+            });
+        }
+
+        console.log(`[Telegram] Loaded ${linkedGroups.size} groups from database`);
+    } catch (error) {
+        console.error('Error loading groups from DB:', error);
+    }
+};
+
+// Legacy function names for backwards compatibility
+const saveGroupsToEnv = () => {
+    // Now handled by saveGroupToDB - this is called for backwards compatibility
+    console.log('[Telegram] saveGroupsToEnv called - groups are now saved to MongoDB');
+};
+
+const loadGroupsFromEnv = async () => {
+    await loadGroupsFromDB();
 };
 
 // Helper function to format numbers (with proper decimal precision for prices)
