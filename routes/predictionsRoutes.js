@@ -939,6 +939,35 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
         const confidencePercent = predictionData.prediction.confidence;
         if (confidencePercent >= 70) {
             try {
+                // Build factors from actual indicators
+                const factors = [];
+                const ind = formattedIndicators;
+
+                if (ind['RSI']) {
+                    const rsiVal = ind['RSI'].value;
+                    const rsiSignal = ind['RSI'].signal;
+                    factors.push(`RSI: ${rsiVal} (${rsiSignal})`);
+                }
+                if (ind['MACD']) {
+                    factors.push(`MACD: ${ind['MACD'].value > 0 ? '+' : ''}${ind['MACD'].value} (${ind['MACD'].signal})`);
+                }
+                if (ind['SMA 20'] && ind['SMA 50']) {
+                    const smaSignal = ind['SMA 20'].signal === ind['SMA 50'].signal ? ind['SMA 20'].signal : 'MIXED';
+                    factors.push(`Moving Averages: ${smaSignal}`);
+                }
+                if (ind['Bollinger']) {
+                    factors.push(`Bollinger: ${ind['Bollinger'].value}`);
+                }
+                if (ind['Stochastic']) {
+                    factors.push(`Stochastic: ${ind['Stochastic'].value} (${ind['Stochastic'].signal})`);
+                }
+                if (ind['Volume']) {
+                    factors.push(`Volume: ${ind['Volume'].value}`);
+                }
+                if (ind['Trend']) {
+                    factors.push(`Trend: ${ind['Trend'].value}`);
+                }
+
                 await sendMLPredictionAlert({
                     symbol: dbSymbol,
                     direction: predictionData.prediction.direction,
@@ -947,7 +976,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     targetPrice: predictionData.prediction.target_price,
                     stopLoss: predictionData.prediction.stop_loss,
                     timeframe: `${days} day${days > 1 ? 's' : ''}`,
-                    factors: predictionData.prediction.factors || []
+                    factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
                 });
                 console.log(`[Predictions] 📱 Telegram alert sent for ${dbSymbol} (${confidencePercent}% confidence)`);
             } catch (telegramError) {
