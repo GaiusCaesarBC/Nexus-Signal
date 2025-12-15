@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/authMiddleware');
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
