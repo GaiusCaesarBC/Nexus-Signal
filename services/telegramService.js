@@ -4,6 +4,14 @@ const User = require('../models/User');
 
 let bot = null;
 
+// Store linked group chat IDs (in production, store in DB)
+let linkedGroups = new Map(); // groupId -> { name, linkedAt, linkedBy, notifications }
+
+// Admin user IDs who can manage groups (set via env or hardcode yours)
+const ADMIN_USER_IDS = process.env.TELEGRAM_ADMIN_IDS
+    ? process.env.TELEGRAM_ADMIN_IDS.split(',')
+    : [];
+
 // Initialize the Telegram bot
 const initializeBot = () => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -127,6 +135,175 @@ const initializeBot = () => {
                 bot.sendMessage(chatId, '❌ An error occurred. Please try again.');
             }
         });
+
+        // ==================== GROUP COMMANDS ====================
+
+        // Handle /linkgroup command - link this group to receive alerts
+        bot.onText(/\/linkgroup/, async (msg) => {
+            const chatId = msg.chat.id;
+            const chatType = msg.chat.type;
+            const userId = msg.from.id.toString();
+
+            // Only works in groups
+            if (chatType !== 'group' && chatType !== 'supergroup') {
+                bot.sendMessage(chatId, '❌ This command only works in groups. Add me to a group first!');
+                return;
+            }
+
+            try {
+                // Check if user is admin of the group
+                const chatMember = await bot.getChatMember(chatId, msg.from.id);
+                const isAdmin = ['creator', 'administrator'].includes(chatMember.status);
+
+                if (!isAdmin) {
+                    bot.sendMessage(chatId, '❌ Only group admins can link this group.');
+                    return;
+                }
+
+                // Link the group
+                linkedGroups.set(chatId.toString(), {
+                    name: msg.chat.title,
+                    linkedAt: new Date(),
+                    linkedBy: msg.from.username || msg.from.first_name,
+                    linkedByUserId: userId,
+                    notifications: {
+                        economicEvents: true,
+                        whaleAlerts: true,
+                        dailySummary: true,
+                        mlPredictions: true
+                    }
+                });
+
+                // Save to environment or DB (for persistence across restarts)
+                saveGroupsToEnv();
+
+                bot.sendMessage(chatId,
+                    `✅ *Group Linked Successfully!*\n\n` +
+                    `This group will now receive Nexus Signal alerts:\n\n` +
+                    `📅 Economic Calendar Reminders\n` +
+                    `🐋 Whale Alerts\n` +
+                    `📊 Daily Market Summaries\n` +
+                    `🤖 ML Prediction Alerts\n\n` +
+                    `Use /groupstatus to see settings\n` +
+                    `Use /unlinkgroup to disconnect`,
+                    { parse_mode: 'Markdown' }
+                );
+
+                console.log(`[Telegram] Group linked: ${msg.chat.title} (${chatId})`);
+            } catch (error) {
+                console.error('Error linking group:', error);
+                bot.sendMessage(chatId, '❌ Failed to link group. Make sure I have admin permissions.');
+            }
+        });
+
+        // Handle /unlinkgroup command
+        bot.onText(/\/unlinkgroup/, async (msg) => {
+            const chatId = msg.chat.id;
+            const chatType = msg.chat.type;
+
+            if (chatType !== 'group' && chatType !== 'supergroup') {
+                bot.sendMessage(chatId, '❌ This command only works in groups.');
+                return;
+            }
+
+            try {
+                const chatMember = await bot.getChatMember(chatId, msg.from.id);
+                const isAdmin = ['creator', 'administrator'].includes(chatMember.status);
+
+                if (!isAdmin) {
+                    bot.sendMessage(chatId, '❌ Only group admins can unlink this group.');
+                    return;
+                }
+
+                if (!linkedGroups.has(chatId.toString())) {
+                    bot.sendMessage(chatId, '❓ This group is not linked.');
+                    return;
+                }
+
+                linkedGroups.delete(chatId.toString());
+                saveGroupsToEnv();
+
+                bot.sendMessage(chatId,
+                    `👋 *Group Unlinked*\n\n` +
+                    `This group will no longer receive Nexus Signal alerts.\n` +
+                    `Use /linkgroup to reconnect anytime.`,
+                    { parse_mode: 'Markdown' }
+                );
+
+                console.log(`[Telegram] Group unlinked: ${msg.chat.title} (${chatId})`);
+            } catch (error) {
+                console.error('Error unlinking group:', error);
+                bot.sendMessage(chatId, '❌ An error occurred. Please try again.');
+            }
+        });
+
+        // Handle /groupstatus command
+        bot.onText(/\/groupstatus/, async (msg) => {
+            const chatId = msg.chat.id;
+            const chatType = msg.chat.type;
+
+            if (chatType !== 'group' && chatType !== 'supergroup') {
+                bot.sendMessage(chatId, '❌ This command only works in groups.');
+                return;
+            }
+
+            const group = linkedGroups.get(chatId.toString());
+
+            if (!group) {
+                bot.sendMessage(chatId,
+                    `❓ *Group Not Linked*\n\n` +
+                    `Use /linkgroup to start receiving Nexus Signal alerts in this group.`,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            const prefs = group.notifications || {};
+            bot.sendMessage(chatId,
+                `📊 *Group Status*\n\n` +
+                `Group: ${group.name}\n` +
+                `Linked by: @${group.linkedBy}\n` +
+                `Linked: ${group.linkedAt ? new Date(group.linkedAt).toLocaleDateString() : 'Unknown'}\n\n` +
+                `*Active Notifications:*\n` +
+                `📅 Economic Events: ${prefs.economicEvents !== false ? '✅' : '❌'}\n` +
+                `🐋 Whale Alerts: ${prefs.whaleAlerts !== false ? '✅' : '❌'}\n` +
+                `📊 Daily Summary: ${prefs.dailySummary !== false ? '✅' : '❌'}\n` +
+                `🤖 ML Predictions: ${prefs.mlPredictions !== false ? '✅' : '❌'}`,
+                { parse_mode: 'Markdown' }
+            );
+        });
+
+        // Handle /help command
+        bot.onText(/\/help/, (msg) => {
+            const chatId = msg.chat.id;
+            const chatType = msg.chat.type;
+
+            if (chatType === 'group' || chatType === 'supergroup') {
+                bot.sendMessage(chatId,
+                    `📚 *Nexus Signal Bot - Group Commands*\n\n` +
+                    `/linkgroup - Link this group to receive alerts\n` +
+                    `/unlinkgroup - Stop receiving alerts\n` +
+                    `/groupstatus - View group settings\n` +
+                    `/help - Show this help message\n\n` +
+                    `_Only group admins can link/unlink groups_`,
+                    { parse_mode: 'Markdown' }
+                );
+            } else {
+                bot.sendMessage(chatId,
+                    `📚 *Nexus Signal Bot - Commands*\n\n` +
+                    `/start - Link your account\n` +
+                    `/stop - Unlink your account\n` +
+                    `/status - View notification settings\n` +
+                    `/help - Show this help message\n\n` +
+                    `*Group Commands:*\n` +
+                    `Add me to a group and use /linkgroup to receive alerts there!`,
+                    { parse_mode: 'Markdown' }
+                );
+            }
+        });
+
+        // Load saved groups on startup
+        loadGroupsFromEnv();
 
         console.log('✅ Telegram bot initialized successfully');
         return bot;
@@ -332,6 +509,121 @@ const broadcastToSubscribers = async (preferenceKey, message) => {
     }
 };
 
+// ==================== GROUP BROADCAST FUNCTIONS ====================
+
+// Send message to all linked groups
+const sendToAllGroups = async (message, preferenceKey = null) => {
+    if (!bot) return { sent: 0, failed: 0 };
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const [groupId, group] of linkedGroups) {
+        // Check if this notification type is enabled for the group
+        if (preferenceKey && group.notifications && group.notifications[preferenceKey] === false) {
+            continue;
+        }
+
+        try {
+            await bot.sendMessage(groupId, message, { parse_mode: 'Markdown' });
+            sent++;
+            await new Promise(resolve => setTimeout(resolve, 100)); // Rate limiting
+        } catch (error) {
+            console.error(`Error sending to group ${groupId}:`, error.message);
+            failed++;
+            // If bot was removed from group, unlink it
+            if (error.response?.statusCode === 403) {
+                linkedGroups.delete(groupId);
+                saveGroupsToEnv();
+            }
+        }
+    }
+
+    return { sent, failed };
+};
+
+// Send to a specific group by ID
+const sendToGroup = async (groupId, message) => {
+    if (!bot) return false;
+    if (!linkedGroups.has(groupId.toString())) return false;
+
+    try {
+        await bot.sendMessage(groupId, message, { parse_mode: 'Markdown' });
+        return true;
+    } catch (error) {
+        console.error(`Error sending to group ${groupId}:`, error.message);
+        return false;
+    }
+};
+
+// Broadcast alert to both users and groups
+const broadcastAlert = async (preferenceKey, message) => {
+    const userResults = await broadcastToSubscribers(preferenceKey, message);
+    const groupResults = await sendToAllGroups(message, preferenceKey);
+
+    return {
+        users: userResults,
+        groups: groupResults,
+        total: {
+            sent: userResults.sent + groupResults.sent,
+            failed: userResults.failed + groupResults.failed
+        }
+    };
+};
+
+// Get linked groups
+const getLinkedGroups = () => {
+    return Array.from(linkedGroups.entries()).map(([id, data]) => ({
+        id,
+        ...data
+    }));
+};
+
+// Check if a group is linked
+const isGroupLinked = (groupId) => {
+    return linkedGroups.has(groupId.toString());
+};
+
+// ==================== GROUP PERSISTENCE ====================
+
+// Save groups to a JSON file for persistence
+const saveGroupsToEnv = () => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const dataPath = path.join(__dirname, '../data');
+
+        // Create data directory if it doesn't exist
+        if (!fs.existsSync(dataPath)) {
+            fs.mkdirSync(dataPath, { recursive: true });
+        }
+
+        const groupsFile = path.join(dataPath, 'telegram-groups.json');
+        const groupsData = Object.fromEntries(linkedGroups);
+        fs.writeFileSync(groupsFile, JSON.stringify(groupsData, null, 2));
+        console.log(`[Telegram] Saved ${linkedGroups.size} groups to file`);
+    } catch (error) {
+        console.error('Error saving groups:', error);
+    }
+};
+
+// Load groups from JSON file on startup
+const loadGroupsFromEnv = () => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const groupsFile = path.join(__dirname, '../data/telegram-groups.json');
+
+        if (fs.existsSync(groupsFile)) {
+            const data = JSON.parse(fs.readFileSync(groupsFile, 'utf8'));
+            linkedGroups = new Map(Object.entries(data));
+            console.log(`[Telegram] Loaded ${linkedGroups.size} groups from file`);
+        }
+    } catch (error) {
+        console.error('Error loading groups:', error);
+    }
+};
+
 // Helper function to format numbers
 const formatNumber = (num) => {
     if (num === null || num === undefined) return '0';
@@ -358,5 +650,11 @@ module.exports = {
     sendDailySummary,
     sendMLPredictionAlert,
     sendPriceAlert,
-    broadcastToSubscribers
+    broadcastToSubscribers,
+    // Group functions
+    sendToAllGroups,
+    sendToGroup,
+    broadcastAlert,
+    getLinkedGroups,
+    isGroupLinked
 };

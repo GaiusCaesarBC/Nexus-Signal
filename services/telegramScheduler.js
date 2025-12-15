@@ -54,19 +54,35 @@ const startEconomicEventReminders = () => {
 
                         console.log(`📅 Sending economic event reminder: ${event.event} to ${users.length} users`);
 
-                        for (const user of users) {
-                            await telegramService.sendEconomicEventReminder(user._id, {
-                                title: event.event,
-                                time: eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }),
-                                country: event.country,
-                                impact: 'High',
-                                previous: event.prev,
-                                forecast: event.estimate,
-                                minutesUntil: Math.round(minutesUntil)
-                            });
+                        const eventData = {
+                            title: event.event,
+                            time: eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }),
+                            country: event.country,
+                            impact: 'High',
+                            previous: event.prev,
+                            forecast: event.estimate,
+                            minutesUntil: Math.round(minutesUntil)
+                        };
 
-                            // Small delay to avoid rate limiting
+                        for (const user of users) {
+                            await telegramService.sendEconomicEventReminder(user._id, eventData);
                             await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+
+                        // Also send to all linked groups
+                        const groupMessage =
+                            `📅 *Economic Event Reminder*\n\n` +
+                            `*${eventData.title}*\n` +
+                            `🕐 Time: ${eventData.time}\n` +
+                            `📍 Country: ${eventData.country || 'US'}\n` +
+                            `⚡ Impact: ${eventData.impact}\n` +
+                            `${eventData.previous ? `📊 Previous: ${eventData.previous}\n` : ''}` +
+                            `${eventData.forecast ? `🎯 Forecast: ${eventData.forecast}\n` : ''}\n` +
+                            `_Event starts in ${eventData.minutesUntil} minutes_`;
+
+                        const groupResults = await telegramService.sendToAllGroups(groupMessage, 'economicEvents');
+                        if (groupResults.sent > 0) {
+                            console.log(`📅 Economic event reminder sent to ${groupResults.sent} groups`);
                         }
 
                         // Clean up old reminders after 1 hour
@@ -111,6 +127,43 @@ const startDailySummaryScheduler = () => {
             }
 
             console.log(`☀️ Daily summaries sent to ${users.length} users`);
+
+            // Also send to all linked groups
+            const marketEmoji = summary.marketTrend === 'bullish' ? '📈' : summary.marketTrend === 'bearish' ? '📉' : '📊';
+            let groupMessage =
+                `☀️ *Daily Market Summary*\n` +
+                `_${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}_\n\n` +
+                `${marketEmoji} *Market Overview*\n`;
+
+            if (summary.indices && summary.indices.length > 0) {
+                groupMessage += `\n*Major Indices:*\n`;
+                summary.indices.forEach(idx => {
+                    const emoji = idx.change >= 0 ? '🟢' : '🔴';
+                    const sign = idx.change >= 0 ? '+' : '';
+                    groupMessage += `${emoji} ${idx.name}: ${sign}${idx.change.toFixed(2)}%\n`;
+                });
+            }
+
+            if (summary.topGainers && summary.topGainers.length > 0) {
+                groupMessage += `\n*Top Gainers:*\n`;
+                summary.topGainers.slice(0, 3).forEach(stock => {
+                    groupMessage += `🚀 ${stock.symbol}: +${stock.change.toFixed(2)}%\n`;
+                });
+            }
+
+            if (summary.topLosers && summary.topLosers.length > 0) {
+                groupMessage += `\n*Top Losers:*\n`;
+                summary.topLosers.slice(0, 3).forEach(stock => {
+                    groupMessage += `📉 ${stock.symbol}: ${stock.change.toFixed(2)}%\n`;
+                });
+            }
+
+            groupMessage += `\n_Have a great trading day!_ 🎯`;
+
+            const groupResults = await telegramService.sendToAllGroups(groupMessage, 'dailySummary');
+            if (groupResults.sent > 0) {
+                console.log(`☀️ Daily summary sent to ${groupResults.sent} groups`);
+            }
         } catch (error) {
             console.error('Error sending daily summaries:', error.message);
         }
@@ -180,7 +233,16 @@ const generateDailySummary = async () => {
 
 // ==================== WHALE ALERT NOTIFICATIONS ====================
 
-// Function to send whale alert to subscribed users
+// Helper to format numbers for messages
+const formatNumber = (num) => {
+    if (num === null || num === undefined) return '0';
+    if (num >= 1000000000) return (num / 1000000000).toFixed(2) + 'B';
+    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
+    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+
+// Function to send whale alert to subscribed users AND groups
 const sendWhaleAlertToSubscribers = async (alert) => {
     try {
         const alertKey = `${alert.symbol}-${alert.amount}-${Date.now()}`;
@@ -201,6 +263,25 @@ const sendWhaleAlertToSubscribers = async (alert) => {
             await new Promise(resolve => setTimeout(resolve, 50));
         }
 
+        // Also send to all linked groups
+        const emoji = alert.type === 'buy' ? '🟢' : '🔴';
+        const action = alert.type === 'buy' ? 'BOUGHT' : 'SOLD';
+        const groupMessage =
+            `🐋 *Whale Alert!*\n\n` +
+            `${emoji} Large ${alert.assetType || 'crypto'} movement detected!\n\n` +
+            `*${alert.symbol}*\n` +
+            `💰 Amount: $${formatNumber(alert.amount)}\n` +
+            `📊 Quantity: ${formatNumber(alert.quantity)}\n` +
+            `💵 Price: $${formatNumber(alert.price)}\n` +
+            `📈 Action: ${action}\n` +
+            `${alert.exchange ? `🏦 Exchange: ${alert.exchange}\n` : ''}` +
+            `\n_Detected ${alert.timeAgo || 'just now'}_`;
+
+        const groupResults = await telegramService.sendToAllGroups(groupMessage, 'whaleAlerts');
+        if (groupResults.sent > 0) {
+            console.log(`🐋 Whale alert sent to ${groupResults.sent} groups`);
+        }
+
         // Clean up after 5 minutes
         setTimeout(() => sentWhaleAlerts.delete(alertKey), 5 * 60 * 1000);
     } catch (error) {
@@ -210,7 +291,7 @@ const sendWhaleAlertToSubscribers = async (alert) => {
 
 // ==================== ML PREDICTION ALERTS ====================
 
-// Function to send ML prediction alert to subscribed users
+// Function to send ML prediction alert to subscribed users AND groups
 const sendMLPredictionAlert = async (prediction) => {
     try {
         // Only alert for high confidence predictions (>70%)
@@ -227,6 +308,28 @@ const sendMLPredictionAlert = async (prediction) => {
         for (const user of users) {
             await telegramService.sendMLPredictionAlert(user._id, prediction);
             await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        // Also send to all linked groups
+        const directionEmoji = prediction.direction === 'bullish' ? '📈' : '📉';
+        const confidenceEmoji = prediction.confidence >= 0.8 ? '🔥' : prediction.confidence >= 0.6 ? '✨' : '💡';
+
+        const groupMessage =
+            `🤖 *New ML Prediction Alert*\n\n` +
+            `${directionEmoji} *${prediction.symbol}*\n\n` +
+            `📊 Prediction: *${prediction.direction.toUpperCase()}*\n` +
+            `${confidenceEmoji} Confidence: ${(prediction.confidence * 100).toFixed(1)}%\n` +
+            `💵 Current Price: $${formatNumber(prediction.currentPrice)}\n` +
+            `🎯 Target: $${formatNumber(prediction.targetPrice)}\n` +
+            `${prediction.stopLoss ? `🛑 Stop Loss: $${formatNumber(prediction.stopLoss)}\n` : ''}` +
+            `⏰ Timeframe: ${prediction.timeframe || '24h'}\n\n` +
+            `*Key Factors:*\n` +
+            `${prediction.factors ? prediction.factors.map(f => `• ${f}`).join('\n') : '• Technical analysis\n• Market sentiment'}` +
+            `\n\n_⚠️ This is not financial advice. Trade responsibly._`;
+
+        const groupResults = await telegramService.sendToAllGroups(groupMessage, 'mlPredictions');
+        if (groupResults.sent > 0) {
+            console.log(`🤖 ML prediction alert sent to ${groupResults.sent} groups`);
         }
     } catch (error) {
         console.error('Error sending ML prediction alerts:', error.message);
