@@ -290,6 +290,7 @@ const financialsRoutes = require('./routes/financialsRoutes'); // Company Financ
 const marketReportsRoutes = require('./routes/marketReportsRoutes'); // AI Market Reports
 const sectorRotationRoutes = require('./routes/sectorRotationRoutes'); // Sector Rotation
 const economicCalendarRoutes = require('./routes/economicCalendarRoutes'); // Economic Calendar
+const technicalIndicatorsRoutes = require('./routes/technicalIndicatorsRoutes'); // Technical Indicators
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -375,6 +376,7 @@ app.use('/api/financials', financialsRoutes); // 📊 Company Financials
 app.use('/api/market-reports', marketReportsRoutes); // 📈 AI Market Reports
 app.use('/api/sector-rotation', sectorRotationRoutes); // 🔄 Sector Rotation
 app.use('/api/economic-calendar', economicCalendarRoutes); // 📅 Economic Calendar
+app.use('/api/indicators', technicalIndicatorsRoutes); // 📊 Technical Indicators
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
