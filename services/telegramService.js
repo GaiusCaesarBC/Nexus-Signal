@@ -624,13 +624,21 @@ const loadGroupsFromEnv = () => {
     }
 };
 
-// Helper function to format numbers
+// Helper function to format numbers (with proper decimal precision for prices)
 const formatNumber = (num) => {
     if (num === null || num === undefined) return '0';
+
+    // For large numbers, abbreviate
     if (num >= 1000000000) return (num / 1000000000).toFixed(2) + 'B';
     if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
     if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
-    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+    // For prices, show appropriate decimal places
+    if (num >= 100) return num.toFixed(2);           // $100+ -> 2 decimals
+    if (num >= 1) return num.toFixed(4);             // $1-$100 -> 4 decimals
+    if (num >= 0.01) return num.toFixed(6);          // $0.01-$1 -> 6 decimals
+    if (num >= 0.0001) return num.toFixed(8);        // Small prices -> 8 decimals
+    return num.toFixed(10);                          // Very small prices -> 10 decimals
 };
 
 // Get bot instance
