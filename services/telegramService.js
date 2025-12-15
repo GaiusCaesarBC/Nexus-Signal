@@ -448,13 +448,14 @@ const sendDailySummary = async (userId, summary) => {
 // ML Prediction Alert
 const sendMLPredictionAlert = async (userId, prediction) => {
     const directionEmoji = prediction.direction === 'bullish' ? '📈' : '📉';
-    const confidenceEmoji = prediction.confidence >= 0.8 ? '🔥' : prediction.confidence >= 0.6 ? '✨' : '💡';
+    // Confidence thresholds now in percentage form (80 = 80%, not 0.8)
+    const confidenceEmoji = prediction.confidence >= 80 ? '🔥' : prediction.confidence >= 60 ? '✨' : '💡';
 
     const message =
         `🤖 *New ML Prediction Alert*\n\n` +
         `${directionEmoji} *${prediction.symbol}*\n\n` +
         `📊 Prediction: *${prediction.direction.toUpperCase()}*\n` +
-        `${confidenceEmoji} Confidence: ${(prediction.confidence * 100).toFixed(1)}%\n` +
+        `${confidenceEmoji} Confidence: ${prediction.confidence.toFixed(1)}%\n` +
         `💵 Current Price: $${formatNumber(prediction.currentPrice)}\n` +
         `🎯 Target: $${formatNumber(prediction.targetPrice)}\n` +
         `${prediction.stopLoss ? `🛑 Stop Loss: $${formatNumber(prediction.stopLoss)}\n` : ''}` +

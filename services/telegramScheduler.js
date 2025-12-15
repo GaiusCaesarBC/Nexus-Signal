@@ -303,7 +303,8 @@ const sendWhaleAlertToSubscribers = async (alert) => {
 const sendMLPredictionAlert = async (prediction) => {
     try {
         // Only alert for high confidence predictions (>70%)
-        if (prediction.confidence < 0.7) return;
+        // Confidence is now passed as raw percentage (e.g., 87.5 not 0.875)
+        if (prediction.confidence < 70) return;
 
         // Get users who want ML prediction alerts
         const users = await User.find({
@@ -320,13 +321,14 @@ const sendMLPredictionAlert = async (prediction) => {
 
         // Also send to all linked groups
         const directionEmoji = prediction.direction === 'bullish' ? '📈' : '📉';
-        const confidenceEmoji = prediction.confidence >= 0.8 ? '🔥' : prediction.confidence >= 0.6 ? '✨' : '💡';
+        // Confidence thresholds now in percentage form (80 = 80%, not 0.8)
+        const confidenceEmoji = prediction.confidence >= 80 ? '🔥' : prediction.confidence >= 60 ? '✨' : '💡';
 
         const groupMessage =
             `🤖 *New ML Prediction Alert*\n\n` +
             `${directionEmoji} *${prediction.symbol}*\n\n` +
             `📊 Prediction: *${prediction.direction.toUpperCase()}*\n` +
-            `${confidenceEmoji} Confidence: ${(prediction.confidence * 100).toFixed(1)}%\n` +
+            `${confidenceEmoji} Confidence: ${prediction.confidence.toFixed(1)}%\n` +
             `💵 Current Price: $${formatNumber(prediction.currentPrice)}\n` +
             `🎯 Target: $${formatNumber(prediction.targetPrice)}\n` +
             `${prediction.stopLoss ? `🛑 Stop Loss: $${formatNumber(prediction.stopLoss)}\n` : ''}` +

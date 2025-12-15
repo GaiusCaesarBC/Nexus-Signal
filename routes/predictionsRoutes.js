@@ -971,7 +971,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                 await sendMLPredictionAlert({
                     symbol: dbSymbol,
                     direction: predictionData.prediction.direction,
-                    confidence: confidencePercent / 100, // Convert to 0-1 scale
+                    confidence: confidencePercent, // Send raw percentage (matches website display)
                     currentPrice: predictionData.current_price,
                     targetPrice: predictionData.prediction.target_price,
                     stopLoss: predictionData.prediction.stop_loss,
