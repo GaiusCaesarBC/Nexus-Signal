@@ -190,6 +190,15 @@ const connectDB = async () => {
         // Delay scheduler start to ensure bot is fully initialized
         setTimeout(() => initializeSchedulers(), 5000);
 
+        // ✅ INITIALIZE DISCORD BOT
+        const { initializeBot: initializeDiscordBot } = require('./services/discordService');
+        initializeDiscordBot();
+
+        // ✅ INITIALIZE DISCORD NOTIFICATION SCHEDULERS
+        const { initializeSchedulers: initializeDiscordSchedulers } = require('./services/discordScheduler');
+        // Delay scheduler start to ensure bot is fully initialized (after Telegram)
+        setTimeout(() => initializeDiscordSchedulers(), 7000);
+
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);
     }
@@ -301,6 +310,7 @@ const sectorRotationRoutes = require('./routes/sectorRotationRoutes'); // Sector
 const economicCalendarRoutes = require('./routes/economicCalendarRoutes'); // Economic Calendar
 const technicalIndicatorsRoutes = require('./routes/technicalIndicatorsRoutes'); // Technical Indicators
 const telegramRoutes = require('./routes/telegramRoutes'); // Telegram Bot Notifications
+const discordRoutes = require('./routes/discordRoutes'); // Discord Bot Notifications
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -388,6 +398,7 @@ app.use('/api/sector-rotation', sectorRotationRoutes); // 🔄 Sector Rotation
 app.use('/api/economic-calendar', economicCalendarRoutes); // 📅 Economic Calendar
 app.use('/api/indicators', technicalIndicatorsRoutes); // 📊 Technical Indicators
 app.use('/api/telegram', telegramRoutes); // 📱 Telegram Bot Notifications
+app.use('/api/discord', discordRoutes); // 🎮 Discord Bot Notifications
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 

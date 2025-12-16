@@ -10,6 +10,7 @@ const {
     calculateMACD,
     calculateBollingerBands,
 } = require('../utils/indicators');
+const { sanitizeSymbol, encodeSymbolForUrl } = require('../utils/symbolValidation');
 
 const { getSentimentSignal } = require('../services/sentimentService');
 
@@ -161,13 +162,22 @@ async function fetchAlphaVantageData(symbol, range) {
 router.get('/:symbol', async (req, res, next) => {
     try {
         const { symbol } = req.params;
-        
+
         // Skip if this is a sub-route (quote, historical, prediction)
         if (['quote', 'historical', 'prediction', 'search'].includes(symbol.toLowerCase())) {
             return next();
         }
-        
-        const upperSymbol = symbol.toUpperCase();
+
+        // Validate symbol to prevent SSRF/injection attacks
+        let upperSymbol;
+        try {
+            upperSymbol = sanitizeSymbol(symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
 
         // Check cache
         const cacheKey = `stock-${upperSymbol}`;
@@ -300,8 +310,16 @@ router.get('/:symbol', async (req, res, next) => {
 // ============================================
 router.get('/quote/:symbol', async (req, res) => {
     try {
-        const { symbol } = req.params;
-        const upperSymbol = symbol.toUpperCase();
+        // Validate symbol to prevent SSRF/injection attacks
+        let upperSymbol;
+        try {
+            upperSymbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
 
         // Check cache
         const cacheKey = `quote-${upperSymbol}`;
@@ -562,7 +580,17 @@ router.get('/quote/:symbol', async (req, res) => {
 // ============================================
 router.get('/:symbol/historical', async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const { range = '6M' } = req.query;
 
         const cacheKey = `hist-${symbol}-${range}`;
@@ -605,7 +633,17 @@ router.get('/:symbol/historical', async (req, res) => {
 // Also support the old route pattern for backwards compatibility
 router.get('/historical/:symbol', async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const { range = '6M' } = req.query;
 
         const cacheKey = `hist-${symbol}-${range}`;
@@ -651,7 +689,17 @@ router.get('/historical/:symbol', async (req, res) => {
 // ============================================
 router.get('/:symbol/prediction', async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const { range = '6M' } = req.query;
 
         const cacheKey = `pred-${symbol}-${range}`;
@@ -710,7 +758,17 @@ router.get('/:symbol/prediction', async (req, res) => {
 // Also support the old route pattern for backwards compatibility
 router.get('/prediction/:symbol', async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const { range = '6M' } = req.query;
 
         const cacheKey = `pred-${symbol}-${range}`;

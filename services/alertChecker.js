@@ -6,6 +6,8 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const axios = require('axios');
 const { sendPriceAlertEmail } = require('./emailService');
+const { calculateRSI, calculateMACD, calculateBollingerBands } = require('../utils/indicators');
+const { getChartData } = require('./chartService');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -23,6 +25,10 @@ const cryptoSymbolMap = {
 // Price cache to avoid excessive API calls
 const priceCache = {};
 const CACHE_DURATION = 60000; // 1 minute
+
+// Technical indicator cache (stores previous values for crossover detection)
+const indicatorStateCache = new Map(); // symbol -> { rsi, macdLine, macdSignal, bollingerUpper, bollingerLower, price, timestamp }
+const INDICATOR_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Fetch stock price from Alpha Vantage
 async function fetchStockPrice(symbol) {
@@ -131,16 +137,44 @@ async function createNotification(alert) {
 
 function getAlertTitle(alert) {
     switch (alert.type) {
+        // Price alerts
         case 'price_above':
             return `🚀 ${alert.symbol} Price Alert`;
         case 'price_below':
             return `📉 ${alert.symbol} Price Alert`;
         case 'percent_change':
             return `📊 ${alert.symbol} Movement Alert`;
+
+        // System alerts
         case 'prediction_expiry':
             return `⏰ Prediction Expiring Soon`;
         case 'portfolio_value':
             return `💼 Portfolio Milestone`;
+
+        // RSI alerts
+        case 'rsi_oversold':
+            return `📉 ${alert.symbol} RSI Oversold`;
+        case 'rsi_overbought':
+            return `📈 ${alert.symbol} RSI Overbought`;
+
+        // MACD alerts
+        case 'macd_bullish_crossover':
+            return `✨ ${alert.symbol} MACD Bullish Crossover`;
+        case 'macd_bearish_crossover':
+            return `⚠️ ${alert.symbol} MACD Bearish Crossover`;
+
+        // Bollinger alerts
+        case 'bollinger_upper_breakout':
+            return `🔥 ${alert.symbol} Bollinger Upper Breakout`;
+        case 'bollinger_lower_breakout':
+            return `❄️ ${alert.symbol} Bollinger Lower Breakout`;
+
+        // Support/Resistance alerts
+        case 'support_test':
+            return `🛡️ ${alert.symbol} Testing Support`;
+        case 'resistance_test':
+            return `🎯 ${alert.symbol} Testing Resistance`;
+
         default:
             return 'Alert Triggered';
     }
@@ -149,17 +183,48 @@ function getAlertTitle(alert) {
 function getAlertMessage(alert) {
     if (alert.customMessage) return alert.customMessage;
 
+    const triggerData = alert.technicalTriggerData || {};
+    const params = alert.technicalParams || {};
+
     switch (alert.type) {
+        // Price alerts
         case 'price_above':
             return `${alert.symbol} reached $${alert.triggeredPrice?.toFixed(2)} (Target: $${alert.targetPrice})`;
         case 'price_below':
             return `${alert.symbol} dropped to $${alert.triggeredPrice?.toFixed(2)} (Target: $${alert.targetPrice})`;
         case 'percent_change':
             return `${alert.symbol} changed ${alert.percentChange > 0 ? '+' : ''}${alert.percentChange}% in ${alert.timeframe}`;
+
+        // System alerts
         case 'prediction_expiry':
             return 'Your prediction is about to expire';
         case 'portfolio_value':
             return `Your portfolio reached $${alert.portfolioThreshold}`;
+
+        // RSI alerts
+        case 'rsi_oversold':
+            return `${alert.symbol} RSI dropped to ${triggerData.indicatorValue?.toFixed(1) || 'N/A'} (below ${params.rsiThreshold || 30}) - Oversold territory`;
+        case 'rsi_overbought':
+            return `${alert.symbol} RSI rose to ${triggerData.indicatorValue?.toFixed(1) || 'N/A'} (above ${params.rsiThreshold || 70}) - Overbought territory`;
+
+        // MACD alerts
+        case 'macd_bullish_crossover':
+            return `${alert.symbol} MACD line crossed above signal line - Bullish momentum`;
+        case 'macd_bearish_crossover':
+            return `${alert.symbol} MACD line crossed below signal line - Bearish momentum`;
+
+        // Bollinger alerts
+        case 'bollinger_upper_breakout':
+            return `${alert.symbol} broke above upper Bollinger Band at $${alert.triggeredPrice?.toFixed(2)} - Potential breakout`;
+        case 'bollinger_lower_breakout':
+            return `${alert.symbol} broke below lower Bollinger Band at $${alert.triggeredPrice?.toFixed(2)} - Potential breakdown`;
+
+        // Support/Resistance alerts
+        case 'support_test':
+            return `${alert.symbol} testing support at $${params.supportLevel?.toFixed(2)} (Current: $${alert.triggeredPrice?.toFixed(2)})`;
+        case 'resistance_test':
+            return `${alert.symbol} testing resistance at $${params.resistanceLevel?.toFixed(2)} (Current: $${alert.triggeredPrice?.toFixed(2)})`;
+
         default:
             return 'Your alert condition has been met';
     }
@@ -334,6 +399,306 @@ async function cleanupOldAlerts() {
     }
 }
 
+// ==================== TECHNICAL ALERT CHECKING ====================
+
+// Calculate indicators for a symbol
+async function calculateIndicatorsForSymbol(symbol) {
+    try {
+        // Fetch chart data (daily candles)
+        const chartResult = await getChartData(symbol, '1D');
+
+        if (!chartResult.success || !chartResult.data || chartResult.data.length < 30) {
+            console.log(`[AlertChecker] Insufficient data for ${symbol} indicators`);
+            return null;
+        }
+
+        const candles = chartResult.data;
+        const closes = candles.map(c => c.close);
+        const currentPrice = closes[closes.length - 1];
+
+        // Calculate indicators
+        const rsi = calculateRSI(closes, 14);
+        const macd = calculateMACD(closes, 12, 26, 9);
+        const bollinger = calculateBollingerBands(candles, 20, 2);
+
+        return {
+            rsi,
+            macdLine: macd.macd,
+            macdSignal: macd.signal,
+            macdHistogram: macd.histogram,
+            bollingerUpper: bollinger.upper,
+            bollingerMid: bollinger.mid,
+            bollingerLower: bollinger.lower,
+            currentPrice,
+            timestamp: Date.now()
+        };
+    } catch (error) {
+        console.error(`[AlertChecker] Error calculating indicators for ${symbol}:`, error.message);
+        return null;
+    }
+}
+
+// Check a single technical alert
+async function checkTechnicalAlert(alert, indicators, previousState) {
+    try {
+        const params = alert.technicalParams || {};
+        let triggered = false;
+        let triggerData = {};
+
+        switch (alert.type) {
+            case 'rsi_oversold': {
+                const threshold = params.rsiThreshold || 30;
+                if (indicators.rsi !== null && indicators.rsi <= threshold) {
+                    // Only trigger if RSI wasn't already below threshold (to avoid repeated triggers)
+                    const wasAbove = !previousState || previousState.rsi > threshold;
+                    if (wasAbove) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.rsi,
+                            indicatorName: 'RSI',
+                            signalDescription: `RSI dropped below ${threshold}`
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'rsi_overbought': {
+                const threshold = params.rsiThreshold || 70;
+                if (indicators.rsi !== null && indicators.rsi >= threshold) {
+                    const wasBelow = !previousState || previousState.rsi < threshold;
+                    if (wasBelow) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.rsi,
+                            indicatorName: 'RSI',
+                            signalDescription: `RSI rose above ${threshold}`
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'macd_bullish_crossover': {
+                if (indicators.macdLine !== null && indicators.macdSignal !== null && previousState) {
+                    const crossedAbove = indicators.macdLine > indicators.macdSignal &&
+                        previousState.macdLine <= previousState.macdSignal;
+                    if (crossedAbove) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.macdLine,
+                            indicatorName: 'MACD',
+                            signalDescription: 'MACD line crossed above signal line'
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'macd_bearish_crossover': {
+                if (indicators.macdLine !== null && indicators.macdSignal !== null && previousState) {
+                    const crossedBelow = indicators.macdLine < indicators.macdSignal &&
+                        previousState.macdLine >= previousState.macdSignal;
+                    if (crossedBelow) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.macdLine,
+                            indicatorName: 'MACD',
+                            signalDescription: 'MACD line crossed below signal line'
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'bollinger_upper_breakout': {
+                if (indicators.bollingerUpper !== null && previousState) {
+                    const brokeAbove = indicators.currentPrice > indicators.bollingerUpper &&
+                        previousState.currentPrice <= previousState.bollingerUpper;
+                    if (brokeAbove) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.bollingerUpper,
+                            indicatorName: 'Bollinger Bands',
+                            signalDescription: 'Price broke above upper band'
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'bollinger_lower_breakout': {
+                if (indicators.bollingerLower !== null && previousState) {
+                    const brokeBelow = indicators.currentPrice < indicators.bollingerLower &&
+                        previousState.currentPrice >= previousState.bollingerLower;
+                    if (brokeBelow) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: indicators.bollingerLower,
+                            indicatorName: 'Bollinger Bands',
+                            signalDescription: 'Price broke below lower band'
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'support_test': {
+                const supportLevel = params.supportLevel;
+                const tolerance = (params.tolerance || 2) / 100; // Convert percentage to decimal
+                if (supportLevel && indicators.currentPrice) {
+                    const withinTolerance = Math.abs(indicators.currentPrice - supportLevel) / supportLevel <= tolerance;
+                    const wasAbove = !previousState || previousState.currentPrice > supportLevel * (1 + tolerance);
+                    if (withinTolerance && wasAbove) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: supportLevel,
+                            indicatorName: 'Support Level',
+                            signalDescription: `Price approaching support at $${supportLevel.toFixed(2)}`
+                        };
+                    }
+                }
+                break;
+            }
+
+            case 'resistance_test': {
+                const resistanceLevel = params.resistanceLevel;
+                const tolerance = (params.tolerance || 2) / 100;
+                if (resistanceLevel && indicators.currentPrice) {
+                    const withinTolerance = Math.abs(indicators.currentPrice - resistanceLevel) / resistanceLevel <= tolerance;
+                    const wasBelow = !previousState || previousState.currentPrice < resistanceLevel * (1 - tolerance);
+                    if (withinTolerance && wasBelow) {
+                        triggered = true;
+                        triggerData = {
+                            indicatorValue: resistanceLevel,
+                            indicatorName: 'Resistance Level',
+                            signalDescription: `Price approaching resistance at $${resistanceLevel.toFixed(2)}`
+                        };
+                    }
+                }
+                break;
+            }
+        }
+
+        if (triggered) {
+            // Update alert status
+            alert.status = 'triggered';
+            alert.triggeredAt = new Date();
+            alert.triggeredPrice = indicators.currentPrice;
+            alert.technicalTriggerData = triggerData;
+            alert.lastChecked = new Date();
+            alert.checkCount = (alert.checkCount || 0) + 1;
+
+            // Store previous indicator values
+            alert.technicalParams = {
+                ...alert.technicalParams,
+                lastRsi: indicators.rsi,
+                lastMacdLine: indicators.macdLine,
+                lastMacdSignal: indicators.macdSignal,
+                lastBollingerUpper: indicators.bollingerUpper,
+                lastBollingerLower: indicators.bollingerLower
+            };
+
+            await alert.save();
+            await createNotification(alert);
+
+            // Send Telegram notification if user has it enabled
+            try {
+                const { sendTechnicalAlertNotification } = require('./telegramScheduler');
+                await sendTechnicalAlertNotification(alert.user, alert);
+            } catch (telegramError) {
+                console.error(`[AlertChecker] Error sending Telegram notification:`, telegramError.message);
+            }
+
+            console.log(`[AlertChecker] ✅ Technical alert triggered: ${alert.type} for ${alert.symbol}`);
+            return true;
+        }
+
+        // Update lastChecked even if not triggered
+        alert.lastChecked = new Date();
+        alert.checkCount = (alert.checkCount || 0) + 1;
+        alert.currentPrice = indicators.currentPrice;
+        await alert.save();
+
+        return false;
+
+    } catch (error) {
+        console.error(`[AlertChecker] Error checking technical alert ${alert._id}:`, error.message);
+        return false;
+    }
+}
+
+// Main function to check all technical alerts
+async function checkTechnicalAlerts() {
+    try {
+        console.log('[AlertChecker] Starting technical alert check...');
+
+        // Get all active technical alerts
+        const technicalAlerts = await Alert.getActiveTechnicalAlerts();
+
+        if (technicalAlerts.length === 0) {
+            console.log('[AlertChecker] No active technical alerts to check');
+            return;
+        }
+
+        console.log(`[AlertChecker] Checking ${technicalAlerts.length} technical alerts...`);
+
+        // Group alerts by symbol to minimize API calls
+        const alertsBySymbol = {};
+        technicalAlerts.forEach(alert => {
+            if (!alertsBySymbol[alert.symbol]) {
+                alertsBySymbol[alert.symbol] = [];
+            }
+            alertsBySymbol[alert.symbol].push(alert);
+        });
+
+        let triggeredCount = 0;
+
+        // Process each symbol
+        for (const [symbol, symbolAlerts] of Object.entries(alertsBySymbol)) {
+            console.log(`[AlertChecker] Calculating indicators for ${symbol}...`);
+
+            // Calculate indicators for this symbol
+            const indicators = await calculateIndicatorsForSymbol(symbol);
+
+            if (!indicators) {
+                console.log(`[AlertChecker] Skipping ${symbol} - could not calculate indicators`);
+                continue;
+            }
+
+            // Get previous state from cache
+            const previousState = indicatorStateCache.get(symbol);
+
+            console.log(`[AlertChecker] ${symbol}: RSI=${indicators.rsi?.toFixed(1)}, MACD=${indicators.macdLine?.toFixed(2)}, Price=$${indicators.currentPrice?.toFixed(2)}`);
+
+            // Check each alert for this symbol
+            for (const alert of symbolAlerts) {
+                const triggered = await checkTechnicalAlert(alert, indicators, previousState);
+                if (triggered) triggeredCount++;
+            }
+
+            // Update cache with current state
+            indicatorStateCache.set(symbol, {
+                rsi: indicators.rsi,
+                macdLine: indicators.macdLine,
+                macdSignal: indicators.macdSignal,
+                bollingerUpper: indicators.bollingerUpper,
+                bollingerLower: indicators.bollingerLower,
+                currentPrice: indicators.currentPrice,
+                timestamp: Date.now()
+            });
+
+            // Rate limiting between symbols
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        console.log(`[AlertChecker] Technical check complete: ${triggeredCount} alerts triggered`);
+
+    } catch (error) {
+        console.error('[AlertChecker] Error in checkTechnicalAlerts:', error.message);
+    }
+}
+
 // Start the alert checker service
 function startAlertChecker() {
     console.log('[AlertChecker] Starting alert checker service...');
@@ -342,6 +707,12 @@ function startAlertChecker() {
     cron.schedule('* * * * *', async () => {
         console.log('[AlertChecker] Running price alert check...');
         await checkAllAlerts();
+    });
+
+    // Check technical alerts every 5 minutes (less frequent due to API limits)
+    cron.schedule('*/5 * * * *', async () => {
+        console.log('[AlertChecker] Running technical alert check...');
+        await checkTechnicalAlerts();
     });
 
     // Check prediction expiry every 10 minutes
@@ -361,11 +732,13 @@ function startAlertChecker() {
         console.log('[AlertChecker] Running initial check on startup...');
         setTimeout(async () => {
             await checkAllAlerts();
+            await checkTechnicalAlerts();
         }, 10000); // Wait 10 seconds after startup
     }
 
     console.log('[AlertChecker] Cron jobs scheduled:');
     console.log('  - Price alerts: Every minute (* * * * *)');
+    console.log('  - Technical alerts: Every 5 minutes (*/5 * * * *)');
     console.log('  - Prediction expiry: Every 10 minutes (*/10 * * * *)');
     console.log('  - Cleanup: Daily at 3 AM (0 3 * * *)');
 }
@@ -374,13 +747,16 @@ function startAlertChecker() {
 async function manualCheck() {
     console.log('[AlertChecker] Manual check triggered');
     await checkAllAlerts();
+    await checkTechnicalAlerts();
     await checkPredictionExpiryAlerts();
 }
 
 module.exports = {
     startAlertChecker,
     checkAllAlerts,
+    checkTechnicalAlerts,
     checkPredictionExpiryAlerts,
     manualCheck,
-    fetchCurrentPrice // Export for use in other services
+    fetchCurrentPrice, // Export for use in other services
+    calculateIndicatorsForSymbol // Export for testing/debugging
 };

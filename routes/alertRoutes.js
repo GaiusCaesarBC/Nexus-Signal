@@ -6,6 +6,33 @@ const auth = require('../middleware/authMiddleware');
 const Alert = require('../models/Alert');
 const GamificationService = require('../services/gamificationService');
 
+// Technical alert types
+const TECHNICAL_ALERT_TYPES = [
+    'rsi_oversold', 'rsi_overbought',
+    'macd_bullish_crossover', 'macd_bearish_crossover',
+    'bollinger_upper_breakout', 'bollinger_lower_breakout',
+    'support_test', 'resistance_test'
+];
+
+// @route   GET /api/alerts/technical-types
+// @desc    Get available technical alert types
+// @access  Public
+router.get('/technical-types', (req, res) => {
+    res.json({
+        success: true,
+        types: [
+            { value: 'rsi_oversold', label: 'RSI Oversold', description: 'Alert when RSI drops below threshold (default 30)', params: ['rsiThreshold'] },
+            { value: 'rsi_overbought', label: 'RSI Overbought', description: 'Alert when RSI rises above threshold (default 70)', params: ['rsiThreshold'] },
+            { value: 'macd_bullish_crossover', label: 'MACD Bullish Crossover', description: 'Alert when MACD line crosses above signal line', params: [] },
+            { value: 'macd_bearish_crossover', label: 'MACD Bearish Crossover', description: 'Alert when MACD line crosses below signal line', params: [] },
+            { value: 'bollinger_upper_breakout', label: 'Bollinger Upper Breakout', description: 'Alert when price breaks above upper Bollinger Band', params: [] },
+            { value: 'bollinger_lower_breakout', label: 'Bollinger Lower Breakout', description: 'Alert when price breaks below lower Bollinger Band', params: [] },
+            { value: 'support_test', label: 'Support Level Test', description: 'Alert when price approaches support level', params: ['supportLevel', 'tolerance'] },
+            { value: 'resistance_test', label: 'Resistance Level Test', description: 'Alert when price approaches resistance level', params: ['resistanceLevel', 'tolerance'] }
+        ]
+    });
+});
+
 // @route   POST /api/alerts
 // @desc    Create a new alert
 // @access  Private
@@ -23,7 +50,8 @@ router.post('/', auth, async (req, res) => {
             notifyVia,
             customMessage,
             recurring,
-            expiresAt
+            expiresAt,
+            technicalParams  // NEW: For technical alerts
         } = req.body;
 
         // Validation
@@ -34,22 +62,44 @@ router.post('/', auth, async (req, res) => {
         // Validate required fields based on type
         if (['price_above', 'price_below'].includes(type)) {
             if (!symbol || !targetPrice) {
-                return res.status(400).json({ 
-                    error: 'Symbol and target price are required for price alerts' 
+                return res.status(400).json({
+                    error: 'Symbol and target price are required for price alerts'
                 });
             }
         }
 
         if (type === 'percent_change') {
             if (!symbol || !percentChange) {
-                return res.status(400).json({ 
-                    error: 'Symbol and percent change are required' 
+                return res.status(400).json({
+                    error: 'Symbol and percent change are required'
                 });
             }
         }
 
-        // Create alert
-        const alert = new Alert({
+        // Validate technical alert types
+        if (TECHNICAL_ALERT_TYPES.includes(type)) {
+            if (!symbol) {
+                return res.status(400).json({
+                    error: 'Symbol is required for technical alerts'
+                });
+            }
+
+            // Validate specific technical params
+            if (type === 'support_test' && (!technicalParams?.supportLevel)) {
+                return res.status(400).json({
+                    error: 'Support level is required for support test alerts'
+                });
+            }
+
+            if (type === 'resistance_test' && (!technicalParams?.resistanceLevel)) {
+                return res.status(400).json({
+                    error: 'Resistance level is required for resistance test alerts'
+                });
+            }
+        }
+
+        // Build alert object
+        const alertData = {
             user: req.user.id,
             type,
             symbol: symbol?.toUpperCase(),
@@ -63,7 +113,20 @@ router.post('/', auth, async (req, res) => {
             customMessage,
             recurring,
             expiresAt: expiresAt || undefined
-        });
+        };
+
+        // Add technical params if this is a technical alert
+        if (TECHNICAL_ALERT_TYPES.includes(type) && technicalParams) {
+            alertData.technicalParams = {
+                rsiThreshold: technicalParams.rsiThreshold,
+                supportLevel: technicalParams.supportLevel,
+                resistanceLevel: technicalParams.resistanceLevel,
+                tolerance: technicalParams.tolerance || 2
+            };
+        }
+
+        // Create alert
+        const alert = new Alert(alertData);
 
         await alert.save();
 
@@ -83,9 +146,9 @@ router.post('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[Alerts] Create error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to create alert',
-            message: error.message 
+            message: error.message
         });
     }
 });

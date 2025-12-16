@@ -188,29 +188,61 @@ const generateDailySummary = async () => {
                 const response = await axios.get(`https://finnhub.io/api/v1/quote`, {
                     params: { symbol: idx.symbol, token: process.env.FINNHUB_API_KEY }
                 });
-                if (response.data) {
+                if (response.data && response.data.c && response.data.pc) {
                     indicesData.push({
                         name: idx.name,
                         change: ((response.data.c - response.data.pc) / response.data.pc * 100)
                     });
                 }
             } catch (e) {
-                // Skip failed fetches
+                console.error(`Error fetching ${idx.symbol}:`, e.message);
             }
         }
 
-        // Get top movers (simplified)
-        const topGainers = [
-            { symbol: 'EXAMPLE', change: 5.2 }
+        // Fetch top movers from a watchlist of popular stocks
+        const popularStocks = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'NFLX', 'INTC',
+            'JPM', 'V', 'MA', 'DIS', 'PYPL', 'CRM', 'UBER', 'COIN', 'SQ', 'SHOP',
+            'BA', 'GS', 'MS', 'WMT', 'TGT', 'HD', 'NKE', 'SBUX', 'MCD', 'KO'
         ];
 
-        const topLosers = [
-            { symbol: 'EXAMPLE2', change: -3.1 }
-        ];
+        const stockData = [];
+
+        // Fetch quotes for popular stocks (batch to avoid rate limits)
+        for (const symbol of popularStocks) {
+            try {
+                const response = await axios.get(`https://finnhub.io/api/v1/quote`, {
+                    params: { symbol, token: process.env.FINNHUB_API_KEY }
+                });
+
+                if (response.data && response.data.c && response.data.pc && response.data.pc !== 0) {
+                    const change = ((response.data.c - response.data.pc) / response.data.pc * 100);
+                    stockData.push({
+                        symbol,
+                        price: response.data.c,
+                        change
+                    });
+                }
+
+                // Small delay to respect rate limits
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (e) {
+                // Skip failed fetches silently
+            }
+        }
+
+        // Sort to find top gainers and losers
+        const sortedByChange = [...stockData].sort((a, b) => b.change - a.change);
+        const topGainers = sortedByChange.filter(s => s.change > 0).slice(0, 5);
+        const topLosers = sortedByChange.filter(s => s.change < 0).slice(-5).reverse();
 
         // Determine market trend
-        const avgChange = indicesData.reduce((sum, idx) => sum + idx.change, 0) / indicesData.length;
+        const avgChange = indicesData.length > 0
+            ? indicesData.reduce((sum, idx) => sum + idx.change, 0) / indicesData.length
+            : 0;
         const marketTrend = avgChange > 0.5 ? 'bullish' : avgChange < -0.5 ? 'bearish' : 'neutral';
+
+        console.log(`[DailySummary] Generated: ${indicesData.length} indices, ${topGainers.length} gainers, ${topLosers.length} losers`);
 
         return {
             marketTrend,
@@ -362,6 +394,109 @@ const sendPriceAlertNotification = async (userId, alert) => {
     }
 };
 
+// ==================== TECHNICAL ALERT NOTIFICATIONS ====================
+
+// Get emoji for technical alert type
+const getTechnicalAlertEmoji = (type) => {
+    const emojiMap = {
+        'rsi_oversold': '📉',
+        'rsi_overbought': '📈',
+        'macd_bullish_crossover': '✨',
+        'macd_bearish_crossover': '⚠️',
+        'bollinger_upper_breakout': '🔥',
+        'bollinger_lower_breakout': '❄️',
+        'support_test': '🛡️',
+        'resistance_test': '🎯'
+    };
+    return emojiMap[type] || '📊';
+};
+
+// Get human-readable alert type name
+const getTechnicalAlertTypeName = (type) => {
+    const nameMap = {
+        'rsi_oversold': 'RSI Oversold',
+        'rsi_overbought': 'RSI Overbought',
+        'macd_bullish_crossover': 'MACD Bullish Crossover',
+        'macd_bearish_crossover': 'MACD Bearish Crossover',
+        'bollinger_upper_breakout': 'Bollinger Upper Breakout',
+        'bollinger_lower_breakout': 'Bollinger Lower Breakout',
+        'support_test': 'Support Level Test',
+        'resistance_test': 'Resistance Level Test'
+    };
+    return nameMap[type] || 'Technical Alert';
+};
+
+// Get trading suggestion based on alert type
+const getTechnicalAlertSuggestion = (type) => {
+    const suggestionMap = {
+        'rsi_oversold': '⚡ May indicate a buying opportunity',
+        'rsi_overbought': '⚡ May indicate a selling opportunity',
+        'macd_bullish_crossover': '⚡ Momentum shifting bullish',
+        'macd_bearish_crossover': '⚡ Momentum shifting bearish',
+        'bollinger_upper_breakout': '⚡ Potential breakout or reversal',
+        'bollinger_lower_breakout': '⚡ Potential breakdown or reversal',
+        'support_test': '⚡ Watch for bounce or breakdown',
+        'resistance_test': '⚡ Watch for breakout or rejection'
+    };
+    return suggestionMap[type] || '';
+};
+
+// Function to send technical alert when triggered
+const sendTechnicalAlertNotification = async (userId, alert) => {
+    try {
+        const user = await User.findById(userId);
+        if (!user || !user.telegramChatId) return;
+        if (user.telegramNotifications?.priceAlerts === false) return;
+
+        const emoji = getTechnicalAlertEmoji(alert.type);
+        const typeName = getTechnicalAlertTypeName(alert.type);
+        const suggestion = getTechnicalAlertSuggestion(alert.type);
+        const triggerData = alert.technicalTriggerData || {};
+        const params = alert.technicalParams || {};
+
+        let message = `${emoji} *Technical Alert Triggered!*\n\n`;
+        message += `📊 *${alert.symbol}*\n\n`;
+        message += `🔔 *${typeName}*\n\n`;
+
+        // Add specific details based on alert type
+        switch (alert.type) {
+            case 'rsi_oversold':
+            case 'rsi_overbought':
+                message += `📉 RSI: ${triggerData.indicatorValue?.toFixed(1) || 'N/A'}\n`;
+                message += `🎯 Threshold: ${params.rsiThreshold || (alert.type === 'rsi_oversold' ? 30 : 70)}\n`;
+                break;
+            case 'macd_bullish_crossover':
+            case 'macd_bearish_crossover':
+                message += `📊 ${triggerData.signalDescription || 'MACD crossover detected'}\n`;
+                break;
+            case 'bollinger_upper_breakout':
+            case 'bollinger_lower_breakout':
+                message += `📊 Band: $${triggerData.indicatorValue?.toFixed(2) || 'N/A'}\n`;
+                break;
+            case 'support_test':
+                message += `🛡️ Support: $${params.supportLevel?.toFixed(2) || 'N/A'}\n`;
+                break;
+            case 'resistance_test':
+                message += `🎯 Resistance: $${params.resistanceLevel?.toFixed(2) || 'N/A'}\n`;
+                break;
+        }
+
+        message += `💵 Price: $${formatNumber(alert.triggeredPrice || alert.currentPrice)}\n`;
+
+        if (suggestion) {
+            message += `\n${suggestion}\n`;
+        }
+
+        message += `\n_Alert set on ${new Date(alert.createdAt).toLocaleDateString()}_`;
+        message += `\n\n_⚠️ This is not financial advice. Trade responsibly._`;
+
+        await telegramService.sendToUser(userId, message);
+        console.log(`📊 Technical alert sent to user ${userId}: ${alert.type} for ${alert.symbol}`);
+    } catch (error) {
+        console.error('Error sending technical alert notification:', error.message);
+    }
+};
+
 // ==================== INITIALIZE ALL SCHEDULERS ====================
 
 const initializeSchedulers = () => {
@@ -380,5 +515,6 @@ module.exports = {
     initializeSchedulers,
     sendWhaleAlertToSubscribers,
     sendMLPredictionAlert,
-    sendPriceAlertNotification
+    sendPriceAlertNotification,
+    sendTechnicalAlertNotification
 };

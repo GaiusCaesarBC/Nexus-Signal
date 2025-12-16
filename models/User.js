@@ -315,6 +315,20 @@ const UserSchema = new mongoose.Schema({
         priceAlerts: { type: Boolean, default: true }
     },
 
+    // ============ DISCORD NOTIFICATIONS ============
+    discordUserId: { type: String, default: null },
+    discordUsername: { type: String, default: null },
+    discordLinkedAt: { type: Date, default: null },
+    discordLinkToken: { type: String, default: null },
+    discordLinkTokenExpires: { type: Date, default: null },
+    discordNotifications: {
+        economicEvents: { type: Boolean, default: true },
+        whaleAlerts: { type: Boolean, default: true },
+        dailySummary: { type: Boolean, default: true },
+        mlPredictions: { type: Boolean, default: true },
+        priceAlerts: { type: Boolean, default: true }
+    },
+
     // ============ TRADING STATS ============
     stats: {
         // Portfolio stats

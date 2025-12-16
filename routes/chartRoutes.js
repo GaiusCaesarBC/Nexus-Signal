@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
+const { sanitizeSymbol, encodeSymbolForUrl } = require('../utils/symbolValidation');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
@@ -32,7 +33,20 @@ const parseCryptoSymbol = (symbol) => {
 // @access  Private
 router.get('/:symbol/:interval', auth, async (req, res) => {
     try {
-        const { symbol, interval } = req.params;
+        const { interval } = req.params;
+
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const cacheKey = `${symbol}-${interval}`;
         
         // Check cache
@@ -311,9 +325,19 @@ const chartData = Array.from(uniqueData.values())
 // @access  Private
 router.get('/:symbol/quote', auth, async (req, res) => {
     try {
-        const { symbol } = req.params;
-        
-        const apiUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
+        const apiUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeSymbolForUrl(symbol)}&apikey=${ALPHA_VANTAGE_API_KEY}`;
         
         const response = await axios.get(apiUrl);
         

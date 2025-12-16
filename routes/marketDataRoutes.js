@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { sanitizeSymbol, encodeSymbolForUrl } = require('../utils/symbolValidation');
 
 /**
  * Get historical market data for a symbol
@@ -9,7 +10,17 @@ const axios = require('axios');
  */
 router.get('/history/:symbol', async (req, res) => {
     try {
-        const { symbol } = req.params;
+        // Validate symbol to prevent SSRF/injection attacks
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({
+                error: 'Invalid symbol',
+                message: validationError.message
+            });
+        }
+
         const days = req.query.days || 60; // Default to 60 days
 
         console.log(`📊 Fetching ${days} days of historical data for ${symbol}`);
@@ -17,8 +28,8 @@ router.get('/history/:symbol', async (req, res) => {
         // Using Alpha Vantage API (you'll need an API key - it's free)
         // Get your free key at: https://www.alphavantage.co/support/#api-key
         const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY || 'demo';
-        
-        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}&outputsize=full`;
+
+        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeSymbolForUrl(symbol)}&apikey=${ALPHA_VANTAGE_KEY}&outputsize=full`;
         
         const response = await axios.get(url);
         
