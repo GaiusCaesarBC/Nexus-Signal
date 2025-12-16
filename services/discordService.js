@@ -106,11 +106,20 @@ const registerSlashCommands = async (token, clientId) => {
     ].map(command => command.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
+    const guildId = process.env.DISCORD_GUILD_ID;
 
     try {
         console.log('[Discord] Registering slash commands...');
-        await rest.put(Routes.applicationCommands(clientId), { body: commands });
-        console.log('[Discord] Slash commands registered successfully');
+
+        if (guildId) {
+            // Guild-specific commands (instant)
+            await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+            console.log(`[Discord] Slash commands registered to guild ${guildId} (instant)`);
+        } else {
+            // Global commands (takes up to 1 hour)
+            await rest.put(Routes.applicationCommands(clientId), { body: commands });
+            console.log('[Discord] Slash commands registered globally (may take up to 1 hour)');
+        }
     } catch (error) {
         console.error('[Discord] Error registering slash commands:', error);
     }
