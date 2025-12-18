@@ -13,6 +13,7 @@ const priceService = require('../services/priceService');
 const stockDataService = require('../services/stockDataService');
 const geckoTerminalService = require('../services/geckoTerminalService');
 const { sendMLPredictionAlert } = require('../services/telegramScheduler');
+const { sendMLPredictionAlert: sendDiscordMLPredictionAlert } = require('../services/discordScheduler');
 const fs = require('fs');
 const path = require('path');
 
@@ -968,7 +969,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     factors.push(`Trend: ${ind['Trend'].value}`);
                 }
 
-                await sendMLPredictionAlert({
+                const alertPayload = {
                     symbol: dbSymbol,
                     direction: predictionData.prediction.direction,
                     confidence: confidencePercent, // Send raw percentage (matches website display)
@@ -977,8 +978,19 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     stopLoss: predictionData.prediction.stop_loss,
                     timeframe: `${days} day${days > 1 ? 's' : ''}`,
                     factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
-                });
+                };
+
+                // Send Telegram alert
+                await sendMLPredictionAlert(alertPayload);
                 console.log(`[Predictions] 📱 Telegram alert sent for ${dbSymbol} (${confidencePercent}% confidence)`);
+
+                // Send Discord alert
+                try {
+                    await sendDiscordMLPredictionAlert(alertPayload);
+                    console.log(`[Predictions] 🎮 Discord alert sent for ${dbSymbol} (${confidencePercent}% confidence)`);
+                } catch (discordError) {
+                    console.warn('[Predictions] Discord alert error:', discordError.message);
+                }
             } catch (telegramError) {
                 console.warn('[Predictions] Telegram alert error:', telegramError.message);
             }
