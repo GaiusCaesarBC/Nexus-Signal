@@ -178,52 +178,115 @@ const handlePredictCommand = async (interaction) => {
     await interaction.deferReply();
 
     const symbol = interaction.options.getString('symbol').toUpperCase();
+    const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 
     try {
-        // Call the internal prediction API (correct endpoint: /active/:symbol)
-        const response = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/predictions/active/${symbol}`);
+        // First, try to get a cached prediction
+        const cacheResponse = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/predictions/active/${symbol}`);
 
-        if (!response.data.success || !response.data.exists || !response.data.prediction) {
-            await interaction.editReply({ content: `No prediction available for ${symbol}. Try a popular stock or crypto!` });
+        if (cacheResponse.data.success && cacheResponse.data.exists && cacheResponse.data.prediction) {
+            // Use cached prediction
+            const data = cacheResponse.data.prediction;
+            const factors = buildFactorsFromData(data);
+
+            const prediction = {
+                symbol: data.symbol,
+                direction: data.prediction?.direction || 'neutral',
+                confidence: data.liveConfidence || data.prediction?.confidence || 0,
+                currentPrice: data.current_price,
+                targetPrice: data.prediction?.target_price,
+                timeframe: data.prediction?.days ? `${data.prediction.days} days` : '24h',
+                factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
+            };
+
+            const embed = createPredictionEmbed(prediction);
+            await interaction.editReply({ embeds: [embed] });
             return;
         }
 
-        // Map the API response to the format expected by createPredictionEmbed
-        const data = response.data.prediction;
+        // No cached prediction - generate a fresh one from ML service
+        console.log(`[Discord] No cached prediction for ${symbol}, calling ML service...`);
 
-        // Build factors from indicators and analysis (ensure strings, not objects)
+        // Call the ML service directly
+        const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
+            symbol: symbol,
+            days: 7
+        }, { timeout: 30000 });
+
+        if (!mlResponse.data || mlResponse.data.error) {
+            await interaction.editReply({
+                content: `Could not generate prediction for ${symbol}. ${mlResponse.data?.error || 'The symbol may not be supported.'}`
+            });
+            return;
+        }
+
+        const mlData = mlResponse.data;
+
+        // Build factors from ML response
         const factors = [];
-        if (data.indicators && typeof data.indicators === 'object') {
-            Object.entries(data.indicators).forEach(([name, indicator]) => {
+        if (mlData.indicators && typeof mlData.indicators === 'object') {
+            Object.entries(mlData.indicators).forEach(([name, indicator]) => {
                 if (indicator && typeof indicator === 'object') {
                     const value = indicator.value !== undefined ? indicator.value : indicator;
                     const signal = indicator.signal || '';
                     factors.push(`${name}: ${value}${signal ? ` (${signal})` : ''}`);
+                } else if (indicator !== null && indicator !== undefined) {
+                    factors.push(`${name}: ${indicator}`);
                 }
             });
         }
-        // Add analysis info if no indicators
-        if (factors.length === 0 && data.analysis && typeof data.analysis === 'object') {
-            if (data.analysis.trend) factors.push(`Trend: ${data.analysis.trend}`);
-            if (data.analysis.volatility) factors.push(`Volatility: ${data.analysis.volatility}`);
+        if (mlData.analysis && typeof mlData.analysis === 'object') {
+            if (mlData.analysis.trend) factors.push(`Trend: ${mlData.analysis.trend}`);
+            if (mlData.analysis.volatility) factors.push(`Volatility: ${mlData.analysis.volatility}`);
         }
 
         const prediction = {
-            symbol: data.symbol,
-            direction: data.prediction?.direction || 'neutral',
-            confidence: data.liveConfidence || data.prediction?.confidence || 0,
-            currentPrice: data.current_price,
-            targetPrice: data.prediction?.target_price,
-            timeframe: data.prediction?.days ? `${data.prediction.days} days` : '24h',
-            factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
+            symbol: symbol,
+            direction: mlData.prediction?.direction || mlData.direction || 'neutral',
+            confidence: mlData.prediction?.confidence || mlData.confidence || 50,
+            currentPrice: mlData.current_price || mlData.currentPrice,
+            targetPrice: mlData.prediction?.target_price || mlData.targetPrice,
+            timeframe: mlData.prediction?.days ? `${mlData.prediction.days} days` : '7 days',
+            factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum', 'ML model analysis']
         };
 
         const embed = createPredictionEmbed(prediction);
         await interaction.editReply({ embeds: [embed] });
+
     } catch (error) {
         console.error(`[Discord] Error fetching prediction for ${symbol}:`, error.message);
-        await interaction.editReply({ content: `Could not fetch prediction for ${symbol}. Please try again later.` });
+
+        // Provide more helpful error messages
+        if (error.code === 'ECONNREFUSED') {
+            await interaction.editReply({ content: `ML service is temporarily unavailable. Please try again later.` });
+        } else if (error.response?.status === 400) {
+            await interaction.editReply({ content: `Invalid symbol: ${symbol}. Please check the ticker and try again.` });
+        } else {
+            await interaction.editReply({ content: `Could not fetch prediction for ${symbol}. Please try again later.` });
+        }
     }
+};
+
+// Helper function to build factors from prediction data
+const buildFactorsFromData = (data) => {
+    const factors = [];
+    if (data.indicators && typeof data.indicators === 'object') {
+        Object.entries(data.indicators).forEach(([name, indicator]) => {
+            if (indicator && typeof indicator === 'object') {
+                const value = indicator.value !== undefined ? indicator.value : indicator;
+                const signal = indicator.signal || '';
+                factors.push(`${name}: ${value}${signal ? ` (${signal})` : ''}`);
+            } else if (indicator !== null && indicator !== undefined) {
+                factors.push(`${name}: ${indicator}`);
+            }
+        });
+    }
+    // Add analysis info if no indicators
+    if (factors.length === 0 && data.analysis && typeof data.analysis === 'object') {
+        if (data.analysis.trend) factors.push(`Trend: ${data.analysis.trend}`);
+        if (data.analysis.volatility) factors.push(`Volatility: ${data.analysis.volatility}`);
+    }
+    return factors;
 };
 
 // /price <symbol>
