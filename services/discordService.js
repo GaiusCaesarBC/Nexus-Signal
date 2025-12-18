@@ -190,6 +190,24 @@ const handlePredictCommand = async (interaction) => {
 
         // Map the API response to the format expected by createPredictionEmbed
         const data = response.data.prediction;
+
+        // Build factors from indicators and analysis (ensure strings, not objects)
+        const factors = [];
+        if (data.indicators && typeof data.indicators === 'object') {
+            Object.entries(data.indicators).forEach(([name, indicator]) => {
+                if (indicator && typeof indicator === 'object') {
+                    const value = indicator.value !== undefined ? indicator.value : indicator;
+                    const signal = indicator.signal || '';
+                    factors.push(`${name}: ${value}${signal ? ` (${signal})` : ''}`);
+                }
+            });
+        }
+        // Add analysis info if no indicators
+        if (factors.length === 0 && data.analysis && typeof data.analysis === 'object') {
+            if (data.analysis.trend) factors.push(`Trend: ${data.analysis.trend}`);
+            if (data.analysis.volatility) factors.push(`Volatility: ${data.analysis.volatility}`);
+        }
+
         const prediction = {
             symbol: data.symbol,
             direction: data.prediction?.direction || 'neutral',
@@ -197,7 +215,7 @@ const handlePredictCommand = async (interaction) => {
             currentPrice: data.current_price,
             targetPrice: data.prediction?.target_price,
             timeframe: data.prediction?.days ? `${data.prediction.days} days` : '24h',
-            factors: data.analysis ? [data.analysis] : []
+            factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
         };
 
         const embed = createPredictionEmbed(prediction);

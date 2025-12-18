@@ -940,33 +940,76 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
         const confidencePercent = predictionData.prediction.confidence;
         if (confidencePercent >= 70) {
             try {
+                // Helper to safely extract indicator values (handles nested objects)
+                const getIndicatorValue = (indicator) => {
+                    if (indicator === null || indicator === undefined) return null;
+                    if (typeof indicator === 'object' && indicator.value !== undefined) {
+                        // Standard format: { value: X, signal: Y }
+                        const val = indicator.value;
+                        // If value is itself an object, stringify it
+                        return typeof val === 'object' ? JSON.stringify(val) : val;
+                    }
+                    // Direct value (number or string)
+                    return typeof indicator === 'object' ? JSON.stringify(indicator) : indicator;
+                };
+
+                const getIndicatorSignal = (indicator) => {
+                    if (indicator === null || indicator === undefined) return 'NEUTRAL';
+                    if (typeof indicator === 'object' && indicator.signal !== undefined) {
+                        return String(indicator.signal).toUpperCase();
+                    }
+                    return 'NEUTRAL';
+                };
+
                 // Build factors from actual indicators
                 const factors = [];
                 const ind = formattedIndicators;
 
                 if (ind['RSI']) {
-                    const rsiVal = ind['RSI'].value;
-                    const rsiSignal = ind['RSI'].signal;
-                    factors.push(`RSI: ${rsiVal} (${rsiSignal})`);
+                    const rsiVal = getIndicatorValue(ind['RSI']);
+                    const rsiSignal = getIndicatorSignal(ind['RSI']);
+                    if (rsiVal !== null) {
+                        factors.push(`RSI: ${rsiVal} (${rsiSignal})`);
+                    }
                 }
                 if (ind['MACD']) {
-                    factors.push(`MACD: ${ind['MACD'].value > 0 ? '+' : ''}${ind['MACD'].value} (${ind['MACD'].signal})`);
+                    const macdVal = getIndicatorValue(ind['MACD']);
+                    const macdSignal = getIndicatorSignal(ind['MACD']);
+                    if (macdVal !== null) {
+                        const prefix = typeof macdVal === 'number' && macdVal > 0 ? '+' : '';
+                        factors.push(`MACD: ${prefix}${macdVal} (${macdSignal})`);
+                    }
                 }
                 if (ind['SMA 20'] && ind['SMA 50']) {
-                    const smaSignal = ind['SMA 20'].signal === ind['SMA 50'].signal ? ind['SMA 20'].signal : 'MIXED';
+                    const sma20Signal = getIndicatorSignal(ind['SMA 20']);
+                    const sma50Signal = getIndicatorSignal(ind['SMA 50']);
+                    const smaSignal = sma20Signal === sma50Signal ? sma20Signal : 'MIXED';
                     factors.push(`Moving Averages: ${smaSignal}`);
                 }
                 if (ind['Bollinger']) {
-                    factors.push(`Bollinger: ${ind['Bollinger'].value}`);
+                    const bbVal = getIndicatorValue(ind['Bollinger']);
+                    if (bbVal !== null) {
+                        factors.push(`Bollinger: ${bbVal}`);
+                    }
                 }
                 if (ind['Stochastic']) {
-                    factors.push(`Stochastic: ${ind['Stochastic'].value} (${ind['Stochastic'].signal})`);
+                    const stochVal = getIndicatorValue(ind['Stochastic']);
+                    const stochSignal = getIndicatorSignal(ind['Stochastic']);
+                    if (stochVal !== null) {
+                        factors.push(`Stochastic: ${stochVal} (${stochSignal})`);
+                    }
                 }
                 if (ind['Volume']) {
-                    factors.push(`Volume: ${ind['Volume'].value}`);
+                    const volVal = getIndicatorValue(ind['Volume']);
+                    if (volVal !== null) {
+                        factors.push(`Volume: ${volVal}`);
+                    }
                 }
                 if (ind['Trend']) {
-                    factors.push(`Trend: ${ind['Trend'].value}`);
+                    const trendVal = getIndicatorValue(ind['Trend']);
+                    if (trendVal !== null) {
+                        factors.push(`Trend: ${trendVal}`);
+                    }
                 }
 
                 const alertPayload = {
