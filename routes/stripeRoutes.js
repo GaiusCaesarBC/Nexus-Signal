@@ -53,7 +53,18 @@ router.post('/create-checkout-session', auth, async (req, res) => {
 
         // Create or get Stripe customer
         let customerId = user.subscription?.stripeCustomerId;
-        
+
+        // Try to verify existing customer, create new one if missing
+        if (customerId) {
+            try {
+                await stripe.customers.retrieve(customerId);
+            } catch (customerError) {
+                // Customer doesn't exist (likely test mode ID in live mode)
+                console.log(`[Stripe] Customer ${customerId} not found, creating new one`);
+                customerId = null;
+            }
+        }
+
         if (!customerId) {
             const customer = await stripe.customers.create({
                 email: user.email,
@@ -62,10 +73,11 @@ router.post('/create-checkout-session', auth, async (req, res) => {
                 }
             });
             customerId = customer.id;
-            
+
             user.subscription = user.subscription || {};
             user.subscription.stripeCustomerId = customerId;
             await user.save();
+            console.log(`[Stripe] Created new customer: ${customerId}`);
         }
 
         // Create checkout session
