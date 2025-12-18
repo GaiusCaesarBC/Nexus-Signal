@@ -17,12 +17,18 @@ const getPlanFromPriceId = (priceId) => {
         [process.env.STRIPE_PRICE_ELITE]: 'elite'
     };
 
-    // Also check hardcoded price IDs as fallback (from PricingPage.js)
+    // Also check hardcoded price IDs as fallback (LIVE price IDs)
     const hardcodedMapping = {
-        'price_1SV9d8CtdTItnGjydNZsbXl3': 'starter',
-        'price_1SV9dTCtdTItnGjycfSxQtAg': 'pro',
-        'price_1SV9doCtdTItnGjyYb8yG97j': 'premium',
-        'price_1SV9eACtdTItnGjyzSNaNYhP': 'elite'
+        // Monthly
+        'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
+        'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
+        'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
+        'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
+        // Yearly
+        'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
+        'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
+        'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
+        'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
     };
 
     console.log(`[Stripe] Looking up plan for price ID: ${priceId}`);
