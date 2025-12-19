@@ -57,8 +57,16 @@ const getPlanFromPriceId = (priceId) => {
     return plan;
 };
 
+// Rate limiter for Stripe webhook (lenient - Stripe retries on failure)
+const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // Allow 100 webhook calls per minute
+    message: { error: 'Too many webhook requests' }
+});
+
 // Stripe webhook endpoint - raw body parser applied inline
 app.post('/api/stripe/webhook',
+    webhookLimiter,
     express.raw({ type: 'application/json' }),
     async (req, res) => {
         const sig = req.headers['stripe-signature'];
@@ -78,7 +86,7 @@ app.post('/api/stripe/webhook',
             console.log(`[Stripe Webhook] ✅ Signature verified! Event type: ${event.type}`);
         } catch (err) {
             console.error('Webhook signature verification failed:', err.message);
-            return res.status(400).send(`Webhook Error: ${err.message}`);
+            return res.status(400).json({ error: 'Webhook signature verification failed' });
         }
 
         // Handle the event

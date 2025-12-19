@@ -1,13 +1,21 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { requireFeature, checkUsageLimit } = require('../middleware/subscriptionMiddleware');
+
+// Rate limiter for alerts endpoints (30 requests per minute)
+const alertsLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30,
+    message: { error: 'Too many requests, please slow down' }
+});
 
 // Alert model (you might need to create this)
 // const Alert = require('../models/Alert');
 
 // GET all alerts for user
-router.get('/', auth, requireFeature('hasPriceAlerts'), async (req, res) => {
+router.get('/', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
         // Your alert fetching logic
         const alerts = [
@@ -41,8 +49,9 @@ router.get('/', auth, requireFeature('hasPriceAlerts'), async (req, res) => {
 });
 
 // POST create price alert - GATED PRO+
-router.post('/price', 
-    auth, 
+router.post('/price',
+    alertsLimiter,
+    auth,
     requireFeature('hasPriceAlerts'), // Pro or higher
     checkUsageLimit('priceAlerts'),
     async (req, res) => {
@@ -100,8 +109,9 @@ router.post('/price',
 );
 
 // POST create custom alert - GATED PREMIUM+
-router.post('/custom', 
-    auth, 
+router.post('/custom',
+    alertsLimiter,
+    auth,
     requireFeature('hasCustomAlerts'), // Premium or Elite only
     async (req, res) => {
         try {
@@ -156,8 +166,9 @@ router.post('/custom',
 );
 
 // POST create pattern alert - GATED PREMIUM+
-router.post('/pattern', 
-    auth, 
+router.post('/pattern',
+    alertsLimiter,
+    auth,
     requireFeature('hasPatternRecognition'), // Premium or Elite
     async (req, res) => {
         try {
@@ -219,7 +230,7 @@ router.post('/pattern',
 );
 
 // PUT update alert
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', alertsLimiter, auth, async (req, res) => {
     try {
         const { active, targetPrice, threshold } = req.body;
 
@@ -243,7 +254,7 @@ router.put('/:id', auth, async (req, res) => {
 });
 
 // DELETE alert
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', alertsLimiter, auth, async (req, res) => {
     try {
         // Your delete logic here
         res.json({
@@ -257,7 +268,7 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // GET triggered alerts history
-router.get('/history', auth, requireFeature('hasPriceAlerts'), async (req, res) => {
+router.get('/history', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
         const { limit = 50 } = req.query;
 
@@ -291,7 +302,7 @@ router.get('/history', auth, requireFeature('hasPriceAlerts'), async (req, res) 
 });
 
 // GET alert statistics
-router.get('/stats', auth, requireFeature('hasPriceAlerts'), async (req, res) => {
+router.get('/stats', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
         const User = require('../models/User');
         const user = await User.findById(req.user.id);
@@ -316,7 +327,7 @@ router.get('/stats', auth, requireFeature('hasPriceAlerts'), async (req, res) =>
 });
 
 // POST test alert (check if conditions are met now)
-router.post('/:id/test', auth, requireFeature('hasPriceAlerts'), async (req, res) => {
+router.post('/:id/test', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
         // Your test logic - check current price/conditions
         const testResult = {

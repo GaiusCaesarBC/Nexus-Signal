@@ -14,8 +14,8 @@ const paymentLimiter = rateLimit({
     legacyHeaders: false
 });
 
-// Debug log to check the environment variable *when this module is loaded*
-console.log('[DEBUG paymentRoutes.js] STRIPE_SECRET_KEY value:', process.env.STRIPE_SECRET_KEY);
+// Debug log to check if the environment variable exists (never log the actual value!)
+console.log('[DEBUG paymentRoutes.js] STRIPE_SECRET_KEY configured:', process.env.STRIPE_SECRET_KEY ? 'yes' : 'NO');
 
 // Initialize Stripe with your secret key from environment variables
 const stripeSecretKeyToUse = process.env.STRIPE_SECRET_KEY;

@@ -113,7 +113,8 @@ const getCryptoHistoricalData = asyncHandler(async (req, res) => {
         // --- CRITICAL FIX: Use COINGECKO_BASE_URL and pass headers to main request ---
         coingeckoUrl = `${COINGECKO_BASE_URL}/coins/${coinId}/market_chart?vs_currency=${vsCurrency}&days=${cgDays}&interval=${cgInterval}`;
         console.log(`[CryptoController] Calling CoinGecko URL: ${coingeckoUrl}`);
-        console.log(`[CryptoController] Using Headers: ${JSON.stringify(headers)}`); // Log headers
+        // Note: Headers contain API key - logged as configured only for security
+        console.log(`[CryptoController] Using API auth: ${headers['x-cg-pro-api-key'] ? 'yes' : 'no'}`);
 
         const response = await axios.get(coingeckoUrl, { headers }); // Pass headers to the main market_chart request
         // --- END CRITICAL FIX ---

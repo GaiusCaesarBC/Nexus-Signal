@@ -112,8 +112,7 @@ router.get('/test-api/:symbol?', async (req, res) => {
         }
 
         console.log('\n=== COINGECKO PRO API TEST ===');
-        console.log('API Key exists:', !!COINGECKO_API_KEY);
-        console.log('API Key (first 10 chars):', COINGECKO_API_KEY ? COINGECKO_API_KEY.substring(0, 10) + '...' : 'MISSING');
+        console.log('API Key configured:', !!COINGECKO_API_KEY);
         console.log('Base URL:', COINGECKO_BASE_URL);
         console.log('Coin ID:', coinGeckoId);
 
