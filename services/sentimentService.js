@@ -9,19 +9,31 @@ const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 const newsCache = new Map();
 
 // Properly sanitize HTML - strip tags AND decode common HTML entities
+// Uses single-pass replacement to avoid double-decoding issues
 function sanitizeHtml(text) {
     if (!text || typeof text !== 'string') return '';
-    return text
-        .replace(/<[^>]*>/g, '')  // Strip HTML tags
-        .replace(/&amp;/g, '&')   // Decode &
-        .replace(/&lt;/g, '<')    // Decode <
-        .replace(/&gt;/g, '>')    // Decode >
-        .replace(/&quot;/g, '"')  // Decode "
-        .replace(/&#39;/g, "'")   // Decode '
-        .replace(/&nbsp;/g, ' ')  // Decode non-breaking space
-        .replace(/&#x27;/g, "'")  // Decode '
-        .replace(/&#x2F;/g, '/')  // Decode /
-        .trim();
+
+    // First strip HTML tags
+    const stripped = text.replace(/<[^>]*>/g, '');
+
+    // Entity decode map - single pass to avoid double-decoding
+    const entities = {
+        '&amp;': '&',
+        '&lt;': '<',
+        '&gt;': '>',
+        '&quot;': '"',
+        '&#39;': "'",
+        '&nbsp;': ' ',
+        '&#x27;': "'",
+        '&#x2F;': '/',
+        '&apos;': "'"
+    };
+
+    // Single-pass replacement using regex alternation
+    const entityPattern = /&(?:amp|lt|gt|quot|nbsp|apos|#39|#x27|#x2F);/g;
+    const decoded = stripped.replace(entityPattern, match => entities[match] || match);
+
+    return decoded.trim();
 }
 
 /**

@@ -1478,7 +1478,7 @@ router.post('/cleanup', auth, async (req, res) => {
 // @route   GET /api/predictions/cleanup/stats
 // @desc    Get cleanup statistics
 // @access  Private
-router.get('/cleanup/stats', auth, async (req, res) => {
+router.get('/cleanup/stats', predictionLimiter, auth, async (req, res) => {
     try {
         const now = new Date();
         const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);

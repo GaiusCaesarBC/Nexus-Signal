@@ -1,11 +1,21 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const Subscriber = require('../models/Subscriber'); // Import the new model
+
+// Rate limiter for waitlist (prevent spam signups)
+const waitlistLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5, // 5 requests per hour per IP
+    message: { msg: 'Too many signup attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // @route   POST api/waitlist/join
 // @desc    Add a new email to the waitlist
 // @access  Public
-router.post('/join', async (req, res) => {
+router.post('/join', waitlistLimiter, async (req, res) => {
   const { email } = req.body;
   console.log(`[Waitlist] Received request to add email: ${email}`);
 

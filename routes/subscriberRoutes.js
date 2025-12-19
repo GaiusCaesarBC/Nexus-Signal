@@ -1,12 +1,22 @@
 // server/routes/subscriberRoutes.js
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const Subscriber = require('../models/Subscriber'); // <--- CORRECT: Imports your Subscriber model
+
+// Rate limiter for subscribers (prevent spam signups)
+const subscriberLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5, // 5 requests per hour per IP
+    message: { msg: 'Too many signup attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // @route   POST api/subscribers
 // @desc    Add an email to the subscriber list
 // @access  Public
-router.post('/', async (req, res) => {
+router.post('/', subscriberLimiter, async (req, res) => {
     const { email } = req.body;
 
     if (!email) {

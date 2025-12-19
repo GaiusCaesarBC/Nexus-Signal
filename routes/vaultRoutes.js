@@ -242,7 +242,7 @@ router.get('/badges', vaultLimiter, auth, async (req, res) => {
 // @route   GET /api/vault/items
 // @desc    Get all vault items with user ownership status
 // @access  Private
-router.get('/items', auth, async (req, res) => {
+router.get('/items', vaultLimiter, auth, async (req, res) => {
     try {
         console.log('[Vault] GET /items called');
         console.log('[Vault] RUNTIME CHECK - Themes count:', VAULT_ITEMS.profileThemes?.length);
@@ -374,7 +374,7 @@ router.get('/items', auth, async (req, res) => {
 // @route   GET /api/vault/owned
 // @desc    Get user's owned items only
 // @access  Private
-router.get('/owned', auth, async (req, res) => {
+router.get('/owned', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {
@@ -405,7 +405,7 @@ router.get('/owned', auth, async (req, res) => {
 // @route   POST /api/vault/purchase/:itemId
 // @desc    Purchase a vault item with Nexus Coins
 // @access  Private
-router.post('/purchase/:itemId', auth, async (req, res) => {
+router.post('/purchase/:itemId', vaultLimiter, auth, async (req, res) => {
     try {
         const { itemId } = req.params;
         const user = await User.findById(getUserId(req));
@@ -505,7 +505,7 @@ router.post('/purchase/:itemId', auth, async (req, res) => {
 // @route   POST /api/vault/equip/:itemId
 // @desc    Equip a vault item
 // @access  Private
-router.post('/equip/:itemId', auth, async (req, res) => {
+router.post('/equip/:itemId', vaultLimiter, auth, async (req, res) => {
     try {
         const { itemId } = req.params;
         const user = await User.findById(getUserId(req));
@@ -591,7 +591,7 @@ router.post('/equip/:itemId', auth, async (req, res) => {
 // @route   POST /api/vault/unequip/:itemId
 // @desc    Unequip a vault item
 // @access  Private
-router.post('/unequip/:itemId', auth, async (req, res) => {
+router.post('/unequip/:itemId', vaultLimiter, auth, async (req, res) => {
     try {
         const { itemId } = req.params;
         const user = await User.findById(getUserId(req));
@@ -652,7 +652,7 @@ router.post('/unequip/:itemId', auth, async (req, res) => {
 // @route   GET /api/vault/equipped
 // @desc    Get user's currently equipped items with full details
 // @access  Private
-router.get('/equipped', auth, async (req, res) => {
+router.get('/equipped', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {
@@ -689,7 +689,7 @@ router.get('/equipped', auth, async (req, res) => {
 // @route   GET /api/vault/user/:userId
 // @desc    Get another user's equipped items (for profile viewing)
 // @access  Public
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', vaultLimiter, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId).select('vault gamification username');
         if (!user) {
@@ -729,7 +729,7 @@ router.get('/user/:userId', async (req, res) => {
 // @route   GET /api/vault/active-perks
 // @desc    Get user's active perks with effects (for game calculations)
 // @access  Private
-router.get('/active-perks', auth, async (req, res) => {
+router.get('/active-perks', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {
@@ -770,7 +770,7 @@ router.get('/active-perks', auth, async (req, res) => {
 // @route   GET /api/vault/stats
 // @desc    Get vault statistics
 // @access  Private
-router.get('/stats', auth, async (req, res) => {
+router.get('/stats', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {
@@ -835,7 +835,7 @@ router.get('/stats', auth, async (req, res) => {
 // @route   POST /api/vault/check-badges
 // @desc    Check and award earned badges based on user stats
 // @access  Private
-router.post('/check-badges', auth, async (req, res) => {
+router.post('/check-badges', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {
