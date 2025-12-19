@@ -2,13 +2,23 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const heatmapService = require('../services/heatmapService');
+
+// Rate limiter for heatmap endpoints (heavier operations)
+const heatmapLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // @route   GET /api/heatmap/stocks
 // @desc    Get stock market heatmap data
 // @access  Private
-router.get('/stocks', auth, async (req, res) => {
+router.get('/stocks', heatmapLimiter, auth, async (req, res) => {
     try {
         const data = await heatmapService.getStockHeatmap();
         res.json(data);
@@ -21,7 +31,7 @@ router.get('/stocks', auth, async (req, res) => {
 // @route   GET /api/heatmap/crypto
 // @desc    Get crypto market heatmap data (CoinGecko + GeckoTerminal DEX)
 // @access  Private
-router.get('/crypto', auth, async (req, res) => {
+router.get('/crypto', heatmapLimiter, auth, async (req, res) => {
     try {
         const data = await heatmapService.getCryptoHeatmap();
         res.json(data);
@@ -34,7 +44,7 @@ router.get('/crypto', auth, async (req, res) => {
 // @route   GET /api/heatmap/dex
 // @desc    Get DEX-only heatmap data (GeckoTerminal BSC/ETH/SOL tokens)
 // @access  Private
-router.get('/dex', auth, async (req, res) => {
+router.get('/dex', heatmapLimiter, auth, async (req, res) => {
     try {
         const { network = 'bsc' } = req.query;
         const data = await heatmapService.getDexHeatmap(network);

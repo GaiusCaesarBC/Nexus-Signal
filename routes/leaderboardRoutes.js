@@ -2,14 +2,24 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const Portfolio = require('../models/Portfolio');
 
+// Rate limiter for leaderboard endpoints
+const leaderboardLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
 // @route   GET /api/leaderboard
 // @desc    Get top traders leaderboard
 // @access  Public
-router.get('/', async (req, res) => {
+router.get('/', leaderboardLimiter, async (req, res) => {
     try {
         const { period = 'all', limit = 20, page = 1 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -96,7 +106,7 @@ router.get('/', async (req, res) => {
 // @route   GET /api/leaderboard/top
 // @desc    Get top 3-10 traders (for landing page / widgets)
 // @access  Public
-router.get('/top', async (req, res) => {
+router.get('/top', leaderboardLimiter, async (req, res) => {
     try {
         const { limit = 5 } = req.query;
 
@@ -160,7 +170,7 @@ router.get('/top', async (req, res) => {
 // @route   GET /api/leaderboard/winners
 // @desc    Get recent winners (traders who made profit recently)
 // @access  Public
-router.get('/winners', async (req, res) => {
+router.get('/winners', leaderboardLimiter, async (req, res) => {
     try {
         const { limit = 5 } = req.query;
 
@@ -217,7 +227,7 @@ router.get('/winners', async (req, res) => {
 // @route   GET /api/leaderboard/user/:userId
 // @desc    Get specific user's rank
 // @access  Public
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', leaderboardLimiter, async (req, res) => {
     try {
         const { userId } = req.params;
 
@@ -275,7 +285,7 @@ const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory')
 // @route   GET /api/leaderboard/real-portfolio
 // @desc    Get real portfolio leaderboard (based on portfolio history with gain/loss)
 // @access  Public (shows anonymized data) or Private (shows your rank)
-router.get('/real-portfolio', async (req, res) => {
+router.get('/real-portfolio', leaderboardLimiter, async (req, res) => {
     try {
         const {
             sortBy = 'totalReturnPercent',

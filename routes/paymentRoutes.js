@@ -2,7 +2,17 @@
 // require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const path = require('path'); // Keep path for dotenv config below if needed
+
+// Rate limiter for payment endpoints (stricter)
+const paymentLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // 10 requests per minute
+    message: { msg: 'Too many payment requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // Debug log to check the environment variable *when this module is loaded*
 console.log('[DEBUG paymentRoutes.js] STRIPE_SECRET_KEY value:', process.env.STRIPE_SECRET_KEY);
@@ -20,7 +30,7 @@ const User = require('../models/User'); // Ensure path is correct
 const auth = require('../middleware/authMiddleware'); // Ensure path is correct
 
 // @route   POST api/payments/create-checkout-session
-router.post('/create-checkout-session', auth, async (req, res) => {
+router.post('/create-checkout-session', paymentLimiter, auth, async (req, res) => {
   const { priceId, planName } = req.body;
 
   // --- Input Validation ---

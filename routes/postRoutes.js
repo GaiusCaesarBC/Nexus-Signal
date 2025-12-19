@@ -17,10 +17,19 @@ const socialInteractionLimiter = rateLimit({
     legacyHeaders: false
 });
 
+// Rate limiter for general post operations
+const postLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60, // 60 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
 // @route   GET /api/posts
 // @desc    Get social feed posts
 // @access  Public (with optional auth for like status)
-router.get('/', async (req, res) => {
+router.get('/', postLimiter, async (req, res) => {
     try {
         const { limit = 10, skip = 0, type } = req.query;
         
@@ -101,7 +110,7 @@ router.get('/', async (req, res) => {
 // @route   POST /api/posts
 // @desc    Create a new post
 // @access  Private
-router.post('/', auth, async (req, res) => {
+router.post('/', postLimiter, auth, async (req, res) => {
     try {
         const { content, type = 'text', metadata } = req.body;
 
@@ -141,7 +150,7 @@ router.post('/', auth, async (req, res) => {
 // @route   POST /api/posts/:id/like
 // @desc    Like/Unlike a post
 // @access  Private
-router.post('/:id/like', auth, async (req, res) => {
+router.post('/:id/like', socialInteractionLimiter, auth, async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
         
@@ -178,7 +187,7 @@ router.post('/:id/like', auth, async (req, res) => {
 // @route   POST /api/posts/:id/comment
 // @desc    Add a comment to a post
 // @access  Private
-router.post('/:id/comment', auth, async (req, res) => {
+router.post('/:id/comment', socialInteractionLimiter, auth, async (req, res) => {
     try {
         const { content } = req.body;
 
@@ -367,7 +376,7 @@ router.get('/bookmarks', socialInteractionLimiter, auth, async (req, res) => {
 // @route   DELETE /api/posts/:id
 // @desc    Delete a post
 // @access  Private (owner only)
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', postLimiter, auth, async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
         
@@ -394,7 +403,7 @@ router.delete('/:id', auth, async (req, res) => {
 // @route   GET /api/posts/user/:userId
 // @desc    Get posts by a specific user
 // @access  Private
-router.get('/user/:userId', auth, async (req, res) => {
+router.get('/user/:userId', postLimiter, auth, async (req, res) => {
     try {
         const { limit = 10, skip = 0 } = req.query;
         
@@ -423,7 +432,7 @@ router.get('/user/:userId', auth, async (req, res) => {
 // @route   GET /api/posts/my
 // @desc    Get current user's posts
 // @access  Private
-router.get('/my', auth, async (req, res) => {
+router.get('/my', postLimiter, auth, async (req, res) => {
     try {
         const { limit = 10, skip = 0 } = req.query;
         

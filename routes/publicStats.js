@@ -3,7 +3,17 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
+
+// Rate limiter for public stats endpoints
+const publicStatsLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // Try to import models (may not all exist)
 let User, Portfolio, Prediction, Trade;
@@ -19,7 +29,7 @@ const CACHE_DURATION = 60 * 1000; // 60 seconds
 // @route   GET /api/public/stats
 // @desc    Get public platform statistics
 // @access  Public
-router.get('/stats', async (req, res) => {
+router.get('/stats', publicStatsLimiter, async (req, res) => {
     try {
         const stats = {
             totalUsers: 0,
@@ -63,7 +73,7 @@ router.get('/stats', async (req, res) => {
 // @route   GET /api/public/market-ticker
 // @desc    Get live market ticker data for landing page
 // @access  Public
-router.get('/market-ticker', async (req, res) => {
+router.get('/market-ticker', publicStatsLimiter, async (req, res) => {
     try {
         // Check cache
         if (Date.now() - marketCache.timestamp < CACHE_DURATION && 
@@ -154,7 +164,7 @@ router.get('/market-ticker', async (req, res) => {
 // @route   GET /api/public/hot-stocks
 // @desc    Get top gaining stocks for landing page
 // @access  Public
-router.get('/hot-stocks', async (req, res) => {
+router.get('/hot-stocks', publicStatsLimiter, async (req, res) => {
     try {
         const { limit = 4 } = req.query;
         
@@ -205,7 +215,7 @@ router.get('/hot-stocks', async (req, res) => {
 // @route   GET /api/public/platform-stats  
 // @desc    Get comprehensive platform statistics for landing page
 // @access  Public
-router.get('/platform-stats', async (req, res) => {
+router.get('/platform-stats', publicStatsLimiter, async (req, res) => {
     try {
         const stats = {
             totalUsers: 0,

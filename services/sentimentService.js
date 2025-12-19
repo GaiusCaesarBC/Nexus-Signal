@@ -9,12 +9,17 @@ const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 const newsCache = new Map();
 
 // Properly sanitize HTML - strip tags AND decode common HTML entities
-// Uses single-pass replacement to avoid double-decoding issues
+// Uses iterative stripping to handle nested/malformed tags
 function sanitizeHtml(text) {
     if (!text || typeof text !== 'string') return '';
 
-    // First strip HTML tags
-    const stripped = text.replace(/<[^>]*>/g, '');
+    // Iteratively strip HTML tags until none remain (handles nested tags)
+    let stripped = text;
+    let previous;
+    do {
+        previous = stripped;
+        stripped = stripped.replace(/<[^>]*>/g, '');
+    } while (stripped !== previous);
 
     // Entity decode map - single pass to avoid double-decoding
     const entities = {
