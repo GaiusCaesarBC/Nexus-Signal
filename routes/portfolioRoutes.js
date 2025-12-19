@@ -701,9 +701,6 @@ router.get('/analytics', authMiddleware, async (req, res) => {
         const PaperTradingAccount = require('../models/PaperTradingAccount');
         const paperAccount = await PaperTradingAccount.findOne({ user: userId });
 
-        // Get real portfolio data
-        const realPortfolio = await Portfolio.getOrCreate(userId);
-
         // Get prediction data
         const Prediction = require('../models/Prediction');
         const predictions = await Prediction.find({
@@ -725,24 +722,78 @@ router.get('/analytics', authMiddleware, async (req, res) => {
                 purchasePrice: p.averagePrice,
                 currentPrice: p.currentPrice || p.averagePrice,
                 assetType: p.type || 'stock',
-                profitLossPercent: p.profitLossPercent
+                profitLossPercent: p.profitLossPercent,
+                source: 'paper'
             }));
             portfolioValue = paperAccount?.portfolioValue || 0;
             totalPL = paperAccount?.totalProfitLoss || 0;
             totalPLPercent = paperAccount?.totalProfitLossPercent || 0;
         } else {
-            // Use real portfolio holdings
-            holdings = (realPortfolio?.holdings || []).map(h => ({
-                symbol: h.symbol,
-                quantity: h.quantity,
-                purchasePrice: h.purchasePrice,
-                currentPrice: h.currentPrice || h.purchasePrice,
-                assetType: h.assetType || 'stock',
-                profitLossPercent: h.gainLossPercent
-            }));
-            portfolioValue = realPortfolio?.totalValue || 0;
-            totalPL = realPortfolio?.totalChange || 0;
-            totalPLPercent = realPortfolio?.totalChangePercent || 0;
+            // Use REAL portfolio from brokerage connections and wallet
+            const BrokerageConnection = require('../models/BrokerageConnection');
+
+            // Get all active brokerage connections (Plaid, Kraken, etc.)
+            const brokerageConnections = await BrokerageConnection.find({
+                user: userId,
+                status: 'active'
+            });
+
+            // Aggregate holdings from all brokerage connections
+            for (const conn of brokerageConnections) {
+                if (conn.cachedPortfolio?.holdings) {
+                    for (const h of conn.cachedPortfolio.holdings) {
+                        const costBasis = h.costBasis || (h.quantity * h.price);
+                        const currentValue = h.value || (h.quantity * h.price);
+                        const gainLoss = currentValue - costBasis;
+                        const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+
+                        holdings.push({
+                            symbol: h.symbol,
+                            name: h.name,
+                            quantity: h.quantity,
+                            purchasePrice: costBasis / (h.quantity || 1),
+                            currentPrice: h.price,
+                            assetType: h.type || 'stock',
+                            profitLossPercent: gainLossPercent,
+                            source: conn.type,
+                            sourceName: conn.name
+                        });
+                        portfolioValue += currentValue;
+                        totalPL += gainLoss;
+                    }
+                }
+            }
+
+            // Also get wallet-synced holdings from Portfolio model
+            const realPortfolio = await Portfolio.findOne({ user: userId });
+            if (realPortfolio?.holdings) {
+                for (const h of realPortfolio.holdings) {
+                    if (h.fromWallet) {
+                        // Wallet-synced crypto holdings
+                        const costBasis = h.totalCost || (h.quantity * (h.purchasePrice || 0));
+                        const currentValue = h.currentValue || (h.quantity * (h.currentPrice || 0));
+                        const gainLoss = currentValue - costBasis;
+                        const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+
+                        holdings.push({
+                            symbol: h.symbol,
+                            quantity: h.quantity,
+                            purchasePrice: h.purchasePrice || 0,
+                            currentPrice: h.currentPrice || 0,
+                            assetType: 'crypto',
+                            profitLossPercent: gainLossPercent,
+                            source: 'wallet',
+                            sourceName: 'Linked Wallet'
+                        });
+                        portfolioValue += currentValue;
+                        totalPL += gainLoss;
+                    }
+                }
+            }
+
+            // Calculate total P/L percent based on initial value
+            const initialValue = portfolioValue - totalPL;
+            totalPLPercent = initialValue > 0 ? (totalPL / initialValue) * 100 : 0;
         }
 
         // Calculate allocation by asset type
