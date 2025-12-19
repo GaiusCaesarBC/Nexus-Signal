@@ -1,61 +1,298 @@
-// server/services/backtestEngine.js - Core Backtesting Logic
+// server/services/backtestEngine.js - Multi-Source Backtesting Engine
+// Supports: Yahoo Finance, Alpha Vantage Pro, CoinGecko, Gecko Terminal
 const axios = require('axios');
+
+// Common crypto symbols mapping to CoinGecko IDs
+const CRYPTO_ID_MAP = {
+    'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'XRP': 'ripple',
+    'ADA': 'cardano', 'DOGE': 'dogecoin', 'DOT': 'polkadot', 'MATIC': 'matic-network',
+    'LINK': 'chainlink', 'AVAX': 'avalanche-2', 'UNI': 'uniswap', 'ATOM': 'cosmos',
+    'LTC': 'litecoin', 'BCH': 'bitcoin-cash', 'NEAR': 'near', 'APT': 'aptos',
+    'ARB': 'arbitrum', 'OP': 'optimism', 'INJ': 'injective-protocol', 'SUI': 'sui',
+    'SHIB': 'shiba-inu', 'PEPE': 'pepe', 'BONK': 'bonk', 'WIF': 'dogwifcoin',
+    'FET': 'fetch-ai', 'RENDER': 'render-token', 'FIL': 'filecoin', 'ICP': 'internet-computer',
+    'AAVE': 'aave', 'MKR': 'maker', 'CRV': 'curve-dao-token', 'SNX': 'synthetix-network-token',
+    'RNDR': 'render-token', 'IMX': 'immutable-x', 'SAND': 'the-sandbox', 'MANA': 'decentraland',
+    'TRX': 'tron', 'ETC': 'ethereum-classic', 'XLM': 'stellar', 'ALGO': 'algorand',
+    'VET': 'vechain', 'HBAR': 'hedera-hashgraph', 'FTM': 'fantom', 'EGLD': 'elrond-erd-2'
+};
 
 class BacktestEngine {
     constructor(options = {}) {
         this.commissionRate = options.commissionRate || 0.001; // 0.1% per trade
         this.slippage = options.slippage || 0.0005; // 0.05% slippage
+        this.alphaVantageKey = process.env.ALPHA_VANTAGE_API_KEY;
+        this.coingeckoKey = process.env.COINGECKO_API_KEY;
     }
 
-    // Fetch historical price data
-    async fetchHistoricalData(symbol, startDate, endDate, assetType = 'stock') {
-        try {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const period1 = Math.floor(start.getTime() / 1000);
-            const period2 = Math.floor(end.getTime() / 1000);
+    // Detect if symbol is crypto
+    isCrypto(symbol) {
+        const cleanSymbol = symbol.toUpperCase().replace('-USD', '').replace('USDT', '').replace('USD', '');
+        return CRYPTO_ID_MAP[cleanSymbol] ||
+               symbol.includes('-USD') ||
+               symbol.includes('USDT') ||
+               /^(BTC|ETH|SOL|XRP|ADA|DOGE|DOT|MATIC|LINK|AVAX)/.test(cleanSymbol);
+    }
 
-            // Use Yahoo Finance for stocks
-            const response = await axios.get(
-                `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=1d`,
-                {
-                    timeout: 15000,
-                    headers: { 'User-Agent': 'Mozilla/5.0' }
-                }
-            );
+    // Get CoinGecko ID from symbol
+    getCoinGeckoId(symbol) {
+        const cleanSymbol = symbol.toUpperCase().replace('-USD', '').replace('USDT', '').replace('USD', '');
+        return CRYPTO_ID_MAP[cleanSymbol] || cleanSymbol.toLowerCase();
+    }
 
-            const result = response.data?.chart?.result?.[0];
-            if (!result || !result.timestamp) {
-                throw new Error(`No data available for ${symbol}`);
-            }
+    // ============ DATA FETCHING - MULTI SOURCE ============
 
-            const timestamps = result.timestamp;
-            const quotes = result.indicators.quote[0];
-            const adjClose = result.indicators.adjclose?.[0]?.adjclose || quotes.close;
+    async fetchHistoricalData(symbol, startDate, endDate) {
+        const cleanSymbol = symbol.toUpperCase();
+        const isCrypto = this.isCrypto(cleanSymbol);
 
-            const data = [];
-            for (let i = 0; i < timestamps.length; i++) {
-                if (quotes.close[i] && quotes.open[i] && quotes.high[i] && quotes.low[i]) {
-                    data.push({
-                        date: new Date(timestamps[i] * 1000),
-                        open: quotes.open[i],
-                        high: quotes.high[i],
-                        low: quotes.low[i],
-                        close: quotes.close[i],
-                        adjClose: adjClose[i] || quotes.close[i],
-                        volume: quotes.volume[i] || 0
-                    });
-                }
-            }
+        console.log(`[Backtest] Fetching data for ${cleanSymbol} (${isCrypto ? 'CRYPTO' : 'STOCK'})`);
 
-            return data;
-        } catch (error) {
-            console.error(`[Backtest] Error fetching data for ${symbol}:`, error.message);
-            throw new Error(`Failed to fetch historical data for ${symbol}`);
+        if (isCrypto) {
+            return this.fetchCryptoData(cleanSymbol, startDate, endDate);
+        } else {
+            return this.fetchStockData(cleanSymbol, startDate, endDate);
         }
     }
 
-    // Calculate technical indicators
+    // Fetch stock data with fallbacks
+    async fetchStockData(symbol, startDate, endDate) {
+        const sources = [
+            () => this.fetchFromYahoo(symbol, startDate, endDate),
+            () => this.fetchFromAlphaVantage(symbol, startDate, endDate)
+        ];
+
+        for (const fetchFn of sources) {
+            try {
+                const data = await fetchFn();
+                if (data && data.length >= 30) {
+                    console.log(`[Backtest] Got ${data.length} data points for ${symbol}`);
+                    return data;
+                }
+            } catch (error) {
+                console.log(`[Backtest] Source failed for ${symbol}:`, error.message);
+            }
+        }
+
+        throw new Error(`No data available for ${symbol} from any source`);
+    }
+
+    // Fetch crypto data with fallbacks
+    async fetchCryptoData(symbol, startDate, endDate) {
+        const cleanSymbol = symbol.replace('-USD', '').replace('USDT', '').replace('USD', '');
+
+        const sources = [
+            () => this.fetchFromCoinGecko(cleanSymbol, startDate, endDate),
+            () => this.fetchFromGeckoTerminal(cleanSymbol, startDate, endDate),
+            () => this.fetchFromYahoo(`${cleanSymbol}-USD`, startDate, endDate)
+        ];
+
+        for (const fetchFn of sources) {
+            try {
+                const data = await fetchFn();
+                if (data && data.length >= 30) {
+                    console.log(`[Backtest] Got ${data.length} data points for ${symbol}`);
+                    return data;
+                }
+            } catch (error) {
+                console.log(`[Backtest] Source failed for ${symbol}:`, error.message);
+            }
+        }
+
+        throw new Error(`No data available for ${symbol} from any source`);
+    }
+
+    // Yahoo Finance - Stocks & Major Crypto
+    async fetchFromYahoo(symbol, startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const period1 = Math.floor(start.getTime() / 1000);
+        const period2 = Math.floor(end.getTime() / 1000);
+
+        const response = await axios.get(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=${period1}&period2=${period2}&interval=1d`,
+            {
+                timeout: 15000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            }
+        );
+
+        const result = response.data?.chart?.result?.[0];
+        if (!result || !result.timestamp) {
+            throw new Error(`No Yahoo data for ${symbol}`);
+        }
+
+        const timestamps = result.timestamp;
+        const quotes = result.indicators.quote[0];
+        const adjClose = result.indicators.adjclose?.[0]?.adjclose || quotes.close;
+
+        const data = [];
+        for (let i = 0; i < timestamps.length; i++) {
+            if (quotes.close[i] && quotes.open[i] && quotes.high[i] && quotes.low[i]) {
+                data.push({
+                    date: new Date(timestamps[i] * 1000),
+                    open: quotes.open[i],
+                    high: quotes.high[i],
+                    low: quotes.low[i],
+                    close: quotes.close[i],
+                    adjClose: adjClose[i] || quotes.close[i],
+                    volume: quotes.volume[i] || 0
+                });
+            }
+        }
+
+        return data;
+    }
+
+    // Alpha Vantage Pro - Stocks, Forex, Crypto
+    async fetchFromAlphaVantage(symbol, startDate, endDate) {
+        if (!this.alphaVantageKey) {
+            throw new Error('Alpha Vantage API key not configured');
+        }
+
+        const response = await axios.get(
+            `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${symbol}&outputsize=full&apikey=${this.alphaVantageKey}`,
+            { timeout: 30000 }
+        );
+
+        const timeSeries = response.data['Time Series (Daily)'];
+        if (!timeSeries) {
+            throw new Error(`No Alpha Vantage data for ${symbol}`);
+        }
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        const data = Object.entries(timeSeries)
+            .filter(([dateStr]) => {
+                const date = new Date(dateStr);
+                return date >= start && date <= end;
+            })
+            .map(([dateStr, values]) => ({
+                date: new Date(dateStr),
+                open: parseFloat(values['1. open']),
+                high: parseFloat(values['2. high']),
+                low: parseFloat(values['3. low']),
+                close: parseFloat(values['4. close']),
+                adjClose: parseFloat(values['5. adjusted close']),
+                volume: parseInt(values['6. volume']) || 0
+            }))
+            .sort((a, b) => a.date - b.date);
+
+        return data;
+    }
+
+    // CoinGecko - Comprehensive Crypto
+    async fetchFromCoinGecko(symbol, startDate, endDate) {
+        const coinId = this.getCoinGeckoId(symbol);
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const fromTimestamp = Math.floor(start.getTime() / 1000);
+        const toTimestamp = Math.floor(end.getTime() / 1000);
+
+        const headers = this.coingeckoKey
+            ? { 'x-cg-pro-api-key': this.coingeckoKey }
+            : {};
+
+        const baseUrl = this.coingeckoKey
+            ? 'https://pro-api.coingecko.com/api/v3'
+            : 'https://api.coingecko.com/api/v3';
+
+        const response = await axios.get(
+            `${baseUrl}/coins/${coinId}/market_chart/range?vs_currency=usd&from=${fromTimestamp}&to=${toTimestamp}`,
+            { timeout: 30000, headers }
+        );
+
+        const { prices, total_volumes } = response.data;
+        if (!prices || prices.length === 0) {
+            throw new Error(`No CoinGecko data for ${coinId}`);
+        }
+
+        // Group by day and create OHLC data
+        const dailyData = new Map();
+
+        prices.forEach(([timestamp, price], index) => {
+            const date = new Date(timestamp);
+            const dateKey = date.toISOString().split('T')[0];
+
+            if (!dailyData.has(dateKey)) {
+                dailyData.set(dateKey, {
+                    date: new Date(dateKey),
+                    open: price,
+                    high: price,
+                    low: price,
+                    close: price,
+                    volume: total_volumes[index]?.[1] || 0
+                });
+            } else {
+                const day = dailyData.get(dateKey);
+                day.high = Math.max(day.high, price);
+                day.low = Math.min(day.low, price);
+                day.close = price;
+                day.volume = total_volumes[index]?.[1] || day.volume;
+            }
+        });
+
+        return Array.from(dailyData.values())
+            .sort((a, b) => a.date - b.date)
+            .map(d => ({ ...d, adjClose: d.close }));
+    }
+
+    // Gecko Terminal - DeFi & DEX Tokens
+    async fetchFromGeckoTerminal(symbol, startDate, endDate) {
+        // First search for the token to get pool address
+        const searchResponse = await axios.get(
+            `https://api.geckoterminal.com/api/v2/search/pools?query=${symbol}`,
+            { timeout: 15000 }
+        );
+
+        const pools = searchResponse.data?.data;
+        if (!pools || pools.length === 0) {
+            throw new Error(`No Gecko Terminal pools for ${symbol}`);
+        }
+
+        // Get the most liquid pool
+        const pool = pools[0];
+        const network = pool.relationships?.network?.data?.id || 'eth';
+        const poolAddress = pool.attributes?.address;
+
+        if (!poolAddress) {
+            throw new Error(`No pool address for ${symbol}`);
+        }
+
+        // Fetch OHLCV data
+        const response = await axios.get(
+            `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress}/ohlcv/day?limit=365`,
+            { timeout: 15000 }
+        );
+
+        const ohlcvData = response.data?.data?.attributes?.ohlcv_list;
+        if (!ohlcvData || ohlcvData.length === 0) {
+            throw new Error(`No Gecko Terminal OHLCV data for ${symbol}`);
+        }
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        return ohlcvData
+            .filter(([timestamp]) => {
+                const date = new Date(timestamp * 1000);
+                return date >= start && date <= end;
+            })
+            .map(([timestamp, open, high, low, close, volume]) => ({
+                date: new Date(timestamp * 1000),
+                open: parseFloat(open),
+                high: parseFloat(high),
+                low: parseFloat(low),
+                close: parseFloat(close),
+                adjClose: parseFloat(close),
+                volume: parseFloat(volume) || 0
+            }))
+            .sort((a, b) => a.date - b.date);
+    }
+
+    // ============ TECHNICAL INDICATORS ============
+
     calculateIndicators(data, params = {}) {
         const indicators = {
             sma: {},
@@ -82,8 +319,7 @@ class BacktestEngine {
         indicators.rsi = this.calculateRSI(closes, params.rsiPeriod || 14);
 
         // MACD
-        const macd = this.calculateMACD(closes, 12, 26, 9);
-        indicators.macd = macd;
+        indicators.macd = this.calculateMACD(closes, 12, 26, 9);
 
         // Bollinger Bands
         indicators.bollinger = this.calculateBollingerBands(closes, params.bbPeriod || 20, params.bbStdDev || 2);
@@ -164,8 +400,6 @@ class BacktestEngine {
 
         const validMacd = macdLine.filter(v => v !== null);
         const signalLine = this.calculateEMA(validMacd, signalPeriod);
-
-        // Pad signal line with nulls
         const paddedSignal = new Array(macdLine.length - signalLine.length).fill(null).concat(signalLine);
 
         const histogram = macdLine.map((macd, i) => {
@@ -213,7 +447,8 @@ class BacktestEngine {
         return this.calculateSMA(tr, period);
     }
 
-    // Strategy implementations
+    // ============ TRADING STRATEGIES ============
+
     executeStrategy(strategy, data, indicators, params) {
         switch (strategy) {
             case 'ma-crossover':
@@ -345,7 +580,7 @@ class BacktestEngine {
                 signals.push({ signal: 'hold', reason: 'Waiting for SMA' });
             } else {
                 const deviation = (data[i].close - sma[i]) / sma[i];
-                const threshold = stdDevs * 0.02; // Approximate 2% per std dev
+                const threshold = stdDevs * 0.02;
 
                 if (deviation < -threshold) {
                     signals.push({ signal: 'buy', reason: `Price ${(deviation * 100).toFixed(1)}% below mean` });
@@ -359,7 +594,8 @@ class BacktestEngine {
         return signals;
     }
 
-    // Run the backtest
+    // ============ BACKTEST EXECUTION ============
+
     async runBacktest(options) {
         const {
             symbol,
@@ -367,15 +603,16 @@ class BacktestEngine {
             startDate,
             endDate,
             initialCapital = 10000,
-            parameters = {},
-            assetType = 'stock'
+            parameters = {}
         } = options;
 
-        // Fetch historical data
-        const data = await this.fetchHistoricalData(symbol, startDate, endDate, assetType);
+        console.log(`[Backtest] Running ${strategy} on ${symbol} from ${startDate} to ${endDate}`);
+
+        // Fetch historical data (auto-detects stock vs crypto)
+        const data = await this.fetchHistoricalData(symbol, startDate, endDate);
 
         if (data.length < 50) {
-            throw new Error('Insufficient data for backtesting (need at least 50 data points)');
+            throw new Error(`Insufficient data for backtesting (got ${data.length}, need at least 50 data points)`);
         }
 
         // Calculate indicators
@@ -393,13 +630,12 @@ class BacktestEngine {
         // Generate monthly performance
         const monthlyPerformance = this.calculateMonthlyPerformance(simulation.trades, data);
 
-        // Generate equity curve
-        const equityCurve = simulation.equityCurve;
+        console.log(`[Backtest] Completed: ${metrics.totalReturnPercent}% return, ${metrics.totalTrades} trades`);
 
         return {
             results: metrics,
             trades: simulation.trades,
-            equityCurve,
+            equityCurve: simulation.equityCurve,
             monthlyPerformance,
             dataPoints: data.length
         };
@@ -424,9 +660,7 @@ class BacktestEngine {
             });
 
             if (signal.signal === 'buy' && shares === 0) {
-                // Apply slippage
                 const executionPrice = price * (1 + this.slippage);
-                // Calculate commission
                 const maxShares = Math.floor(cash / executionPrice);
                 const commission = maxShares * executionPrice * this.commissionRate;
                 shares = Math.floor((cash - commission) / executionPrice);
@@ -450,7 +684,6 @@ class BacktestEngine {
                     portfolioValue
                 });
             } else if (signal.signal === 'sell' && shares > 0 && position) {
-                // Apply slippage
                 const executionPrice = price * (1 - this.slippage);
                 const value = shares * executionPrice;
                 const commission = value * this.commissionRate;
@@ -554,7 +787,7 @@ class BacktestEngine {
             }
         }
 
-        // Volatility (daily returns std dev * sqrt(252))
+        // Volatility
         const returns = [];
         for (let i = 1; i < equityCurve.length; i++) {
             returns.push((equityCurve[i].value / equityCurve[i - 1].value) - 1);
@@ -563,7 +796,7 @@ class BacktestEngine {
         const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
         const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100;
 
-        // Sharpe Ratio (assuming risk-free rate of 2%)
+        // Sharpe Ratio
         const riskFreeRate = 0.02;
         const excessReturn = (annualizedReturn / 100) - riskFreeRate;
         const sharpeRatio = volatility > 0 ? (excessReturn / (volatility / 100)) : 0;
@@ -596,7 +829,6 @@ class BacktestEngine {
     calculateMonthlyPerformance(trades, data) {
         const monthly = {};
 
-        // Group trades by month
         for (const trade of trades) {
             if (trade.type !== 'sell') continue;
             const key = `${trade.date.getFullYear()}-${String(trade.date.getMonth() + 1).padStart(2, '0')}`;
@@ -607,10 +839,10 @@ class BacktestEngine {
             monthly[key].returns.push(trade.profitPercent);
         }
 
-        // Calculate monthly stats
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
         return Object.entries(monthly).map(([key, stats]) => {
             const [year, month] = key.split('-');
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return {
                 month: monthNames[parseInt(month) - 1],
                 year: parseInt(year),
@@ -620,7 +852,7 @@ class BacktestEngine {
             };
         }).sort((a, b) => {
             if (a.year !== b.year) return a.year - b.year;
-            return new Date(`${a.month} 1, 2000`) - new Date(`${b.month} 1, 2000`);
+            return monthNames.indexOf(a.month) - monthNames.indexOf(b.month);
         });
     }
 }
