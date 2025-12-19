@@ -688,15 +688,21 @@ async function getCryptoPrice(symbol) {
 
 /**
  * GET /api/portfolio/analytics
- * Comprehensive portfolio analytics - Uses Paper Trading Account data
+ * Comprehensive portfolio analytics
+ * Query params:
+ *   - mode: 'paper' (default) or 'real' - switches between paper trading and real portfolio data
  */
 router.get('/analytics', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
+        const mode = req.query.mode || 'paper'; // 'paper' or 'real'
 
-        // Get paper trading data (primary source for analytics)
+        // Get paper trading data
         const PaperTradingAccount = require('../models/PaperTradingAccount');
         const paperAccount = await PaperTradingAccount.findOne({ user: userId });
+
+        // Get real portfolio data
+        const realPortfolio = await Portfolio.getOrCreate(userId);
 
         // Get prediction data
         const Prediction = require('../models/Prediction');
@@ -705,18 +711,47 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             status: { $in: ['correct', 'incorrect'] }
         }).sort({ createdAt: -1 }).limit(50);
 
-        // Use paper trading positions for allocation data
-        const positions = paperAccount?.positions || [];
+        // Determine data source based on mode
+        let holdings = [];
+        let portfolioValue = 0;
+        let totalPL = 0;
+        let totalPLPercent = 0;
 
-        // Calculate allocation by asset type from paper trading positions
+        if (mode === 'paper') {
+            // Use paper trading positions
+            holdings = (paperAccount?.positions || []).filter(p => !p.isLiquidated).map(p => ({
+                symbol: p.symbol,
+                quantity: p.quantity,
+                purchasePrice: p.averagePrice,
+                currentPrice: p.currentPrice || p.averagePrice,
+                assetType: p.type || 'stock',
+                profitLossPercent: p.profitLossPercent
+            }));
+            portfolioValue = paperAccount?.portfolioValue || 0;
+            totalPL = paperAccount?.totalProfitLoss || 0;
+            totalPLPercent = paperAccount?.totalProfitLossPercent || 0;
+        } else {
+            // Use real portfolio holdings
+            holdings = (realPortfolio?.holdings || []).map(h => ({
+                symbol: h.symbol,
+                quantity: h.quantity,
+                purchasePrice: h.purchasePrice,
+                currentPrice: h.currentPrice || h.purchasePrice,
+                assetType: h.assetType || 'stock',
+                profitLossPercent: h.gainLossPercent
+            }));
+            portfolioValue = realPortfolio?.totalValue || 0;
+            totalPL = realPortfolio?.totalChange || 0;
+            totalPLPercent = realPortfolio?.totalChangePercent || 0;
+        }
+
+        // Calculate allocation by asset type
         const allocationByType = {};
         let totalValue = 0;
 
-        for (const position of positions) {
-            if (position.isLiquidated) continue; // Skip liquidated positions
-
-            const type = position.type || 'stock';
-            const value = (position.quantity || 0) * (position.currentPrice || position.averagePrice || 0);
+        for (const holding of holdings) {
+            const type = holding.assetType || 'stock';
+            const value = (holding.quantity || 0) * (holding.currentPrice || 0);
             totalValue += value;
 
             if (!allocationByType[type]) {
@@ -725,9 +760,9 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             allocationByType[type].value += value;
             allocationByType[type].count++;
             allocationByType[type].holdings.push({
-                symbol: position.symbol,
+                symbol: holding.symbol,
                 value,
-                percent: 0 // Will calculate after
+                percent: 0
             });
         }
 
@@ -743,7 +778,7 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             }
         }
 
-        // Paper trading stats
+        // Paper trading stats (always include for the card)
         const paperTradingStats = paperAccount ? {
             totalTrades: paperAccount.totalTrades || 0,
             winningTrades: paperAccount.winningTrades || 0,
@@ -764,47 +799,46 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             ? ((correctPredictions / predictions.length) * 100).toFixed(1)
             : 0;
 
-        // Calculate performance metrics from paper trading
-        const activePositions = positions.filter(p => !p.isLiquidated);
+        // Calculate performance metrics
         const performanceMetrics = {
-            totalHoldings: activePositions.length,
-            portfolioValue: paperAccount?.portfolioValue || 0,
-            totalGainLoss: paperAccount?.totalProfitLoss || 0,
-            totalGainLossPercent: paperAccount?.totalProfitLossPercent || 0,
+            totalHoldings: holdings.length,
+            portfolioValue: portfolioValue,
+            totalGainLoss: totalPL,
+            totalGainLossPercent: totalPLPercent,
             topGainer: null,
             topLoser: null
         };
 
-        // Find top gainer and loser from paper trading positions
+        // Find top gainer and loser
         let maxGain = -Infinity;
         let maxLoss = Infinity;
 
-        for (const position of activePositions) {
-            const gainPercent = position.profitLossPercent ||
-                ((position.currentPrice - position.averagePrice) / position.averagePrice) * 100;
+        for (const holding of holdings) {
+            const gainPercent = holding.profitLossPercent ||
+                ((holding.currentPrice - holding.purchasePrice) / holding.purchasePrice) * 100;
 
             if (gainPercent > maxGain && gainPercent > 0) {
                 maxGain = gainPercent;
                 performanceMetrics.topGainer = {
-                    symbol: position.symbol,
+                    symbol: holding.symbol,
                     gainPercent: gainPercent.toFixed(2)
                 };
             }
             if (gainPercent < maxLoss && gainPercent < 0) {
                 maxLoss = gainPercent;
                 performanceMetrics.topLoser = {
-                    symbol: position.symbol,
+                    symbol: holding.symbol,
                     lossPercent: gainPercent.toFixed(2)
                 };
             }
         }
 
-        // Risk metrics based on paper trading positions
+        // Risk metrics
         const riskMetrics = {
-            diversificationScore: Math.min(100, activePositions.length * 10), // Simple diversification score
-            concentrationRisk: activePositions.length > 0 && totalValue > 0
-                ? (activePositions.reduce((max, p) => {
-                    const value = p.quantity * (p.currentPrice || p.averagePrice);
+            diversificationScore: Math.min(100, holdings.length * 10),
+            concentrationRisk: holdings.length > 0 && totalValue > 0
+                ? (holdings.reduce((max, h) => {
+                    const value = h.quantity * (h.currentPrice || h.purchasePrice);
                     return Math.max(max, value);
                 }, 0) / totalValue * 100).toFixed(1)
                 : 0,
@@ -813,6 +847,7 @@ router.get('/analytics', authMiddleware, async (req, res) => {
 
         res.json({
             success: true,
+            mode, // Include mode in response
             analytics: {
                 overview: performanceMetrics,
                 allocation: allocationByType,
