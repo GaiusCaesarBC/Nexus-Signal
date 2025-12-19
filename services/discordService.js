@@ -190,6 +190,8 @@ const handlePredictCommand = async (interaction) => {
     const timeframeOption = interaction.options.getString('timeframe');
     const days = timeframeOption ? parseInt(timeframeOption, 10) : 7;  // Default to 7 days
     const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
+    const ML_API_KEY = process.env.ML_API_KEY;
+    const mlHeaders = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 
     // Timeframe labels for display
     const timeframeLabels = {
@@ -206,7 +208,7 @@ const handlePredictCommand = async (interaction) => {
             const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
                 symbol: symbol,
                 days: days
-            }, { timeout: 30000 });
+            }, { timeout: 30000, headers: mlHeaders });
 
             if (!mlResponse.data || mlResponse.data.error) {
                 await interaction.editReply({

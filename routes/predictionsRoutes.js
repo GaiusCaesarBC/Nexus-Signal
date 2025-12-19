@@ -276,6 +276,8 @@ router.get('/symbols/all', (req, res) => {
 });
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
+const ML_API_KEY = process.env.ML_API_KEY;
+const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || false;
 
 // ============ REAL-TIME PRICE FETCHING ============
@@ -792,7 +794,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
                     symbol: dbSymbol,
                     days: days,
                     type: assetType
-                }, { timeout: 30000 });
+                }, { timeout: 30000, headers: ML_HEADERS });
                 
                 if (mlResponse.data) {
                     const ml = mlResponse.data;
@@ -1351,7 +1353,7 @@ router.get('/health', auth, async (req, res) => {
     try {
         let mlStatus = 'unknown';
         try {
-            const response = await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 5000 });
+            const response = await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 5000, headers: ML_HEADERS });
             mlStatus = 'healthy';
         } catch (e) {
             mlStatus = 'unhealthy';

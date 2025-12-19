@@ -151,9 +151,21 @@ router.get('/usage',
 
 // BACKTESTING - ELITE ONLY
 
-// POST create backtest
-router.post('/backtest', 
-    auth, 
+const Backtest = require('../models/Backtest');
+const BacktestEngine = require('../services/backtestEngine');
+
+const STRATEGY_MAP = {
+    'ma-crossover': 'Moving Average Crossover',
+    'rsi-reversal': 'RSI Reversal',
+    'macd-crossover': 'MACD Crossover',
+    'bollinger-bands': 'Bollinger Bands',
+    'breakout': 'Breakout Strategy',
+    'mean-reversion': 'Mean Reversion'
+};
+
+// POST create and run backtest
+router.post('/backtest',
+    auth,
     requireFeature('hasBacktesting'), // Elite only
     async (req, res) => {
         try {
@@ -162,39 +174,77 @@ router.post('/backtest',
                 symbol,
                 startDate,
                 endDate,
-                initialCapital,
-                parameters
+                initialCapital = 10000,
+                parameters = {}
             } = req.body;
 
             // Validate input
             if (!strategy || !symbol || !startDate || !endDate) {
-                return res.status(400).json({ 
-                    error: 'Strategy, symbol, start date, and end date are required' 
+                return res.status(400).json({
+                    error: 'Strategy, symbol, start date, and end date are required'
                 });
             }
 
-            // Create backtest job (this would run async)
-            const backtest = {
-                id: Date.now().toString(),
+            // Validate strategy
+            if (!STRATEGY_MAP[strategy]) {
+                return res.status(400).json({ error: 'Invalid strategy' });
+            }
+
+            // Create backtest record
+            const backtest = new Backtest({
                 user: req.user.id,
                 strategy,
                 symbol: symbol.toUpperCase(),
                 startDate: new Date(startDate),
                 endDate: new Date(endDate),
-                initialCapital: initialCapital || 10000,
+                initialCapital,
                 parameters,
-                status: 'running',
-                createdAt: new Date()
-            };
-
-            // In reality, you'd queue this for processing
-            // and return a job ID that can be polled
-
-            res.json({
-                success: true,
-                backtest,
-                message: 'Backtest started. Check status with GET /api/backtest/:id'
+                status: 'running'
             });
+            await backtest.save();
+
+            // Run backtest asynchronously
+            const engine = new BacktestEngine();
+
+            try {
+                const result = await engine.runBacktest({
+                    symbol: symbol.toUpperCase(),
+                    strategy,
+                    startDate,
+                    endDate,
+                    initialCapital,
+                    parameters
+                });
+
+                // Update backtest with results
+                await backtest.complete(
+                    result.results,
+                    result.trades,
+                    result.equityCurve,
+                    result.monthlyPerformance
+                );
+
+                res.json({
+                    success: true,
+                    backtest: {
+                        _id: backtest._id,
+                        strategy: STRATEGY_MAP[strategy],
+                        symbol: backtest.symbol,
+                        status: 'completed',
+                        results: result.results,
+                        tradesCount: result.trades.length,
+                        dataPoints: result.dataPoints
+                    },
+                    message: 'Backtest completed successfully'
+                });
+            } catch (btError) {
+                await backtest.fail(btError.message);
+                res.status(400).json({
+                    success: false,
+                    error: btError.message,
+                    backtestId: backtest._id
+                });
+            }
         } catch (error) {
             console.error('Error creating backtest:', error);
             res.status(500).json({ error: 'Server error' });
@@ -203,62 +253,39 @@ router.post('/backtest',
 );
 
 // GET backtest status and results
-router.get('/backtest/:id', 
-    auth, 
+router.get('/backtest/:id',
+    auth,
     requireFeature('hasBacktesting'),
     async (req, res) => {
         try {
-            // Your backtest result fetching logic
-            const backtest = {
-                id: req.params.id,
-                strategy: 'Moving Average Crossover',
-                symbol: 'AAPL',
-                startDate: '2024-01-01',
-                endDate: '2024-11-19',
-                status: 'completed',
-                results: {
-                    initialCapital: 10000,
-                    finalValue: 12450,
-                    totalReturn: 24.50,
-                    annualizedReturn: 26.85,
-                    sharpeRatio: 1.45,
-                    maxDrawdown: -8.32,
-                    winRate: 58.3,
-                    totalTrades: 48,
-                    profitableTrades: 28,
-                    losingTrades: 20,
-                    averageWin: 2.35,
-                    averageLoss: -1.82,
-                    largestWin: 8.45,
-                    largestLoss: -5.23,
-                    profitFactor: 1.62
-                },
-                trades: [
-                    {
-                        date: '2024-01-15',
-                        type: 'buy',
-                        price: 185.50,
-                        shares: 50
-                    },
-                    {
-                        date: '2024-01-28',
-                        type: 'sell',
-                        price: 192.30,
-                        shares: 50,
-                        profit: 340
-                    }
-                    // ... more trades
-                ],
-                performanceByMonth: [
-                    { month: 'Jan', return: 3.2 },
-                    { month: 'Feb', return: -1.5 },
-                    { month: 'Mar', return: 4.8 },
-                    // ... more months
-                ],
-                completedAt: new Date()
-            };
+            const backtest = await Backtest.findOne({
+                _id: req.params.id,
+                user: req.user.id
+            });
 
-            res.json(backtest);
+            if (!backtest) {
+                return res.status(404).json({ error: 'Backtest not found' });
+            }
+
+            res.json({
+                _id: backtest._id,
+                strategy: STRATEGY_MAP[backtest.strategy] || backtest.strategy,
+                strategyId: backtest.strategy,
+                symbol: backtest.symbol,
+                startDate: backtest.startDate,
+                endDate: backtest.endDate,
+                initialCapital: backtest.initialCapital,
+                parameters: backtest.parameters,
+                status: backtest.status,
+                error: backtest.error,
+                results: backtest.results,
+                trades: backtest.trades,
+                equityCurve: backtest.equityCurve,
+                monthlyPerformance: backtest.monthlyPerformance,
+                createdAt: backtest.createdAt,
+                completedAt: backtest.completedAt,
+                processingTime: backtest.processingTime
+            });
         } catch (error) {
             console.error('Error fetching backtest:', error);
             res.status(500).json({ error: 'Server error' });
@@ -267,39 +294,27 @@ router.get('/backtest/:id',
 );
 
 // GET all user's backtests
-router.get('/backtests', 
-    auth, 
+router.get('/backtests',
+    auth,
     requireFeature('hasBacktesting'),
     async (req, res) => {
         try {
-            const backtests = [
-                {
-                    id: '1',
-                    strategy: 'Moving Average Crossover',
-                    symbol: 'AAPL',
-                    status: 'completed',
-                    totalReturn: 24.50,
-                    createdAt: new Date('2024-11-01')
-                },
-                {
-                    id: '2',
-                    strategy: 'RSI Reversal',
-                    symbol: 'TSLA',
-                    status: 'completed',
-                    totalReturn: -5.30,
-                    createdAt: new Date('2024-11-10')
-                },
-                {
-                    id: '3',
-                    strategy: 'Breakout Strategy',
-                    symbol: 'MSFT',
-                    status: 'running',
-                    totalReturn: null,
-                    createdAt: new Date()
-                }
-            ];
+            const { limit = 20 } = req.query;
+            const backtests = await Backtest.getUserBacktests(req.user.id, parseInt(limit));
 
-            res.json(backtests);
+            res.json(backtests.map(bt => ({
+                _id: bt._id,
+                strategy: STRATEGY_MAP[bt.strategy] || bt.strategy,
+                strategyId: bt.strategy,
+                symbol: bt.symbol,
+                status: bt.status,
+                totalReturn: bt.results?.totalReturnPercent,
+                winRate: bt.results?.winRate,
+                sharpeRatio: bt.results?.sharpeRatio,
+                totalTrades: bt.results?.totalTrades,
+                createdAt: bt.createdAt,
+                completedAt: bt.completedAt
+            })));
         } catch (error) {
             console.error('Error fetching backtests:', error);
             res.status(500).json({ error: 'Server error' });
@@ -308,18 +323,48 @@ router.get('/backtests',
 );
 
 // DELETE backtest
-router.delete('/backtest/:id', 
-    auth, 
+router.delete('/backtest/:id',
+    auth,
     requireFeature('hasBacktesting'),
     async (req, res) => {
         try {
-            // Your delete logic here
+            const result = await Backtest.deleteOne({
+                _id: req.params.id,
+                user: req.user.id
+            });
+
+            if (result.deletedCount === 0) {
+                return res.status(404).json({ error: 'Backtest not found' });
+            }
+
             res.json({
                 success: true,
                 message: 'Backtest deleted'
             });
         } catch (error) {
             console.error('Error deleting backtest:', error);
+            res.status(500).json({ error: 'Server error' });
+        }
+    }
+);
+
+// GET best strategies for user
+router.get('/strategies/performance',
+    auth,
+    requireFeature('hasBacktesting'),
+    async (req, res) => {
+        try {
+            const performance = await Backtest.getBestStrategies(req.user.id);
+            res.json(performance.map(p => ({
+                strategy: STRATEGY_MAP[p._id] || p._id,
+                strategyId: p._id,
+                avgReturn: Math.round(p.avgReturn * 100) / 100,
+                avgSharpe: Math.round(p.avgSharpe * 100) / 100,
+                avgWinRate: Math.round(p.avgWinRate * 100) / 100,
+                backtestCount: p.count
+            })));
+        } catch (error) {
+            console.error('Error fetching strategy performance:', error);
             res.status(500).json({ error: 'Server error' });
         }
     }
