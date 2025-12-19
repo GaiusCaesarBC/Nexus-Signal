@@ -311,6 +311,7 @@ const economicCalendarRoutes = require('./routes/economicCalendarRoutes'); // Ec
 const technicalIndicatorsRoutes = require('./routes/technicalIndicatorsRoutes'); // Technical Indicators
 const telegramRoutes = require('./routes/telegramRoutes'); // Telegram Bot Notifications
 const discordRoutes = require('./routes/discordRoutes'); // Discord Bot Notifications
+const backtestRoutes = require('./routes/apibacktestRoutes'); // 📊 Strategy Backtesting (Elite)
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -399,6 +400,7 @@ app.use('/api/economic-calendar', economicCalendarRoutes); // 📅 Economic Cale
 app.use('/api/indicators', technicalIndicatorsRoutes); // 📊 Technical Indicators
 app.use('/api/telegram', telegramRoutes); // 📱 Telegram Bot Notifications
 app.use('/api/discord', discordRoutes); // 🎮 Discord Bot Notifications
+app.use('/api', backtestRoutes); // 📊 Strategy Backtesting (Elite) - mounts /backtest, /backtests
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
