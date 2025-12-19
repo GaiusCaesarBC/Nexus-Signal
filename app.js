@@ -2,9 +2,13 @@
 
 require('dotenv').config();
 
+// Structured logging
+const logger = require('./utils/logger');
+const { requestLogger, errorLogger } = require('./middleware/requestLogger');
+
 // Debug logging only in development
 if (process.env.NODE_ENV !== 'production') {
-    console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
+    logger.info('MONGODB_URI: ' + (process.env.MONGODB_URI ? 'FOUND' : 'MISSING'));
 }
 
 const express = require('express');
@@ -47,7 +51,7 @@ const getPlanFromPriceId = (priceId) => {
 
     const plan = priceMapping[priceId];
     if (!plan) {
-        console.warn(`[Stripe] Unknown price ID: ${priceId}. Check STRIPE_PRICE_* env vars.`);
+        logger.warn(`Unknown Stripe price ID: ${priceId}. Check STRIPE_PRICE_* env vars.`);
         return 'starter'; // Default fallback
     }
     return plan;
@@ -174,7 +178,7 @@ app.post('/api/stripe/webhook',
 const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.MONGODB_URI);
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
+        logger.info(`MongoDB Connected: ${conn.connection.host}`);
         
         // ✅ START ALERT CHECKER AFTER DB CONNECTION
         const { startAlertChecker } = require('./services/alertChecker');
@@ -203,7 +207,7 @@ const connectDB = async () => {
         setTimeout(() => initializeDiscordSchedulers(), 7000);
 
     } catch (error) {
-        console.error(`MongoDB Connection Error: ${error.message}`);
+        logger.error(`MongoDB Connection Error: ${error.message}`);
     }
 };
 
@@ -234,7 +238,7 @@ app.use(cors({
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            console.warn(`CORS Blocked: ${origin}`);
+            logger.warn(`CORS Blocked: ${origin}`);
             callback(new Error('Not allowed by CORS'), false);
         }
     },
@@ -288,6 +292,9 @@ app.use(cookieParser());
 app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());
+
+// Request logging - adds request ID and logs all HTTP requests
+app.use(requestLogger);
 
 // Apply rate limiting
 app.use('/api/auth/login', authLimiter);
@@ -433,12 +440,18 @@ app.use('/screener', screenerRoutes);
 app.use('/public', publicStatsRoutes);
 app.use('/posts', postRoutes);
 
+// --- Error Logging Middleware ---
+app.use(errorLogger);
+
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    // Error already logged by errorLogger middleware
     res.status(err.statusCode || 500).json({
         success: false,
-        error: err.message || 'Server Error'
+        error: process.env.NODE_ENV === 'production'
+            ? 'Server Error'
+            : err.message || 'Server Error',
+        requestId: req.requestId // Include request ID for debugging
     });
 });
 

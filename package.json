@@ -47,6 +47,9 @@
     "technicalindicators": "^3.1.0",
     "twilio": "^5.10.7",
     "twitter-api-v2": "^1.28.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "xss-clean": "^0.1.1",
     "yahoo-finance2": "^3.10.1"
   },
