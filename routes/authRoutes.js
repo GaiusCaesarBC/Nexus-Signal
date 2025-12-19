@@ -14,7 +14,7 @@ const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
 // ✅ Cookie settings that work for BOTH localhost and production
 const getCookieOptions = () => {
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
     return {
         httpOnly: true,
         secure: isProduction,
@@ -22,6 +22,14 @@ const getCookieOptions = () => {
         maxAge: 3600000,
         path: '/'
     };
+};
+
+// Sanitize string values for MongoDB queries (NoSQL injection prevention)
+const sanitizeQueryString = (value) => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    return value;
 };
 
 // @route   GET api/auth/me
@@ -74,14 +82,21 @@ router.post(
         }
         const { email, password, username } = req.body;
         try {
-            let user = await User.findOne({ email });
+            // Sanitize inputs for MongoDB queries (NoSQL injection prevention)
+            const sanitizedEmail = sanitizeQueryString(email);
+            const sanitizedUsername = sanitizeQueryString(username);
+            if (!sanitizedEmail || !sanitizedUsername) {
+                return res.status(400).json({ msg: 'Invalid input format' });
+            }
+
+            let user = await User.findOne({ email: sanitizedEmail });
             if (user) {
-                console.log(`[Auth Route /register] Registration failed: User with email ${email} already exists.`);
+                console.log(`[Auth Route /register] Registration failed: User with email ${sanitizedEmail} already exists.`);
                 return res.status(400).json({ msg: 'User already exists' });
             }
-            let userByUsername = await User.findOne({ username });
+            let userByUsername = await User.findOne({ username: sanitizedUsername });
             if (userByUsername) {
-                console.log(`[Auth Route /register] Registration failed: Username ${username} already taken.`);
+                console.log(`[Auth Route /register] Registration failed: Username ${sanitizedUsername} already taken.`);
                 return res.status(400).json({ msg: 'Username already taken' });
             }
             user = new User({ email, password, username });
@@ -215,9 +230,15 @@ router.post(
         }
         const { email, password } = req.body;
         try {
-            let user = await User.findOne({ email });
+            // Sanitize email for MongoDB query (NoSQL injection prevention)
+            const sanitizedEmail = sanitizeQueryString(email);
+            if (!sanitizedEmail) {
+                return res.status(400).json({ msg: 'Invalid Credentials' });
+            }
+
+            let user = await User.findOne({ email: sanitizedEmail });
             if (!user) {
-                console.log('[Auth Route /login] Login failed: User not found for email:', email);
+                console.log('[Auth Route /login] Login failed: User not found for email:', sanitizedEmail);
                 return res.status(400).json({ msg: 'Invalid Credentials' });
             }
             console.log('[Auth Route /login] User found. Email:', user.email);
@@ -444,10 +465,12 @@ router.put('/update-profile', auth, async (req, res) => {
         // Update basic profile fields if provided
         if (username !== undefined) user.username = username;
         if (email !== undefined) {
-            if (email && email !== user.email && await User.findOne({ email })) { 
-                return res.status(400).json({ msg: 'Email already in use' }); 
+            // Sanitize email for MongoDB query (NoSQL injection prevention)
+            const sanitizedEmail = sanitizeQueryString(email);
+            if (sanitizedEmail && sanitizedEmail !== user.email && await User.findOne({ email: sanitizedEmail })) {
+                return res.status(400).json({ msg: 'Email already in use' });
             }
-            user.email = email;
+            user.email = sanitizedEmail || email;
         }
 
         // Update nested settings fields

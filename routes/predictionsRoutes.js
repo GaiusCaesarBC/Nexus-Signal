@@ -1215,7 +1215,14 @@ router.get('/history', auth, async (req, res) => {
     try {
         const { limit = 20, status } = req.query;
         const query = { user: req.user.id };
-        if (status) query.status = status;
+        // Sanitize status to prevent NoSQL injection (only allow string values)
+        if (status && typeof status === 'string') {
+            // Only allow valid status values
+            const validStatuses = ['pending', 'completed', 'expired', 'correct', 'incorrect'];
+            if (validStatuses.includes(status)) {
+                query.status = status;
+            }
+        }
 
         const predictions = await Prediction.find(query)
             .sort({ createdAt: -1 })

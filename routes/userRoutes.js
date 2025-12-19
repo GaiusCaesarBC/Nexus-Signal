@@ -7,6 +7,14 @@ const { check, validationResult } = require('express-validator');
 const User = require('../models/User');
 const auth = require('../middleware/authMiddleware'); // Ensure this path is correct
 
+// Sanitize string values for MongoDB queries (NoSQL injection prevention)
+const sanitizeQueryString = (value) => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    return value;
+};
+
 // @route   POST api/auth/register
 // @desc    Register a new user
 // @access  Public
@@ -29,17 +37,24 @@ router.post(
     try {
       console.log('[DEBUG AUTH] Register request received for email:', email);
 
+      // Sanitize inputs for MongoDB queries (NoSQL injection prevention)
+      const sanitizedEmail = sanitizeQueryString(email);
+      const sanitizedUsername = sanitizeQueryString(username);
+      if (!sanitizedEmail || !sanitizedUsername) {
+        return res.status(400).json({ msg: 'Invalid input format' });
+      }
+
       // Check if user with this email already exists
-      let user = await User.findOne({ email });
+      let user = await User.findOne({ email: sanitizedEmail });
       if (user) {
-        console.warn('[DEBUG AUTH] Registration failed: Email already exists:', email);
+        console.warn('[DEBUG AUTH] Registration failed: Email already exists:', sanitizedEmail);
         return res.status(400).json({ msg: 'User with this email already exists' });
       }
 
       // Check if username is already taken
-      user = await User.findOne({ username });
+      user = await User.findOne({ username: sanitizedUsername });
       if (user) {
-        console.warn('[DEBUG AUTH] Registration failed: Username already taken:', username);
+        console.warn('[DEBUG AUTH] Registration failed: Username already taken:', sanitizedUsername);
         return res.status(400).json({ msg: 'Username already taken' });
       }
 
@@ -93,11 +108,18 @@ router.post(
 
     try {
       console.log('[DEBUG AUTH] Attempting login for email:', email);
+
+      // Sanitize email for MongoDB query (NoSQL injection prevention)
+      const sanitizedEmail = sanitizeQueryString(email);
+      if (!sanitizedEmail) {
+        return res.status(400).json({ msg: 'Invalid credentials' });
+      }
+
       // Find user by email
-      let user = await User.findOne({ email });
+      let user = await User.findOne({ email: sanitizedEmail });
 
       if (!user) {
-        console.warn('[DEBUG AUTH] Login failed: User not found for email:', email);
+        console.warn('[DEBUG AUTH] Login failed: User not found for email:', sanitizedEmail);
         return res.status(400).json({ msg: 'Invalid credentials' });
       }
 
@@ -253,21 +275,31 @@ router.put('/settings', auth, [
 
         // Update Username
         if (username && user.username !== username) {
-            const existingUserWithUsername = await User.findOne({ username });
+            // Sanitize username for MongoDB query (NoSQL injection prevention)
+            const sanitizedUsername = sanitizeQueryString(username);
+            if (!sanitizedUsername) {
+                return res.status(400).json({ msg: 'Invalid username format' });
+            }
+            const existingUserWithUsername = await User.findOne({ username: sanitizedUsername });
             if (existingUserWithUsername && existingUserWithUsername.id.toString() !== user.id.toString()) {
                 return res.status(400).json({ msg: 'Username already taken' });
             }
-            user.username = username;
+            user.username = sanitizedUsername;
             console.log(`[DEBUG Settings] Username updated for ${user.email}`);
         }
 
         // Update Email
         if (email && user.email !== email) {
-            const existingUserWithEmail = await User.findOne({ email });
+            // Sanitize email for MongoDB query (NoSQL injection prevention)
+            const sanitizedEmail = sanitizeQueryString(email);
+            if (!sanitizedEmail) {
+                return res.status(400).json({ msg: 'Invalid email format' });
+            }
+            const existingUserWithEmail = await User.findOne({ email: sanitizedEmail });
             if (existingUserWithEmail && existingUserWithEmail.id.toString() !== user.id.toString()) {
                 return res.status(400).json({ msg: 'Email already in use' });
             }
-            user.email = email;
+            user.email = sanitizedEmail;
             console.log(`[DEBUG Settings] Email updated for ${user.username}`);
         }
 

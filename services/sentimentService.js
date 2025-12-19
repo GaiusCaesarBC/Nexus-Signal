@@ -8,6 +8,22 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY || 'demo'; // We'll use free sourc
 const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 const newsCache = new Map();
 
+// Properly sanitize HTML - strip tags AND decode common HTML entities
+function sanitizeHtml(text) {
+    if (!text || typeof text !== 'string') return '';
+    return text
+        .replace(/<[^>]*>/g, '')  // Strip HTML tags
+        .replace(/&amp;/g, '&')   // Decode &
+        .replace(/&lt;/g, '<')    // Decode <
+        .replace(/&gt;/g, '>')    // Decode >
+        .replace(/&quot;/g, '"')  // Decode "
+        .replace(/&#39;/g, "'")   // Decode '
+        .replace(/&nbsp;/g, ' ')  // Decode non-breaking space
+        .replace(/&#x27;/g, "'")  // Decode '
+        .replace(/&#x2F;/g, '/')  // Decode /
+        .trim();
+}
+
 /**
  * Fetch news articles for a stock symbol
  */
@@ -39,8 +55,8 @@ async function fetchNewsArticles(symbol) {
                 
                 if (titleMatch && descMatch) {
                     articles.push({
-                        title: titleMatch[1],
-                        description: descMatch[1].replace(/<[^>]*>/g, ''), // Strip HTML
+                        title: sanitizeHtml(titleMatch[1]),
+                        description: sanitizeHtml(descMatch[1]),
                         source: 'Yahoo Finance'
                     });
                 }
@@ -64,8 +80,8 @@ async function fetchNewsArticles(symbol) {
                     
                     if (titleMatch) {
                         articles.push({
-                            title: titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, ''),
-                            description: descMatch ? descMatch[1].replace(/<[^>]*>/g, '') : '',
+                            title: sanitizeHtml(titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '')),
+                            description: descMatch ? sanitizeHtml(descMatch[1]) : '',
                             source: 'Google News'
                         });
                     }

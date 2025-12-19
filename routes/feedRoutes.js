@@ -9,6 +9,12 @@ const NotificationService = require('../services/notificationService');
 const multer = require('multer');
 const { cloudinary } = require('../config/cloudinaryConfig');
 
+// Sanitize array of strings for MongoDB $in queries (NoSQL injection prevention)
+const sanitizeStringArray = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(item => typeof item === 'string' && item.length > 0);
+};
+
 // ============ MULTER SETUP ============
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -215,11 +221,12 @@ router.post('/', auth, upload.array('images', 4), async (req, res) => {
         const hashtags = extractHashtags(postText);
         const tickers = extractTickers(postText);
 
-        // Find mentioned users
+        // Find mentioned users (sanitize for NoSQL injection prevention)
         let mentionedUserIds = [];
-        if (mentionUsernames.length > 0) {
+        const sanitizedMentions = sanitizeStringArray(mentionUsernames);
+        if (sanitizedMentions.length > 0) {
             const mentionedUsers = await User.find({
-                username: { $in: mentionUsernames }
+                username: { $in: sanitizedMentions }
             }).select('_id');
             mentionedUserIds = mentionedUsers.map(u => u._id);
         }

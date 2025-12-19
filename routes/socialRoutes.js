@@ -9,6 +9,14 @@ const BrokerageConnection = require('../models/BrokerageConnection');
 const { updateUserStats, updateAllUserStats } = require('../services/statsService');
 const NotificationService = require('../services/notificationService');
 
+// Sanitize string values for MongoDB queries (NoSQL injection prevention)
+const sanitizeQueryString = (value) => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    return value;
+};
+
 // ============ OPTIONAL AUTH MIDDLEWARE ============
 const optionalAuth = (req, res, next) => {
     const token = req.cookies.token || req.header('x-auth-token');
@@ -582,7 +590,13 @@ router.get('/suggested', auth, async (req, res) => {
 // @access  Public (but respects privacy settings)
 router.get('/profile/username/:username', optionalAuth, async (req, res) => {
     try {
-        const user = await User.findOne({ username: req.params.username })
+        // Sanitize username for MongoDB query (NoSQL injection prevention)
+        const sanitizedUsername = sanitizeQueryString(req.params.username);
+        if (!sanitizedUsername) {
+            return res.status(400).json({ error: 'Invalid username format' });
+        }
+
+        const user = await User.findOne({ username: sanitizedUsername })
             .select('username profile stats achievements gamification social vault createdAt isFounder')
             .populate('social.followers', 'username profile.displayName profile.avatar')
             .populate('social.following', 'username profile.displayName profile.avatar');
@@ -1235,8 +1249,14 @@ router.post('/admin/update-stats/:userId', async (req, res) => {
 // 🔥 DEBUG: Check where achievements are stored for a user
 router.get('/debug/achievements/:username', async (req, res) => {
     try {
+        // Sanitize username for MongoDB query (NoSQL injection prevention)
+        const sanitizedUsername = sanitizeQueryString(req.params.username);
+        if (!sanitizedUsername) {
+            return res.json({ error: 'Invalid username format' });
+        }
+
         // Find user
-        const user = await User.findOne({ username: req.params.username });
+        const user = await User.findOne({ username: sanitizedUsername });
         if (!user) {
             return res.json({ error: 'User not found' });
         }

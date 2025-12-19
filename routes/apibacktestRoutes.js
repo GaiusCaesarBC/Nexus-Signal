@@ -61,9 +61,11 @@ router.post('/keys',
             const randomBytes = crypto.randomBytes(32).toString('hex');
             const apiKey = prefix + randomBytes;
 
-            // Hash the key for storage (don't store plain text!)
+            // Hash the key for storage using HMAC with secret (don't store plain text!)
+            // Using HMAC instead of plain SHA-256 for better security
+            const hmacSecret = process.env.API_KEY_SECRET || process.env.JWT_SECRET;
             const hashedKey = crypto
-                .createHash('sha256')
+                .createHmac('sha256', hmacSecret)
                 .update(apiKey)
                 .digest('hex');
 
