@@ -3,6 +3,7 @@ const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
 const { requireFeature, checkUsageLimit } = require('../middleware/subscriptionMiddleware');
+const Alert = require('../models/Alert');
 
 // Rate limiter for alerts endpoints (30 requests per minute)
 const alertsLimiter = rateLimit({
@@ -11,37 +12,25 @@ const alertsLimiter = rateLimit({
     message: { error: 'Too many requests, please slow down' }
 });
 
-// Alert model (you might need to create this)
-// const Alert = require('../models/Alert');
-
 // GET all alerts for user
 router.get('/', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
-        // Your alert fetching logic
-        const alerts = [
-            {
-                id: '1',
-                symbol: 'AAPL',
-                type: 'price',
-                condition: 'above',
-                targetPrice: 155,
-                currentPrice: 150.25,
-                active: true,
-                createdAt: new Date()
-            },
-            {
-                id: '2',
-                symbol: 'TSLA',
-                type: 'price',
-                condition: 'below',
-                targetPrice: 200,
-                currentPrice: 215.50,
-                active: true,
-                createdAt: new Date()
-            }
-        ];
+        const { status = 'active' } = req.query;
 
-        res.json(alerts);
+        const query = { user: req.user.id };
+        if (status && status !== 'all') {
+            query.status = status;
+        }
+
+        const alerts = await Alert.find(query)
+            .sort({ createdAt: -1 })
+            .limit(100);
+
+        res.json({
+            success: true,
+            count: alerts.length,
+            alerts
+        });
     } catch (error) {
         console.error('Error fetching alerts:', error);
         res.status(500).json({ error: 'Server error' });
@@ -52,22 +41,22 @@ router.get('/', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (re
 router.post('/price',
     alertsLimiter,
     auth,
-    requireFeature('hasPriceAlerts'), // Pro or higher
+    requireFeature('hasPriceAlerts'),
     checkUsageLimit('priceAlerts'),
     async (req, res) => {
         try {
-            const { symbol, condition, targetPrice, notifyEmail, notifySMS } = req.body;
+            const { symbol, condition, targetPrice, assetType, notifyEmail, notifySMS } = req.body;
 
             // Validate input
             if (!symbol || !condition || !targetPrice) {
-                return res.status(400).json({ 
-                    error: 'Symbol, condition, and target price are required' 
+                return res.status(400).json({
+                    error: 'Symbol, condition, and target price are required'
                 });
             }
 
             if (!['above', 'below'].includes(condition)) {
-                return res.status(400).json({ 
-                    error: 'Condition must be "above" or "below"' 
+                return res.status(400).json({
+                    error: 'Condition must be "above" or "below"'
                 });
             }
 
@@ -82,19 +71,25 @@ router.post('/price',
                 });
             }
 
-            // Create alert
-            const alert = {
-                id: Date.now().toString(),
+            // Map condition to type
+            const type = condition === 'above' ? 'price_above' : 'price_below';
+
+            // Create alert in database
+            const alert = new Alert({
                 user: req.user.id,
+                type,
                 symbol: symbol.toUpperCase(),
-                type: 'price',
-                condition,
+                assetType: assetType || 'stock',
                 targetPrice: parseFloat(targetPrice),
-                notifyEmail: notifyEmail !== false, // Default true
-                notifySMS: notifySMS || false,
-                active: true,
-                createdAt: new Date()
-            };
+                notifyVia: {
+                    inApp: true,
+                    email: notifyEmail !== false,
+                    push: notifySMS || false
+                },
+                status: 'active'
+            });
+
+            await alert.save();
 
             res.json({
                 success: true,
@@ -108,122 +103,122 @@ router.post('/price',
     }
 );
 
-// POST create custom alert - GATED PREMIUM+
-router.post('/custom',
+// POST create technical alert - GATED PREMIUM+
+router.post('/technical',
     alertsLimiter,
     auth,
-    requireFeature('hasCustomAlerts'), // Premium or Elite only
+    requireFeature('hasCustomAlerts'),
     async (req, res) => {
         try {
-            const { 
-                symbol, 
-                alertType, // volume, volatility, technical, sentiment
-                condition,
+            const {
+                symbol,
+                alertType,
+                assetType,
                 threshold,
                 notifyEmail,
-                notifySMS,
                 notifyPush
             } = req.body;
 
             // Validate input
-            if (!symbol || !alertType || !condition) {
-                return res.status(400).json({ 
-                    error: 'Symbol, alert type, and condition are required' 
+            if (!symbol || !alertType) {
+                return res.status(400).json({
+                    error: 'Symbol and alert type are required'
                 });
             }
 
-            const validTypes = ['volume', 'volatility', 'technical', 'sentiment', 'news'];
+            const validTypes = [
+                'rsi_oversold', 'rsi_overbought',
+                'macd_bullish_crossover', 'macd_bearish_crossover',
+                'bollinger_upper_breakout', 'bollinger_lower_breakout',
+                'support_test', 'resistance_test'
+            ];
+
             if (!validTypes.includes(alertType)) {
-                return res.status(400).json({ 
-                    error: `Alert type must be one of: ${validTypes.join(', ')}` 
+                return res.status(400).json({
+                    error: `Alert type must be one of: ${validTypes.join(', ')}`
                 });
             }
 
-            // Create custom alert
-            const alert = {
-                id: Date.now().toString(),
+            // Create technical alert
+            const alert = new Alert({
                 user: req.user.id,
-                symbol: symbol.toUpperCase(),
                 type: alertType,
-                condition,
-                threshold,
-                notifyEmail: notifyEmail !== false,
-                notifySMS: notifySMS || false,
-                notifyPush: notifyPush !== false,
-                active: true,
-                createdAt: new Date()
-            };
+                symbol: symbol.toUpperCase(),
+                assetType: assetType || 'stock',
+                technicalParams: {
+                    rsiThreshold: threshold,
+                    supportLevel: alertType === 'support_test' ? threshold : undefined,
+                    resistanceLevel: alertType === 'resistance_test' ? threshold : undefined
+                },
+                notifyVia: {
+                    inApp: true,
+                    email: notifyEmail !== false,
+                    push: notifyPush || false
+                },
+                status: 'active'
+            });
+
+            await alert.save();
 
             res.json({
                 success: true,
                 alert
             });
         } catch (error) {
-            console.error('Error creating custom alert:', error);
+            console.error('Error creating technical alert:', error);
             res.status(500).json({ error: 'Server error' });
         }
     }
 );
 
-// POST create pattern alert - GATED PREMIUM+
-router.post('/pattern',
+// POST create percent change alert - GATED PRO+
+router.post('/percent-change',
     alertsLimiter,
     auth,
-    requireFeature('hasPatternRecognition'), // Premium or Elite
+    requireFeature('hasPriceAlerts'),
+    checkUsageLimit('priceAlerts'),
     async (req, res) => {
         try {
-            const { 
-                symbol, 
-                patternType, // head-shoulders, triangle, breakout, support-resistance
-                timeframe,
-                notifyEmail,
-                notifySMS
-            } = req.body;
+            const { symbol, percentChange, timeframe, assetType, notifyEmail } = req.body;
 
             // Validate input
-            if (!symbol || !patternType) {
-                return res.status(400).json({ 
-                    error: 'Symbol and pattern type are required' 
+            if (!symbol || percentChange === undefined) {
+                return res.status(400).json({
+                    error: 'Symbol and percent change are required'
                 });
             }
 
-            const validPatterns = [
-                'head-shoulders', 
-                'triangle', 
-                'breakout', 
-                'support-resistance',
-                'double-top',
-                'double-bottom',
-                'flag',
-                'pennant'
-            ];
-
-            if (!validPatterns.includes(patternType)) {
-                return res.status(400).json({ 
-                    error: `Pattern type must be one of: ${validPatterns.join(', ')}` 
+            const validTimeframes = ['1h', '24h', '7d', '30d'];
+            if (timeframe && !validTimeframes.includes(timeframe)) {
+                return res.status(400).json({
+                    error: `Timeframe must be one of: ${validTimeframes.join(', ')}`
                 });
             }
 
-            // Create pattern alert
-            const alert = {
-                id: Date.now().toString(),
+            const alert = new Alert({
                 user: req.user.id,
+                type: 'percent_change',
                 symbol: symbol.toUpperCase(),
-                type: 'pattern',
-                patternType,
-                timeframe: timeframe || '1h',
-                notifyEmail: notifyEmail !== false,
-                notifySMS: notifySMS || false,
-                active: true,
-                createdAt: new Date()
-            };
+                assetType: assetType || 'stock',
+                percentChange: parseFloat(percentChange),
+                timeframe: timeframe || '24h',
+                notifyVia: {
+                    inApp: true,
+                    email: notifyEmail !== false,
+                    push: false
+                },
+                status: 'active'
+            });
+
+            await alert.save();
 
             res.json({
                 success: true,
-                alert
+                alert,
+                remainingAlerts: req.remainingUsage
             });
         } catch (error) {
-            console.error('Error creating pattern alert:', error);
+            console.error('Error creating percent change alert:', error);
             res.status(500).json({ error: 'Server error' });
         }
     }
@@ -232,20 +227,36 @@ router.post('/pattern',
 // PUT update alert
 router.put('/:id', alertsLimiter, auth, async (req, res) => {
     try {
-        const { active, targetPrice, threshold } = req.body;
+        const { status, targetPrice, threshold, notifyVia } = req.body;
 
-        // Your update logic here
-        const updatedAlert = {
-            id: req.params.id,
-            active,
-            targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
-            threshold,
-            updatedAt: new Date()
-        };
+        const alert = await Alert.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+
+        if (!alert) {
+            return res.status(404).json({ error: 'Alert not found' });
+        }
+
+        // Update fields
+        if (status && ['active', 'cancelled'].includes(status)) {
+            alert.status = status;
+        }
+        if (targetPrice !== undefined) {
+            alert.targetPrice = parseFloat(targetPrice);
+        }
+        if (threshold !== undefined) {
+            alert.technicalParams.rsiThreshold = threshold;
+        }
+        if (notifyVia) {
+            alert.notifyVia = { ...alert.notifyVia, ...notifyVia };
+        }
+
+        await alert.save();
 
         res.json({
             success: true,
-            alert: updatedAlert
+            alert
         });
     } catch (error) {
         console.error('Error updating alert:', error);
@@ -256,7 +267,15 @@ router.put('/:id', alertsLimiter, auth, async (req, res) => {
 // DELETE alert
 router.delete('/:id', alertsLimiter, auth, async (req, res) => {
     try {
-        // Your delete logic here
+        const alert = await Alert.findOneAndDelete({
+            _id: req.params.id,
+            user: req.user.id
+        });
+
+        if (!alert) {
+            return res.status(404).json({ error: 'Alert not found' });
+        }
+
         res.json({
             success: true,
             message: 'Alert deleted'
@@ -272,29 +291,13 @@ router.get('/history', alertsLimiter, auth, requireFeature('hasPriceAlerts'), as
     try {
         const { limit = 50 } = req.query;
 
-        // Your alert history logic
-        const history = [
-            {
-                id: '1',
-                symbol: 'AAPL',
-                type: 'price',
-                condition: 'above',
-                targetPrice: 150,
-                triggeredPrice: 150.25,
-                triggeredAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-                notified: true
-            },
-            {
-                id: '2',
-                symbol: 'TSLA',
-                type: 'volume',
-                condition: 'spike',
-                triggeredAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-                notified: true
-            }
-        ];
+        const history = await Alert.getTriggeredAlerts(req.user.id, parseInt(limit));
 
-        res.json(history.slice(0, parseInt(limit)));
+        res.json({
+            success: true,
+            count: history.length,
+            history
+        });
     } catch (error) {
         console.error('Error fetching alert history:', error);
         res.status(500).json({ error: 'Server error' });
@@ -310,13 +313,37 @@ router.get('/stats', alertsLimiter, auth, requireFeature('hasPriceAlerts'), asyn
         const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
         const limits = PLAN_LIMITS[plan];
 
+        // Get actual counts from database
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const [activeCount, todayCount, weekCount, monthCount] = await Promise.all([
+            Alert.countDocuments({ user: req.user.id, status: 'active' }),
+            Alert.countDocuments({
+                user: req.user.id,
+                status: 'triggered',
+                triggeredAt: { $gte: todayStart }
+            }),
+            Alert.countDocuments({
+                user: req.user.id,
+                status: 'triggered',
+                triggeredAt: { $gte: weekStart }
+            }),
+            Alert.countDocuments({
+                user: req.user.id,
+                status: 'triggered',
+                triggeredAt: { $gte: monthStart }
+            })
+        ]);
+
         const stats = {
-            activeAlerts: 5,
+            activeAlerts: activeCount,
             maxAlerts: limits.priceAlerts,
-            triggeredToday: 3,
-            triggeredThisWeek: 12,
-            triggeredThisMonth: 45,
-            accuracyRate: 87.5
+            triggeredToday: todayCount,
+            triggeredThisWeek: weekCount,
+            triggeredThisMonth: monthCount
         };
 
         res.json(stats);
@@ -326,22 +353,51 @@ router.get('/stats', alertsLimiter, auth, requireFeature('hasPriceAlerts'), asyn
     }
 });
 
-// POST test alert (check if conditions are met now)
+// POST test alert (check if conditions would be met)
 router.post('/:id/test', alertsLimiter, auth, requireFeature('hasPriceAlerts'), async (req, res) => {
     try {
-        // Your test logic - check current price/conditions
+        const alert = await Alert.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+
+        if (!alert) {
+            return res.status(404).json({ error: 'Alert not found' });
+        }
+
+        // Would need to fetch current price from price service
+        // For now, return alert info
         const testResult = {
-            alertId: req.params.id,
-            wouldTrigger: false,
-            currentValue: 150.25,
-            targetValue: 155,
-            difference: -4.75,
-            message: 'Alert would trigger when price reaches $155 (currently $150.25)'
+            alertId: alert._id,
+            type: alert.type,
+            symbol: alert.symbol,
+            targetPrice: alert.targetPrice,
+            status: alert.status,
+            lastChecked: alert.lastChecked,
+            message: `Alert is ${alert.status}. Target: $${alert.targetPrice || 'N/A'}`
         };
 
         res.json(testResult);
     } catch (error) {
         console.error('Error testing alert:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// POST cancel all active alerts
+router.post('/cancel-all', alertsLimiter, auth, async (req, res) => {
+    try {
+        const result = await Alert.updateMany(
+            { user: req.user.id, status: 'active' },
+            { $set: { status: 'cancelled' } }
+        );
+
+        res.json({
+            success: true,
+            cancelled: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('Error cancelling alerts:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });

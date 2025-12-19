@@ -2,13 +2,21 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const Notification = require('../models/Notification');
+
+// Rate limiter for notification endpoints (60 requests per minute)
+const notificationLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60,
+    message: { error: 'Too many requests, please slow down' }
+});
 
 // @route   GET /api/notifications
 // @desc    Get user's notifications
 // @access  Private
-router.get('/', auth, async (req, res) => {
+router.get('/', notificationLimiter, auth, async (req, res) => {
     try {
         const { limit = 50, unreadOnly = false } = req.query;
 
@@ -46,7 +54,7 @@ router.get('/', auth, async (req, res) => {
 // @route   GET /api/notifications/unread-count
 // @desc    Get count of unread notifications
 // @access  Private
-router.get('/unread-count', auth, async (req, res) => {
+router.get('/unread-count', notificationLimiter, auth, async (req, res) => {
     try {
         const count = await Notification.getUnreadCount(req.user.id);
 
@@ -67,7 +75,7 @@ router.get('/unread-count', auth, async (req, res) => {
 // @route   GET /api/notifications/:id
 // @desc    Get single notification
 // @access  Private
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', notificationLimiter, auth, async (req, res) => {
     try {
         const notification = await Notification.findOne({
             _id: req.params.id,
@@ -100,7 +108,7 @@ router.get('/:id', auth, async (req, res) => {
 // @route   PUT /api/notifications/:id/read
 // @desc    Mark notification as read
 // @access  Private
-router.put('/:id/read', auth, async (req, res) => {
+router.put('/:id/read', notificationLimiter, auth, async (req, res) => {
     try {
         const notification = await Notification.findOne({
             _id: req.params.id,
@@ -130,7 +138,7 @@ router.put('/:id/read', auth, async (req, res) => {
 // @route   POST /api/notifications/mark-all-read
 // @desc    Mark all notifications as read
 // @access  Private
-router.post('/mark-all-read', auth, async (req, res) => {
+router.post('/mark-all-read', notificationLimiter, auth, async (req, res) => {
     try {
         const result = await Notification.updateMany(
             { user: req.user.id, read: false },
@@ -154,7 +162,7 @@ router.post('/mark-all-read', auth, async (req, res) => {
 // @route   DELETE /api/notifications/:id
 // @desc    Delete notification
 // @access  Private
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', notificationLimiter, auth, async (req, res) => {
     try {
         const notification = await Notification.findOneAndDelete({
             _id: req.params.id,
@@ -182,7 +190,7 @@ router.delete('/:id', auth, async (req, res) => {
 // @route   POST /api/notifications/clear-all
 // @desc    Clear all read notifications
 // @access  Private
-router.post('/clear-all', auth, async (req, res) => {
+router.post('/clear-all', notificationLimiter, auth, async (req, res) => {
     try {
         const result = await Notification.deleteMany({
             user: req.user.id,
@@ -206,7 +214,7 @@ router.post('/clear-all', auth, async (req, res) => {
 // @route   GET /api/notifications/by-type/:type
 // @desc    Get notifications by type
 // @access  Private
-router.get('/by-type/:type', auth, async (req, res) => {
+router.get('/by-type/:type', notificationLimiter, auth, async (req, res) => {
     try {
         const { limit = 50 } = req.query;
         const { type } = req.params;

@@ -254,20 +254,21 @@ router.get('/stats', authMiddleware, async (req, res) => {
             
             console.log('[Gamification] Prediction reset date:', predictionResetDate || 'None (counting all)');
             
-            const totalPredictions = await Prediction.countDocuments({ 
-                user: req.user.id,
-                ...dateFilter
-            });
-            const correctPredictions = await Prediction.countDocuments({ 
-                user: req.user.id, 
-                status: 'correct',
-                ...dateFilter
-            });
-            const resolvedPredictions = await Prediction.countDocuments({
-                user: req.user.id,
-                status: { $in: ['correct', 'incorrect'] },
-                ...dateFilter
-            });
+            // Use aggregation with $facet for single query instead of 3 separate countDocuments
+            const predictionCounts = await Prediction.aggregate([
+                { $match: { user: user._id, ...dateFilter } },
+                {
+                    $facet: {
+                        total: [{ $count: 'count' }],
+                        correct: [{ $match: { status: 'correct' } }, { $count: 'count' }],
+                        resolved: [{ $match: { status: { $in: ['correct', 'incorrect'] } } }, { $count: 'count' }]
+                    }
+                }
+            ]);
+
+            const totalPredictions = predictionCounts[0]?.total[0]?.count || 0;
+            const correctPredictions = predictionCounts[0]?.correct[0]?.count || 0;
+            const resolvedPredictions = predictionCounts[0]?.resolved[0]?.count || 0;
             
             const accuracy = resolvedPredictions > 0 
                 ? Math.round((correctPredictions / resolvedPredictions) * 100)
@@ -1028,26 +1029,23 @@ router.post('/sync-predictions', authMiddleware, async (req, res) => {
         const predictionResetDate = user.gamification?.predictionResetDate || null;
         const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
         
-        // Get actual counts from Prediction model (respecting reset date)
-        const totalPredictions = await Prediction.countDocuments({ 
-            user: req.user.id,
-            ...dateFilter
-        });
-        const correctPredictions = await Prediction.countDocuments({ 
-            user: req.user.id, 
-            status: 'correct',
-            ...dateFilter
-        });
-        const incorrectPredictions = await Prediction.countDocuments({ 
-            user: req.user.id, 
-            status: 'incorrect',
-            ...dateFilter
-        });
-        const pendingPredictions = await Prediction.countDocuments({ 
-            user: req.user.id, 
-            status: 'pending',
-            ...dateFilter
-        });
+        // Get actual counts from Prediction model using aggregation (single query)
+        const predictionCounts = await Prediction.aggregate([
+            { $match: { user: user._id, ...dateFilter } },
+            {
+                $facet: {
+                    total: [{ $count: 'count' }],
+                    correct: [{ $match: { status: 'correct' } }, { $count: 'count' }],
+                    incorrect: [{ $match: { status: 'incorrect' } }, { $count: 'count' }],
+                    pending: [{ $match: { status: 'pending' } }, { $count: 'count' }]
+                }
+            }
+        ]);
+
+        const totalPredictions = predictionCounts[0]?.total[0]?.count || 0;
+        const correctPredictions = predictionCounts[0]?.correct[0]?.count || 0;
+        const incorrectPredictions = predictionCounts[0]?.incorrect[0]?.count || 0;
+        const pendingPredictions = predictionCounts[0]?.pending[0]?.count || 0;
         const resolvedPredictions = correctPredictions + incorrectPredictions;
         
         // Calculate accuracy based on resolved predictions only
@@ -1105,18 +1103,46 @@ router.get('/debug-predictions', authMiddleware, async (req, res) => {
         const predictionResetDate = user.gamification?.predictionResetDate || null;
         const dateFilter = predictionResetDate ? { createdAt: { $gte: predictionResetDate } } : {};
         
-        // Get counts (ALL predictions, ignoring reset date for comparison)
-        const totalAll = await Prediction.countDocuments({ user: req.user.id });
-        const correctAll = await Prediction.countDocuments({ user: req.user.id, status: 'correct' });
-        const incorrectAll = await Prediction.countDocuments({ user: req.user.id, status: 'incorrect' });
-        const pendingAll = await Prediction.countDocuments({ user: req.user.id, status: 'pending' });
-        const expiredAll = await Prediction.countDocuments({ user: req.user.id, status: 'expired' });
-        
-        // Get counts (FILTERED by reset date)
-        const totalFiltered = await Prediction.countDocuments({ user: req.user.id, ...dateFilter });
-        const correctFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'correct', ...dateFilter });
-        const incorrectFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'incorrect', ...dateFilter });
-        const pendingFiltered = await Prediction.countDocuments({ user: req.user.id, status: 'pending', ...dateFilter });
+        // Get all counts in a single aggregation query (reduces 9 queries to 1)
+        const userId = new require('mongoose').Types.ObjectId(req.user.id);
+        const [allCounts, filteredCounts] = await Promise.all([
+            // All-time counts
+            Prediction.aggregate([
+                { $match: { user: userId } },
+                {
+                    $facet: {
+                        total: [{ $count: 'count' }],
+                        correct: [{ $match: { status: 'correct' } }, { $count: 'count' }],
+                        incorrect: [{ $match: { status: 'incorrect' } }, { $count: 'count' }],
+                        pending: [{ $match: { status: 'pending' } }, { $count: 'count' }],
+                        expired: [{ $match: { status: 'expired' } }, { $count: 'count' }]
+                    }
+                }
+            ]),
+            // Filtered counts (respecting reset date)
+            Prediction.aggregate([
+                { $match: { user: userId, ...dateFilter } },
+                {
+                    $facet: {
+                        total: [{ $count: 'count' }],
+                        correct: [{ $match: { status: 'correct' } }, { $count: 'count' }],
+                        incorrect: [{ $match: { status: 'incorrect' } }, { $count: 'count' }],
+                        pending: [{ $match: { status: 'pending' } }, { $count: 'count' }]
+                    }
+                }
+            ])
+        ]);
+
+        const totalAll = allCounts[0]?.total[0]?.count || 0;
+        const correctAll = allCounts[0]?.correct[0]?.count || 0;
+        const incorrectAll = allCounts[0]?.incorrect[0]?.count || 0;
+        const pendingAll = allCounts[0]?.pending[0]?.count || 0;
+        const expiredAll = allCounts[0]?.expired[0]?.count || 0;
+
+        const totalFiltered = filteredCounts[0]?.total[0]?.count || 0;
+        const correctFiltered = filteredCounts[0]?.correct[0]?.count || 0;
+        const incorrectFiltered = filteredCounts[0]?.incorrect[0]?.count || 0;
+        const pendingFiltered = filteredCounts[0]?.pending[0]?.count || 0;
         
         // Get recent predictions
         const recentPredictions = await Prediction.find({ user: req.user.id })
