@@ -3,6 +3,7 @@
 
 const axios = require('axios');
 const geckoTerminalService = require('./geckoTerminalService');
+const { sanitizeSymbol } = require('../utils/symbolValidation');
 
 // ============ CONFIGURATION ============
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -366,17 +367,20 @@ async function fetchGeckoTerminalPrice(symbol, tokenAddress = null, network = 'b
  * Fetch stock price from Yahoo Finance
  */
 async function fetchStockPriceYahoo(symbol) {
+    // Validate symbol to prevent SSRF attacks
+    const safeSymbol = sanitizeSymbol(symbol);
+
     try {
         const response = await axios.get(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`,
+            `https://query1.finance.yahoo.com/v8/finance/chart/${safeSymbol}?interval=1d&range=1d`,
             { timeout: 10000 }
         );
-        
+
         const result = response.data?.chart?.result?.[0];
         if (result) {
-            const price = result.meta?.regularMarketPrice || 
+            const price = result.meta?.regularMarketPrice ||
                          result.indicators?.quote?.[0]?.close?.slice(-1)[0];
-            
+
             if (price) {
                 return {
                     price: parseFloat(price),
@@ -385,9 +389,9 @@ async function fetchStockPriceYahoo(symbol) {
             }
         }
     } catch (error) {
-        console.log(`[PriceService] Yahoo failed for ${symbol}:`, error.message);
+        console.log(`[PriceService] Yahoo failed for ${safeSymbol}:`, error.message);
     }
-    
+
     return { price: null, source: null };
 }
 
@@ -399,9 +403,12 @@ async function fetchStockPriceAlphaVantage(symbol) {
         return { price: null, source: null };
     }
 
+    // Validate symbol to prevent SSRF attacks
+    const safeSymbol = sanitizeSymbol(symbol);
+
     try {
         const response = await axios.get(
-            `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`,
+            `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${safeSymbol}&apikey=${ALPHA_VANTAGE_KEY}`,
             { timeout: 10000 }
         );
 

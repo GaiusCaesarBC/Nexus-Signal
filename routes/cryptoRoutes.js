@@ -23,6 +23,24 @@ const MAX_CACHE_SIZE = 500; // Maximum cache entries to prevent memory leaks
 const cryptoCache = {};
 const quoteCache = {};
 
+// Validate CoinGecko ID to prevent SSRF attacks
+// CoinGecko IDs are alphanumeric with hyphens only (e.g., "bitcoin", "avalanche-2", "matic-network")
+function validateCoinGeckoId(id) {
+    if (!id || typeof id !== 'string') {
+        throw new Error('Invalid cryptocurrency identifier');
+    }
+    const trimmed = id.trim().toLowerCase();
+    // Allow only alphanumeric characters and hyphens, 1-50 chars
+    if (!/^[a-z0-9-]{1,50}$/.test(trimmed)) {
+        throw new Error('Invalid cryptocurrency identifier format');
+    }
+    // Disallow path traversal attempts
+    if (trimmed.includes('--') || trimmed.startsWith('-') || trimmed.endsWith('-')) {
+        throw new Error('Invalid cryptocurrency identifier format');
+    }
+    return trimmed;
+}
+
 // Cache cleanup function to prevent memory leaks
 function cleanupCache(cache, maxSize) {
     const keys = Object.keys(cache);
@@ -83,7 +101,15 @@ function formatDateString(timestamp, range) {
 router.get('/test-api/:symbol?', async (req, res) => {
     try {
         const symbol = req.params.symbol || 'ethereum';
-        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
+        // Map to known ID or validate user input to prevent SSRF
+        let coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()];
+        if (!coinGeckoId) {
+            try {
+                coinGeckoId = validateCoinGeckoId(symbol);
+            } catch (validationError) {
+                return res.status(400).json({ error: validationError.message });
+            }
+        }
 
         console.log('\n=== COINGECKO PRO API TEST ===');
         console.log('API Key exists:', !!COINGECKO_API_KEY);
@@ -157,8 +183,16 @@ router.get('/test-api/:symbol?', async (req, res) => {
 router.get('/quote/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
-        const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
-        
+        // Map to known ID or validate user input to prevent SSRF
+        let coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()];
+        if (!coinGeckoId) {
+            try {
+                coinGeckoId = validateCoinGeckoId(symbol);
+            } catch (validationError) {
+                return res.status(400).json({ error: validationError.message });
+            }
+        }
+
         // Check cache
         const cacheKey = `quote-${coinGeckoId}`;
         if (quoteCache[cacheKey] && (Date.now() - quoteCache[cacheKey].timestamp < QUOTE_CACHE_DURATION)) {
@@ -234,8 +268,12 @@ router.get('/quote/:symbol', async (req, res) => {
 
 // Helper function to fetch crypto data from CoinGecko PRO
 async function fetchCryptoData(symbol, range) {
-    const coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
-    
+    // Map to known ID or validate user input to prevent SSRF
+    let coinGeckoId = cryptoSymbolMap[symbol.toUpperCase()];
+    if (!coinGeckoId) {
+        coinGeckoId = validateCoinGeckoId(symbol); // Will throw if invalid
+    }
+
     const cacheKey = `crypto-${coinGeckoId}-${range}`;
     if (cryptoCache[cacheKey] && (Date.now() - cryptoCache[cacheKey].timestamp < CACHE_DURATION)) {
         console.log(`[Crypto] Serving cached data for ${coinGeckoId}`);
@@ -825,9 +863,14 @@ router.get('/dex/losers/:network?', async (req, res) => {
 // GET /api/crypto/dex/search - Search DEX tokens across networks
 router.get('/dex/search', async (req, res) => {
     try {
-        const { q, network } = req.query;
+        let { q, network } = req.query;
 
-        if (!q || q.length < 2) {
+        // Fix type confusion: q could be an array if multiple q params are passed
+        if (Array.isArray(q)) {
+            q = q[0];
+        }
+
+        if (!q || typeof q !== 'string' || q.length < 2) {
             return res.status(400).json({ msg: 'Query must be at least 2 characters' });
         }
 

@@ -615,8 +615,11 @@ async function getCurrentPrice(symbol, assetType = 'stock') {
 }
 
 async function getStockPrice(symbol) {
+    // Validate symbol to prevent SSRF
+    const safeSymbol = sanitizeSymbol(symbol);
+
     try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${safeSymbol}?interval=1d`;
         const response = await axios.get(url, { timeout: 5000 });
         const result = response.data.chart.result[0];
         const meta = result.meta;
@@ -632,9 +635,9 @@ async function getStockPrice(symbol) {
     }
 
     const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-    
+
     if (ALPHA_VANTAGE_KEY && ALPHA_VANTAGE_KEY !== 'demo') {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY}`;
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${safeSymbol}&apikey=${ALPHA_VANTAGE_KEY}`;
         const response = await axios.get(url, { timeout: 5000 });
         const quote = response.data['Global Quote'];
         

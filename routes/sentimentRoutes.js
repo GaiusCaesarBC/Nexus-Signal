@@ -7,6 +7,7 @@ const stocktwitsService = require('../services/stocktwitsService');
 const sentimentTracker = require('../utils/sentimentTracker');
 const priceService = require('../services/priceService');
 const axios = require('axios');
+const { sanitizeSymbol } = require('../utils/symbolValidation');
 
 // ============ ML SERVICE CONFIG ============
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'https://nexus-signal-ml.onrender.com';
@@ -15,16 +16,19 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'https://nexus-signal-ml.on
 
 // Get REAL prediction from ML service
 async function getPrediction(symbol, token) {
+    // Validate symbol to prevent SSRF attacks
+    const safeSymbol = sanitizeSymbol(symbol);
+
     try {
-        console.log(`[Sentiment] Fetching REAL AI prediction for ${symbol}...`);
-        
+        console.log(`[Sentiment] Fetching REAL AI prediction for ${safeSymbol}...`);
+
         // Call the actual ML prediction service
         const response = await axios.post(
             `${ML_SERVICE_URL}/predict`,
             {
-                symbol: symbol.toUpperCase(),
+                symbol: safeSymbol,
                 days: 7,
-                type: priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock'
+                type: priceService.isCryptoSymbol(safeSymbol) ? 'crypto' : 'stock'
             },
             {
                 headers: {
@@ -35,9 +39,9 @@ async function getPrediction(symbol, token) {
         );
 
         if (response.data && response.data.prediction) {
-            console.log(`[Sentiment] ✅ REAL prediction received for ${symbol}`);
+            console.log(`[Sentiment] ✅ REAL prediction received for ${safeSymbol}`);
             return {
-                symbol: symbol.toUpperCase(),
+                symbol: safeSymbol,
                 current_price: response.data.current_price || response.data.prediction.current_price,
                 prediction: {
                     target_price: response.data.prediction.target_price,
@@ -62,24 +66,24 @@ async function getPrediction(symbol, token) {
         return null;
         
     } catch (error) {
-        console.log(`[Sentiment] ⚠️ ML prediction failed for ${symbol}:`, error.message);
-        
+        console.log(`[Sentiment] ⚠️ ML prediction failed for ${safeSymbol}:`, error.message);
+
         // Try backup prediction endpoint if main one fails
         try {
             console.log(`[Sentiment] Trying backup prediction method...`);
             const backupResponse = await axios.get(
-                `${ML_SERVICE_URL}/quick-predict/${symbol.toUpperCase()}`,
+                `${ML_SERVICE_URL}/quick-predict/${safeSymbol}`,
                 { timeout: 15000 }
             );
-            
+
             if (backupResponse.data) {
-                console.log(`[Sentiment] ✅ Backup prediction received for ${symbol}`);
+                console.log(`[Sentiment] ✅ Backup prediction received for ${safeSymbol}`);
                 return backupResponse.data;
             }
         } catch (backupError) {
             console.log(`[Sentiment] ⚠️ Backup prediction also failed:`, backupError.message);
         }
-        
+
         return null;
     }
 }

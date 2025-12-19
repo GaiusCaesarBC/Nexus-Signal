@@ -9,7 +9,7 @@ class GeckoTerminalService {
         this.CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
         this.BASE_URL = 'https://api.geckoterminal.com/api/v2';
 
-        // Supported networks
+        // Supported networks (allowlist for SSRF prevention)
         this.NETWORKS = {
             bsc: 'bsc',
             ethereum: 'eth',
@@ -19,6 +19,46 @@ class GeckoTerminalService {
             base: 'base',
             avalanche: 'avax'
         };
+
+        // Valid network values (for validation)
+        this.VALID_NETWORKS = new Set(Object.values(this.NETWORKS));
+    }
+
+    // Validate network parameter to prevent SSRF
+    validateNetwork(network) {
+        if (!network || typeof network !== 'string') {
+            throw new Error('Invalid network parameter');
+        }
+        const normalized = network.toLowerCase().trim();
+        // Check if it's a valid network (either key or value)
+        if (this.NETWORKS[normalized]) {
+            return this.NETWORKS[normalized];
+        }
+        if (this.VALID_NETWORKS.has(normalized)) {
+            return normalized;
+        }
+        throw new Error(`Unsupported network: ${network}`);
+    }
+
+    // Validate address format to prevent SSRF (hex addresses or Solana base58)
+    validateAddress(address) {
+        if (!address || typeof address !== 'string') {
+            throw new Error('Invalid address parameter');
+        }
+        const trimmed = address.trim();
+        // Ethereum-style hex address (0x...)
+        if (/^0x[a-fA-F0-9]{40}$/i.test(trimmed)) {
+            return trimmed.toLowerCase();
+        }
+        // Solana base58 address (32-44 chars, alphanumeric)
+        if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) {
+            return trimmed;
+        }
+        // Generic pool address (alphanumeric with underscores/hyphens)
+        if (/^[a-zA-Z0-9_-]{10,100}$/.test(trimmed)) {
+            return trimmed;
+        }
+        throw new Error('Invalid address format');
     }
 
     getCached(key) {
@@ -78,13 +118,16 @@ class GeckoTerminalService {
      * Get trending pools for a network
      */
     async getTrendingPools(network = 'bsc', limit = 20, fixPercentages = true) {
-        const cacheKey = `trending-${network}-${limit}`;
+        // Validate network to prevent SSRF
+        const validNetwork = this.validateNetwork(network);
+
+        const cacheKey = `trending-${validNetwork}-${limit}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
 
         try {
             const response = await axios.get(
-                `${this.BASE_URL}/networks/${network}/trending_pools`,
+                `${this.BASE_URL}/networks/${validNetwork}/trending_pools`,
                 {
                     timeout: 15000,
                     headers: { 'Accept': 'application/json' }
@@ -182,13 +225,17 @@ class GeckoTerminalService {
     async getTokenPrice(network, tokenAddress) {
         if (!network || !tokenAddress) return null;
 
-        const cacheKey = `price-${network}-${tokenAddress}`;
+        // Validate inputs to prevent SSRF
+        const validNetwork = this.validateNetwork(network);
+        const validAddress = this.validateAddress(tokenAddress);
+
+        const cacheKey = `price-${validNetwork}-${validAddress}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
 
         try {
             const response = await axios.get(
-                `${this.BASE_URL}/networks/${network}/tokens/${tokenAddress}`,
+                `${this.BASE_URL}/networks/${validNetwork}/tokens/${validAddress}`,
                 {
                     timeout: 10000,
                     headers: { 'Accept': 'application/json' }
@@ -226,13 +273,17 @@ class GeckoTerminalService {
     async getPoolData(network, poolAddress) {
         if (!network || !poolAddress) return null;
 
-        const cacheKey = `pool-${network}-${poolAddress}`;
+        // Validate inputs to prevent SSRF
+        const validNetwork = this.validateNetwork(network);
+        const validAddress = this.validateAddress(poolAddress);
+
+        const cacheKey = `pool-${validNetwork}-${validAddress}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
 
         try {
             const response = await axios.get(
-                `${this.BASE_URL}/networks/${network}/pools/${poolAddress}`,
+                `${this.BASE_URL}/networks/${validNetwork}/pools/${validAddress}`,
                 {
                     timeout: 10000,
                     headers: { 'Accept': 'application/json' }
@@ -258,14 +309,24 @@ class GeckoTerminalService {
     async getOHLCV(network, poolAddress, timeframe = 'hour', aggregate = 1, limit = 100) {
         if (!network || !poolAddress) return [];
 
-        const cacheKey = `ohlcv-${network}-${poolAddress}-${timeframe}-${aggregate}`;
+        // Validate inputs to prevent SSRF
+        const validNetwork = this.validateNetwork(network);
+        const validAddress = this.validateAddress(poolAddress);
+        // Validate timeframe against allowed values
+        const validTimeframes = ['minute', 'hour', 'day'];
+        const validTimeframe = validTimeframes.includes(timeframe) ? timeframe : 'hour';
+        // Validate numeric params
+        const validAggregate = Math.min(Math.max(parseInt(aggregate) || 1, 1), 60);
+        const validLimit = Math.min(Math.max(parseInt(limit) || 100, 1), 1000);
+
+        const cacheKey = `ohlcv-${validNetwork}-${validAddress}-${validTimeframe}-${validAggregate}`;
         const cached = this.getCached(cacheKey);
         if (cached) return cached;
 
         try {
             // GeckoTerminal timeframes: minute, hour, day
             const response = await axios.get(
-                `${this.BASE_URL}/networks/${network}/pools/${poolAddress}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=${limit}`,
+                `${this.BASE_URL}/networks/${validNetwork}/pools/${validAddress}/ohlcv/${validTimeframe}?aggregate=${validAggregate}&limit=${validLimit}`,
                 {
                     timeout: 15000,
                     headers: { 'Accept': 'application/json' }

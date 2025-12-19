@@ -283,7 +283,8 @@ const USE_MOCK_PREDICTIONS = process.env.USE_MOCK_PREDICTIONS === 'true' || fals
 // ============ REAL-TIME PRICE FETCHING ============
 // Fetch fresh price directly from external APIs (bypass cache for display)
 async function getFreshPrice(symbol, assetType, dexInfo = null) {
-    const upperSymbol = symbol.toUpperCase();
+    // Validate symbol to prevent SSRF attacks
+    const upperSymbol = sanitizeSymbol(symbol);
     console.log(`[Price] Fetching fresh price for ${upperSymbol} (${assetType})`);
 
     // Get CoinGecko Pro API key from environment

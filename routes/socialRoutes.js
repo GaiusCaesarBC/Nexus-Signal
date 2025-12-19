@@ -976,9 +976,14 @@ router.put('/profile', auth, async (req, res) => {
 // @access  Public
 router.get('/search', async (req, res) => {
     try {
-        const { q } = req.query;
+        let { q } = req.query;
 
-        if (!q || q.length < 2) {
+        // Fix type confusion: q could be an array if multiple q params are passed
+        if (Array.isArray(q)) {
+            q = q[0];
+        }
+
+        if (!q || typeof q !== 'string' || q.length < 2) {
             return res.status(400).json({ error: 'Search query too short' });
         }
 

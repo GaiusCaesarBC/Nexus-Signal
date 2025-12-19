@@ -1,6 +1,7 @@
 // server/services/backtestEngine.js - Multi-Source Backtesting Engine
 // Supports: Yahoo Finance, Alpha Vantage Pro, CoinGecko, Gecko Terminal
 const axios = require('axios');
+const { sanitizeSymbol } = require('../utils/symbolValidation');
 
 // Common crypto symbols mapping to CoinGecko IDs
 const CRYPTO_ID_MAP = {
@@ -34,16 +35,19 @@ class BacktestEngine {
                /^(BTC|ETH|SOL|XRP|ADA|DOGE|DOT|MATIC|LINK|AVAX)/.test(cleanSymbol);
     }
 
-    // Get CoinGecko ID from symbol
+    // Get CoinGecko ID from symbol (validates to prevent SSRF)
     getCoinGeckoId(symbol) {
-        const cleanSymbol = symbol.toUpperCase().replace('-USD', '').replace('USDT', '').replace('USD', '');
+        // Validate first to prevent SSRF
+        const validatedSymbol = sanitizeSymbol(symbol);
+        const cleanSymbol = validatedSymbol.replace('-USD', '').replace('USDT', '').replace('USD', '');
         return CRYPTO_ID_MAP[cleanSymbol] || cleanSymbol.toLowerCase();
     }
 
     // ============ DATA FETCHING - MULTI SOURCE ============
 
     async fetchHistoricalData(symbol, startDate, endDate) {
-        const cleanSymbol = symbol.toUpperCase();
+        // Validate symbol to prevent SSRF attacks
+        const cleanSymbol = sanitizeSymbol(symbol);
         const isCrypto = this.isCrypto(cleanSymbol);
 
         console.log(`[Backtest] Fetching data for ${cleanSymbol} (${isCrypto ? 'CRYPTO' : 'STOCK'})`);

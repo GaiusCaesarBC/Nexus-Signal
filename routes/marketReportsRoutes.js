@@ -5,6 +5,7 @@ const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
 const Anthropic = require('@anthropic-ai/sdk');
+const { sanitizeSymbol } = require('../utils/symbolValidation');
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -244,9 +245,12 @@ async function fetchMarketData() {
 }
 
 async function fetchStockData(symbol) {
+    // Validate symbol to prevent SSRF attacks
+    const safeSymbol = sanitizeSymbol(symbol);
+
     try {
         const response = await axios.get(
-            `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics`,
+            `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${safeSymbol}?modules=price,summaryDetail,financialData,defaultKeyStatistics`,
             { timeout: 10000 }
         );
         const result = response.data?.quoteSummary?.result?.[0];
@@ -274,7 +278,7 @@ async function fetchStockData(symbol) {
             };
         }
     } catch (error) {
-        console.error(`[Market Reports] Error fetching stock data for ${symbol}:`, error.message);
+        console.error(`[Market Reports] Error fetching stock data for ${safeSymbol}:`, error.message);
     }
     return null;
 }
