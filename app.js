@@ -1,8 +1,11 @@
 // server/app.js - Updated with Portfolio, Predictions, Chat, Alerts, and PATTERN Routes
 
 require('dotenv').config();
-console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
-console.log('First 20 chars:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 20) : 'N/A');
+
+// Debug logging only in development
+if (process.env.NODE_ENV !== 'production') {
+    console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'FOUND ✓' : 'MISSING ✗');
+}
 
 const express = require('express');
 const cors = require('cors');
@@ -33,7 +36,7 @@ const stripeRoutes = require('./routes/stripeRoutes'); // 💳 Stripe Payments
 const User = require('./models/User');
 const { PLAN_LIMITS } = require('./middleware/subscriptionMiddleware');
 
-// Price mapping function for webhook
+// Price mapping function for webhook - uses env vars only
 const getPlanFromPriceId = (priceId) => {
     const priceMapping = {
         [process.env.STRIPE_PRICE_STARTER]: 'starter',
@@ -41,13 +44,13 @@ const getPlanFromPriceId = (priceId) => {
         [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
         [process.env.STRIPE_PRICE_ELITE]: 'elite'
     };
-    const hardcodedMapping = {
-        'price_1SV9d8CtdTItnGjydNZsbXl3': 'starter',
-        'price_1SV9dTCtdTItnGjycfSxQtAg': 'pro',
-        'price_1SV9doCtdTItnGjyYb8yG97j': 'premium',
-        'price_1SV9eACtdTItnGjyzSNaNYhP': 'elite'
-    };
-    return priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
+
+    const plan = priceMapping[priceId];
+    if (!plan) {
+        console.warn(`[Stripe] Unknown price ID: ${priceId}. Check STRIPE_PRICE_* env vars.`);
+        return 'starter'; // Default fallback
+    }
+    return plan;
 };
 
 // Stripe webhook endpoint - raw body parser applied inline
@@ -259,7 +262,23 @@ const apiLimiter = rateLimit({
 });
 
 // --- Middleware ---
-app.use(helmet());
+// Security headers with Content Security Policy
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https:", "blob:"],
+            connectSrc: ["'self'", "https://api.stripe.com", "https://*.polygon.io", "https://*.finnhub.io", "wss://*.finnhub.io"],
+            frameSrc: ["'self'", "https://js.stripe.com"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
+        }
+    },
+    crossOriginEmbedderPolicy: false // Required for loading external resources
+}));
 
 // --- JSON parsing ---
 // Note: Stripe webhook is handled BEFORE this middleware in app.js
