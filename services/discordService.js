@@ -67,7 +67,16 @@ const registerSlashCommands = async (token, clientId) => {
             .addStringOption(option =>
                 option.setName('symbol')
                     .setDescription('Stock/crypto symbol (e.g., AAPL, BTC)')
-                    .setRequired(true)),
+                    .setRequired(true))
+            .addStringOption(option =>
+                option.setName('timeframe')
+                    .setDescription('Prediction timeframe')
+                    .setRequired(false)
+                    .addChoices(
+                        { name: '7 days (short-term)', value: '7' },
+                        { name: '30 days (medium-term)', value: '30' },
+                        { name: '90 days (long-term)', value: '90' }
+                    )),
         new SlashCommandBuilder()
             .setName('price')
             .setDescription('Get current price for a stock or crypto')
@@ -173,15 +182,58 @@ const handleInteraction = async (interaction) => {
 
 // ==================== COMMAND HANDLERS ====================
 
-// /predict <symbol>
+// /predict <symbol> [timeframe]
 const handlePredictCommand = async (interaction) => {
     await interaction.deferReply();
 
     const symbol = interaction.options.getString('symbol').toUpperCase();
+    const timeframeOption = interaction.options.getString('timeframe');
+    const days = timeframeOption ? parseInt(timeframeOption, 10) : 7;  // Default to 7 days
     const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 
+    // Timeframe labels for display
+    const timeframeLabels = {
+        7: 'short-term',
+        30: 'medium-term',
+        90: 'long-term'
+    };
+
     try {
-        // First, try to get a cached prediction
+        // For non-default timeframes, skip cache and go directly to ML service
+        if (days !== 7) {
+            console.log(`[Discord] ${days}-day prediction for ${symbol}, calling ML service...`);
+
+            const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
+                symbol: symbol,
+                days: days
+            }, { timeout: 30000 });
+
+            if (!mlResponse.data || mlResponse.data.error) {
+                await interaction.editReply({
+                    content: `Could not generate ${days}-day prediction for ${symbol}. ${mlResponse.data?.error || 'The symbol may not be supported.'}`
+                });
+                return;
+            }
+
+            const mlData = mlResponse.data;
+            const factors = buildFactorsFromMLData(mlData);
+
+            const prediction = {
+                symbol: symbol,
+                direction: mlData.prediction?.direction || mlData.direction || 'neutral',
+                confidence: mlData.prediction?.confidence || mlData.confidence || 50,
+                currentPrice: mlData.current_price || mlData.currentPrice,
+                targetPrice: mlData.prediction?.target_price || mlData.targetPrice,
+                timeframe: `${days} days (${timeframeLabels[days] || 'custom'})`,
+                factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum', 'ML model analysis']
+            };
+
+            const embed = createPredictionEmbed(prediction);
+            await interaction.editReply({ embeds: [embed] });
+            return;
+        }
+
+        // For 7-day predictions, try cache first
         const cacheResponse = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/predictions/active/${symbol}`);
 
         if (cacheResponse.data.success && cacheResponse.data.exists && cacheResponse.data.prediction) {
@@ -195,7 +247,7 @@ const handlePredictCommand = async (interaction) => {
                 confidence: data.liveConfidence || data.prediction?.confidence || 0,
                 currentPrice: data.current_price,
                 targetPrice: data.prediction?.target_price,
-                timeframe: data.prediction?.days ? `${data.prediction.days} days` : '24h',
+                timeframe: data.prediction?.days ? `${data.prediction.days} days` : '7 days',
                 factors: factors.length > 0 ? factors : ['Technical analysis', 'Price momentum']
             };
 
@@ -210,7 +262,7 @@ const handlePredictCommand = async (interaction) => {
         // Call the ML service directly
         const mlResponse = await axios.post(`${ML_SERVICE_URL}/predict`, {
             symbol: symbol,
-            days: 7
+            days: days
         }, { timeout: 30000 });
 
         if (!mlResponse.data || mlResponse.data.error) {
@@ -221,24 +273,7 @@ const handlePredictCommand = async (interaction) => {
         }
 
         const mlData = mlResponse.data;
-
-        // Build factors from ML response
-        const factors = [];
-        if (mlData.indicators && typeof mlData.indicators === 'object') {
-            Object.entries(mlData.indicators).forEach(([name, indicator]) => {
-                if (indicator && typeof indicator === 'object') {
-                    const value = indicator.value !== undefined ? indicator.value : indicator;
-                    const signal = indicator.signal || '';
-                    factors.push(`${name}: ${value}${signal ? ` (${signal})` : ''}`);
-                } else if (indicator !== null && indicator !== undefined) {
-                    factors.push(`${name}: ${indicator}`);
-                }
-            });
-        }
-        if (mlData.analysis && typeof mlData.analysis === 'object') {
-            if (mlData.analysis.trend) factors.push(`Trend: ${mlData.analysis.trend}`);
-            if (mlData.analysis.volatility) factors.push(`Volatility: ${mlData.analysis.volatility}`);
-        }
+        const factors = buildFactorsFromMLData(mlData);
 
         const prediction = {
             symbol: symbol,
@@ -265,6 +300,27 @@ const handlePredictCommand = async (interaction) => {
             await interaction.editReply({ content: `Could not fetch prediction for ${symbol}. Please try again later.` });
         }
     }
+};
+
+// Helper function to build factors from ML response
+const buildFactorsFromMLData = (mlData) => {
+    const factors = [];
+    if (mlData.indicators && typeof mlData.indicators === 'object') {
+        Object.entries(mlData.indicators).forEach(([name, indicator]) => {
+            if (indicator && typeof indicator === 'object') {
+                const value = indicator.value !== undefined ? indicator.value : indicator;
+                const signal = indicator.signal || '';
+                factors.push(`${name}: ${value}${signal ? ` (${signal})` : ''}`);
+            } else if (indicator !== null && indicator !== undefined) {
+                factors.push(`${name}: ${indicator}`);
+            }
+        });
+    }
+    if (mlData.analysis && typeof mlData.analysis === 'object') {
+        if (mlData.analysis.trend) factors.push(`Trend: ${mlData.analysis.trend}`);
+        if (mlData.analysis.volatility) factors.push(`Volatility: ${mlData.analysis.volatility}`);
+    }
+    return factors;
 };
 
 // Helper function to build factors from prediction data
