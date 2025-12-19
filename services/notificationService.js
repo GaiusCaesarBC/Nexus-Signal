@@ -307,6 +307,93 @@ class NotificationService {
         });
     }
 
+    // ============ SYSTEM NOTIFICATION (GENERIC) ============
+    static async notifySystem(userId, title, message) {
+        return this.createNotification(userId, {
+            type: 'system',
+            title,
+            message,
+            icon: 'info',
+            link: '/dashboard'
+        });
+    }
+
+    // ============ LEVEL UP NOTIFICATION (ALIAS) ============
+    static async notifyLevelUp(userId, data) {
+        return this.createLevelUpNotification(userId, data.level, data.title || data.rank);
+    }
+
+    // ============ ACHIEVEMENT UNLOCKED NOTIFICATION (ALIAS) ============
+    static async notifyAchievementUnlocked(userId, data) {
+        return this.createAchievementNotification(userId, {
+            id: data.achievementId || data.id,
+            name: data.name || data.achievementName,
+            icon: data.icon || data.achievementIcon,
+            xpReward: data.xpReward || 0
+        });
+    }
+
+    // ============ TRADE PROFITABLE NOTIFICATION ============
+    static async notifyTradeProfitable(userId, data) {
+        return this.createNotification(userId, {
+            type: 'portfolio_milestone',
+            title: '📈 Profitable Trade!',
+            message: `Your ${data.symbol} trade is up ${data.profitPercent?.toFixed(2) || 0}%!`,
+            icon: 'trending-up',
+            link: '/paper-trading',
+            data
+        });
+    }
+
+    // ============ TRADE LOSS NOTIFICATION ============
+    static async notifyTradeLoss(userId, data) {
+        return this.createNotification(userId, {
+            type: 'portfolio_milestone',
+            title: '📉 Trade Update',
+            message: `Your ${data.symbol} trade is down ${Math.abs(data.lossPercent || 0).toFixed(2)}%`,
+            icon: 'trending-down',
+            link: '/paper-trading',
+            data
+        });
+    }
+
+    // ============ PORTFOLIO GAIN NOTIFICATION ============
+    static async notifyPortfolioGain(userId, data) {
+        return this.createNotification(userId, {
+            type: 'portfolio_milestone',
+            title: '🎉 Portfolio Milestone!',
+            message: data.message || `Your portfolio is up ${data.gainPercent?.toFixed(2) || 0}%!`,
+            icon: 'trending-up',
+            link: '/portfolio',
+            data
+        });
+    }
+
+    // ============ PORTFOLIO LOSS NOTIFICATION ============
+    static async notifyPortfolioLoss(userId, data) {
+        return this.createNotification(userId, {
+            type: 'portfolio_milestone',
+            title: '📊 Portfolio Update',
+            message: data.message || `Your portfolio is down ${Math.abs(data.lossPercent || 0).toFixed(2)}%`,
+            icon: 'alert-triangle',
+            link: '/portfolio',
+            data
+        });
+    }
+
+    // ============ CREATE (ALIAS FOR BADGE SERVICE) ============
+    static async create(data) {
+        if (!data.user) return null;
+        return this.createNotification(data.user, {
+            type: data.type || 'system',
+            title: data.title,
+            message: data.message,
+            icon: data.icon,
+            link: data.link || data.actionUrl,
+            data: data.data || {}
+        });
+    }
+
     // ============ MARK AS READ ============
     static async markAsRead(notificationId) {
         try {

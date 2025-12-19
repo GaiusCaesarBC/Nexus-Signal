@@ -6,6 +6,7 @@ const axios = require('axios');
 const Prediction = require('../models/Prediction');
 const User = require('../models/User');
 const GamificationService = require('./gamificationService');
+const NotificationService = require('./notificationService');
 
 // ============ INLINE PRICE CACHE ============
 const priceCache = new Map();
@@ -270,9 +271,17 @@ async function checkExpiredPredictions() {
                 if (prediction.status === 'correct') {
                     runStats.correct++;
                     userResults.get(userId).correct++;
+                    // Send notification for correct prediction
+                    try {
+                        await NotificationService.createPredictionResultNotification(userId, prediction, true);
+                    } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
                 } else if (prediction.status === 'incorrect') {
                     runStats.incorrect++;
                     userResults.get(userId).incorrect++;
+                    // Send notification for incorrect prediction
+                    try {
+                        await NotificationService.createPredictionResultNotification(userId, prediction, false);
+                    } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
                 }
             } else {
                 runStats.errors++;

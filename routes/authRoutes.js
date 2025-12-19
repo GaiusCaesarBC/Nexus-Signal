@@ -10,6 +10,7 @@ const auth = require('../middleware/authMiddleware');
 const { upload, cloudinary } = require('../config/cloudinaryConfig');
 const { strictBotProtection } = require('../middleware/botProtection');
 const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
+const NotificationService = require('../services/notificationService');
 
 // ✅ Cookie settings that work for BOTH localhost and production
 const getCookieOptions = () => {
@@ -137,6 +138,17 @@ router.post(
                 };
                 
                 console.log(`[Login] Daily bonus awarded to ${user.username}:`, dailyBonus);
+
+                // Send login streak notification
+                try {
+                    await NotificationService.createLoginStreakNotification(
+                        user._id,
+                        loginResult.streak,
+                        loginResult.bonusXp
+                    );
+                } catch (notifError) {
+                    console.error('[Login] Error sending streak notification:', notifError.message);
+                }
             }
         } catch (streakError) {
             console.error('[Login] Error checking streak:', streakError);
@@ -186,8 +198,19 @@ router.post('/daily-login', auth, async (req, res) => {
         // Award XP if new day
         if (result.isNewDay && result.bonusXp > 0) {
             await user.addXp(result.bonusXp, 'daily_login');
+
+            // Send login streak notification
+            try {
+                await NotificationService.createLoginStreakNotification(
+                    user._id,
+                    result.streak,
+                    result.bonusXp
+                );
+            } catch (notifError) {
+                console.error('[Daily Login] Error sending streak notification:', notifError.message);
+            }
         }
-        
+
         // Refresh user data
         await user.save();
         
@@ -298,6 +321,17 @@ router.post(
                         bonusXp: loginResult.bonusXp || 0,
                         bonusCoins: loginResult.bonusCoins || 0
                     };
+
+                    // Send login streak notification
+                    try {
+                        await NotificationService.createLoginStreakNotification(
+                            user._id,
+                            loginResult.streak,
+                            loginResult.bonusXp || 0
+                        );
+                    } catch (notifError) {
+                        console.error('[Auth Route /login] Error sending streak notification:', notifError.message);
+                    }
                 } else {
                     dailyBonus = {
                         isNewDay: false,
