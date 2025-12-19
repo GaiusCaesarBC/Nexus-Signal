@@ -3,8 +3,18 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
+
+// Rate limiter for vault operations
+const vaultLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // Import badge mapping to merge gamification badges
 let BADGE_MAPPING;
@@ -173,7 +183,7 @@ const initializeUserVault = (user) => {
 // @route   GET /api/vault/badges
 // @desc    Get user's owned badges and equipped badge
 // @access  Private
-router.get('/badges', auth, async (req, res) => {
+router.get('/badges', vaultLimiter, auth, async (req, res) => {
     try {
         const user = await User.findById(getUserId(req));
         if (!user) {

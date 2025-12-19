@@ -209,7 +209,7 @@ async function fetchInsiderTradesBySymbol(symbol, limit = 20) {
         cache.insiderTradesBySymbol[cacheKey] = { data: trades, timestamp: Date.now() };
         return trades;
     } catch (error) {
-        console.error(`[Whale] Error fetching insider trades for ${symbol}:`, error.message);
+        console.error('[Whale] Error fetching insider trades for %s:', symbol, error.message);
         return generateMockInsiderTrades(limit, symbol);
     }
 }

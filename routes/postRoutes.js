@@ -2,10 +2,20 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 
 // Use existing Post model
 const Post = require('../models/Post');
+
+// Rate limiter for social interactions (reactions, bookmarks, comments)
+const socialInteractionLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 interactions per minute
+    message: { error: 'Too many interactions, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // @route   GET /api/posts
 // @desc    Get social feed posts
@@ -212,7 +222,7 @@ router.post('/:id/comment', auth, async (req, res) => {
 // @route   POST /api/posts/:id/react
 // @desc    Add/remove a reaction to a post
 // @access  Private
-router.post('/:id/react', auth, async (req, res) => {
+router.post('/:id/react', socialInteractionLimiter, auth, async (req, res) => {
     try {
         const { reaction } = req.body;
         const validReactions = ['like', 'rocket', 'fire', 'diamond', 'bull', 'bear', 'money'];
@@ -278,7 +288,7 @@ router.post('/:id/react', auth, async (req, res) => {
 // @route   POST /api/posts/:id/bookmark
 // @desc    Bookmark/unbookmark a post
 // @access  Private
-router.post('/:id/bookmark', auth, async (req, res) => {
+router.post('/:id/bookmark', socialInteractionLimiter, auth, async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
 
@@ -319,7 +329,7 @@ router.post('/:id/bookmark', auth, async (req, res) => {
 // @route   GET /api/posts/bookmarks
 // @desc    Get user's bookmarked posts
 // @access  Private
-router.get('/bookmarks', auth, async (req, res) => {
+router.get('/bookmarks', socialInteractionLimiter, auth, async (req, res) => {
     try {
         const { limit = 10, skip = 0 } = req.query;
 

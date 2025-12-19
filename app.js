@@ -288,7 +288,15 @@ app.use(helmet({
 // Note: Stripe webhook is handled BEFORE this middleware in app.js
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
+
+// Cookie parser for reading cookies (used for refresh tokens)
+// Note: This API uses stateless JWT authentication via Authorization headers,
+// not cookie-based sessions. CSRF protection is not required because:
+// 1. Authentication tokens are sent in headers, not automatically with requests
+// 2. API endpoints require valid JWT tokens that attackers cannot forge
+// 3. CORS restricts cross-origin requests to whitelisted domains
 app.use(cookieParser());
+
 app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());

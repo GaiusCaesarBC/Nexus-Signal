@@ -74,11 +74,11 @@ class BacktestEngine {
                     return data;
                 }
             } catch (error) {
-                console.log(`[Backtest] Source failed for ${symbol}:`, error.message);
+                console.log('[Backtest] Source failed for %s:', symbol, error.message);
             }
         }
 
-        throw new Error(`No data available for ${symbol} from any source`);
+        throw new Error('No data available for ' + symbol + ' from any source');
     }
 
     // Fetch crypto data with fallbacks
@@ -99,11 +99,11 @@ class BacktestEngine {
                     return data;
                 }
             } catch (error) {
-                console.log(`[Backtest] Source failed for ${symbol}:`, error.message);
+                console.log('[Backtest] Source failed for %s:', symbol, error.message);
             }
         }
 
-        throw new Error(`No data available for ${symbol} from any source`);
+        throw new Error('No data available for ' + symbol + ' from any source');
     }
 
     // Yahoo Finance - Stocks & Major Crypto

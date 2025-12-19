@@ -367,7 +367,8 @@ router.post('/waitlist', async (req, res) => {
     try {
         const { email } = req.body;
 
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        // Validate email: check type, length, and format to prevent ReDoS
+        if (!email || typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return res.status(400).json({ error: 'Please enter a valid email address' });
         }
 

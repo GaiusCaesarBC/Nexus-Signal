@@ -3,11 +3,21 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const { checkUsageLimit, requireSubscription } = require('../middleware/subscriptionMiddleware');
 const Prediction = require('../models/Prediction');
 const GamificationService = require('../services/gamificationService');
 const { sanitizeSymbol, encodeSymbolForUrl, validateSymbol } = require('../utils/symbolValidation');
+
+// Rate limiter for prediction-related endpoints
+const predictionLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 requests per minute
+    message: { error: 'Too many requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 const priceService = require('../services/priceService');
 const stockDataService = require('../services/stockDataService');
@@ -566,7 +576,7 @@ function calculateLiveConfidence(prediction, currentPrice) {
 // @route   GET /api/predictions/active/:symbol
 // @desc    Get active shared prediction for a symbol (if exists)
 // @access  Public
-router.get('/active/:symbol', async (req, res) => {
+router.get('/active/:symbol', predictionLimiter, async (req, res) => {
     try {
         // Validate symbol to prevent SSRF/injection attacks
         let symbol;
@@ -1373,7 +1383,7 @@ router.get('/health', auth, async (req, res) => {
     }
 });
 
-router.get('/price/:symbol', auth, async (req, res) => {
+router.get('/price/:symbol', predictionLimiter, auth, async (req, res) => {
     try {
         // Validate symbol to prevent SSRF/injection attacks
         let symbol;
@@ -1496,7 +1506,7 @@ router.get('/cleanup/stats', auth, async (req, res) => {
 // @route   GET /api/predictions/accuracy-dashboard
 // @desc    Get comprehensive accuracy dashboard data
 // @access  Private
-router.get('/accuracy-dashboard', auth, async (req, res) => {
+router.get('/accuracy-dashboard', predictionLimiter, auth, async (req, res) => {
     try {
         const userId = req.user.id;
         const now = new Date();
