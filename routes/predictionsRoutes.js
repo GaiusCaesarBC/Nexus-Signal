@@ -653,7 +653,7 @@ router.get('/active/:symbol', predictionLimiter, async (req, res) => {
 // @route   POST /api/predictions/predict
 // @desc    Get or create prediction for a stock/crypto/DEX
 // @access  Private (Starter+ required, limited by plan)
-router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('dailySignals', 'Prediction'), async (req, res) => {
+router.post('/predict', predictionLimiter, auth, requireSubscription('starter'), checkUsageLimit('dailySignals', 'Prediction'), async (req, res) => {
     try {
         let { symbol, days = 7, assetType, poolAddress, network, contractAddress } = req.body;
 
@@ -1071,7 +1071,7 @@ router.post('/predict', auth, requireSubscription('starter'), checkUsageLimit('d
 // @route   GET /api/predictions/live/:id
 // @desc    Get live prediction update with current confidence
 // @access  Private
-router.get('/live/:id', auth, async (req, res) => {
+router.get('/live/:id', predictionLimiter, auth, async (req, res) => {
     try {
         const prediction = await Prediction.findById(req.params.id);
         
@@ -1124,7 +1124,7 @@ router.get('/live/:id', auth, async (req, res) => {
 // @route   GET /api/predictions/shared
 // @desc    Get all active shared predictions
 // @access  Public
-router.get('/shared', async (req, res) => {
+router.get('/shared', predictionLimiter, async (req, res) => {
     try {
         const { limit = 20 } = req.query;
         
@@ -1175,7 +1175,7 @@ router.get('/shared', async (req, res) => {
 
 // ============ REMAINING ROUTES (unchanged) ============
 
-router.post('/check-outcomes', auth, async (req, res) => {
+router.post('/check-outcomes', predictionLimiter, auth, async (req, res) => {
     try {
         const predictions = await Prediction.find({
             user: req.user.id,
@@ -1211,7 +1211,7 @@ router.post('/check-outcomes', auth, async (req, res) => {
     }
 });
 
-router.get('/history', auth, async (req, res) => {
+router.get('/history', predictionLimiter, auth, async (req, res) => {
     try {
         const { limit = 20, status } = req.query;
         const query = { user: req.user.id };
@@ -1238,7 +1238,7 @@ router.get('/history', auth, async (req, res) => {
 // @route   GET /api/predictions/recent-public
 // @desc    Get recent predictions for landing page (no auth required)
 // @access  Public
-router.get('/recent-public', async (req, res) => {
+router.get('/recent-public', predictionLimiter, async (req, res) => {
     try {
         const { limit = 5 } = req.query;
         
@@ -1257,7 +1257,7 @@ router.get('/recent-public', async (req, res) => {
 });
 
 // Also handle /recent without auth for landing page
-router.get('/recent', async (req, res) => {
+router.get('/recent', predictionLimiter, async (req, res) => {
     try {
         const { limit = 10 } = req.query;
         
@@ -1294,7 +1294,7 @@ router.get('/recent', async (req, res) => {
     }
 });
 
-router.get('/stats', auth, async (req, res) => {
+router.get('/stats', predictionLimiter, auth, async (req, res) => {
     try {
         const stats = await Prediction.getUserAccuracy(req.user.id);
         res.json(stats);
@@ -1304,7 +1304,7 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
-router.get('/user', auth, async (req, res) => {
+router.get('/user', predictionLimiter, auth, async (req, res) => {
     try {
         const { limit = 5 } = req.query;
         
@@ -1367,7 +1367,7 @@ router.get('/trending', async (req, res) => {
     }
 });
 
-router.get('/health', auth, async (req, res) => {
+router.get('/health', predictionLimiter, auth, async (req, res) => {
     try {
         let mlStatus = 'unknown';
         try {
@@ -1429,7 +1429,7 @@ router.get('/price/:symbol', predictionLimiter, auth, async (req, res) => {
 // @route   POST /api/predictions/cleanup
 // @desc    Run cleanup to remove stale/invalid predictions
 // @access  Private (admin only in production)
-router.post('/cleanup', auth, async (req, res) => {
+router.post('/cleanup', predictionLimiter, auth, async (req, res) => {
     try {
         console.log('[Cleanup] Manual cleanup triggered by user:', req.user.id);
         

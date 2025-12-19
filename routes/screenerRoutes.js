@@ -2,14 +2,24 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const { requireSubscription } = require('../middleware/subscriptionMiddleware');
 const screenerService = require('../services/screenerService');
 
+// Rate limiter for screener endpoints (heavier operations)
+const screenerLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 15, // 15 requests per minute
+    message: { error: 'Too many screener requests, please slow down' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
 // @route   GET /api/screener/stocks
 // @desc    Screen stocks with filters
 // @access  Private (Starter+ required)
-router.get('/stocks', auth, requireSubscription('starter'), async (req, res) => {
+router.get('/stocks', screenerLimiter, auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
@@ -31,7 +41,7 @@ router.get('/stocks', auth, requireSubscription('starter'), async (req, res) => 
 // @route   GET /api/screener/crypto
 // @desc    Screen crypto with filters (CoinGecko + PancakeSwap combined)
 // @access  Private (Starter+ required)
-router.get('/crypto', auth, requireSubscription('starter'), async (req, res) => {
+router.get('/crypto', screenerLimiter, auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
@@ -64,7 +74,7 @@ router.get('/crypto', auth, requireSubscription('starter'), async (req, res) => 
 // @route   GET /api/screener/pancakeswap
 // @desc    Screen BSC tokens from PancakeSwap DEX only
 // @access  Private (Starter+ required)
-router.get('/pancakeswap', auth, requireSubscription('starter'), async (req, res) => {
+router.get('/pancakeswap', screenerLimiter, auth, requireSubscription('starter'), async (req, res) => {
     try {
         const filters = {
             minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : null,
