@@ -771,7 +771,33 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             }
 
             // ====== DAILY/WEEKLY/MONTHLY CRYPTO ======
-            // Try CoinGecko first (better coverage for newer tokens)
+            // If network is specified, try Gecko Terminal FIRST (for DEX tokens)
+            if (network) {
+                try {
+                    console.log(`[Chart] 🦎 Network specified (${network}), trying Gecko Terminal first for ${crypto} (${interval})...`);
+                    const chartData = await fetchGeckoTerminalOHLC(crypto, interval, network);
+
+                    chartDataCache.set(cacheKey, {
+                        data: chartData,
+                        timestamp: Date.now()
+                    });
+
+                    console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto} on ${network} (${interval})`);
+
+                    return res.json({
+                        success: true,
+                        data: chartData,
+                        symbol: `${crypto}-USD`,
+                        interval,
+                        source: 'geckoterminal',
+                        network: network
+                    });
+                } catch (gtError) {
+                    console.log(`[Chart] ⚠️ Gecko Terminal failed for ${network}: ${gtError.message}, trying CoinGecko...`);
+                }
+            }
+
+            // Try CoinGecko (better coverage for major tokens)
             try {
                 console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto} (${interval})...`);
                 const chartData = await fetchCoinGeckoOHLC(crypto, interval);
@@ -791,7 +817,31 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     source: 'coingecko'
                 });
             } catch (cgError) {
-                console.log(`[Chart] ⚠️ CoinGecko failed for daily: ${cgError.message}, trying Alpha Vantage...`);
+                console.log(`[Chart] ⚠️ CoinGecko failed for daily: ${cgError.message}, trying Gecko Terminal...`);
+            }
+
+            // Try Gecko Terminal for daily data (especially for DEX tokens)
+            try {
+                console.log(`[Chart] 🦎 Trying Gecko Terminal for ${crypto} (${interval})${network ? ` on ${network}` : ''}...`);
+                const chartData = await fetchGeckoTerminalOHLC(crypto, interval, network);
+
+                chartDataCache.set(cacheKey, {
+                    data: chartData,
+                    timestamp: Date.now()
+                });
+
+                console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto} (${interval})`);
+
+                return res.json({
+                    success: true,
+                    data: chartData,
+                    symbol: `${crypto}-USD`,
+                    interval,
+                    source: 'geckoterminal',
+                    network: network || undefined
+                });
+            } catch (gtError) {
+                console.log(`[Chart] ⚠️ Gecko Terminal failed for daily: ${gtError.message}, trying Alpha Vantage...`);
             }
 
             // Fallback to Alpha Vantage for daily/weekly/monthly
