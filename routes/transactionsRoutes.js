@@ -73,7 +73,8 @@ const fetchGeckoTerminalTrades = async (symbol, network = null) => {
 
         const pool = searchResponse.data.data[0];
         const poolAddress = pool.attributes?.address;
-        const poolNetwork = pool.relationships?.network?.data?.id || 'eth';
+        // Extract network from pool ID (format: network_address, e.g., "base_0x...")
+        const poolNetwork = pool.id?.split('_')[0] || 'eth';
         const poolName = pool.attributes?.name || symbol;
         const baseTokenPrice = parseFloat(pool.attributes?.base_token_price_usd || 0);
 
