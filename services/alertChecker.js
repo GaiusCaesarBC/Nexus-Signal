@@ -7,6 +7,7 @@ const User = require('../models/User');
 const axios = require('axios');
 const { sendPriceAlertEmail } = require('./emailService');
 const { calculateRSI, calculateMACD, calculateBollingerBands } = require('../utils/indicators');
+const { detectSpecificPattern, detectAllPatterns } = require('../utils/patternRecognition');
 const { getChartData } = require('./chartService');
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
@@ -175,6 +176,30 @@ function getAlertTitle(alert) {
         case 'resistance_test':
             return `🎯 ${alert.symbol} Testing Resistance`;
 
+        // Pattern recognition alerts
+        case 'head_shoulders':
+            return `📉 ${alert.symbol} Head & Shoulders Pattern`;
+        case 'inverse_head_shoulders':
+            return `📈 ${alert.symbol} Inverse Head & Shoulders`;
+        case 'double_top':
+            return `🔻 ${alert.symbol} Double Top Pattern`;
+        case 'double_bottom':
+            return `🔺 ${alert.symbol} Double Bottom Pattern`;
+        case 'ascending_triangle':
+            return `△ ${alert.symbol} Ascending Triangle`;
+        case 'descending_triangle':
+            return `▽ ${alert.symbol} Descending Triangle`;
+        case 'symmetrical_triangle':
+            return `◇ ${alert.symbol} Symmetrical Triangle`;
+        case 'bull_flag':
+            return `🚩 ${alert.symbol} Bull Flag Pattern`;
+        case 'bear_flag':
+            return `🏴 ${alert.symbol} Bear Flag Pattern`;
+        case 'rising_wedge':
+            return `⬆️ ${alert.symbol} Rising Wedge`;
+        case 'falling_wedge':
+            return `⬇️ ${alert.symbol} Falling Wedge`;
+
         default:
             return 'Alert Triggered';
     }
@@ -224,6 +249,52 @@ function getAlertMessage(alert) {
             return `${alert.symbol} testing support at $${params.supportLevel?.toFixed(2)} (Current: $${alert.triggeredPrice?.toFixed(2)})`;
         case 'resistance_test':
             return `${alert.symbol} testing resistance at $${params.resistanceLevel?.toFixed(2)} (Current: $${alert.triggeredPrice?.toFixed(2)})`;
+
+        // Pattern recognition alerts
+        case 'head_shoulders': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Head & Shoulders detected (${patternData.confidence || 0}% confidence) - Bearish reversal signal. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'inverse_head_shoulders': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Inverse Head & Shoulders detected (${patternData.confidence || 0}% confidence) - Bullish reversal signal. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'double_top': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Double Top pattern detected (${patternData.confidence || 0}% confidence) - Bearish reversal. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'double_bottom': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Double Bottom pattern detected (${patternData.confidence || 0}% confidence) - Bullish reversal. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'ascending_triangle': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Ascending Triangle detected (${patternData.confidence || 0}% confidence) - Bullish breakout likely. Breakout level: $${patternData.breakoutLevel?.toFixed(2) || 'N/A'}`;
+        }
+        case 'descending_triangle': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Descending Triangle detected (${patternData.confidence || 0}% confidence) - Bearish breakdown likely. Breakout level: $${patternData.breakoutLevel?.toFixed(2) || 'N/A'}`;
+        }
+        case 'symmetrical_triangle': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Symmetrical Triangle detected (${patternData.confidence || 0}% confidence) - Breakout imminent in either direction`;
+        }
+        case 'bull_flag': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Bull Flag pattern detected (${patternData.confidence || 0}% confidence) - Bullish continuation. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'bear_flag': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Bear Flag pattern detected (${patternData.confidence || 0}% confidence) - Bearish continuation. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'rising_wedge': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Rising Wedge detected (${patternData.confidence || 0}% confidence) - Bearish reversal pattern. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
+        case 'falling_wedge': {
+            const patternData = alert.patternTriggerData || {};
+            return `${alert.symbol} Falling Wedge detected (${patternData.confidence || 0}% confidence) - Bullish reversal pattern. Target: $${patternData.priceTarget?.toFixed(2) || 'N/A'}`;
+        }
 
         default:
             return 'Your alert condition has been met';
@@ -699,6 +770,155 @@ async function checkTechnicalAlerts() {
     }
 }
 
+// ==================== PATTERN RECOGNITION ALERT CHECKING ====================
+
+// Pattern state cache to avoid repeated triggering
+const patternStateCache = new Map(); // symbol -> { lastPatternType, lastDetectedTime }
+const PATTERN_COOLDOWN = 24 * 60 * 60 * 1000; // 24 hours between same pattern triggers
+
+// Prepare candle data for pattern recognition
+function prepareCandleData(chartData) {
+    return chartData.map(candle => ({
+        time: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close
+    }));
+}
+
+// Check a single pattern alert
+async function checkPatternAlert(alert, candleData) {
+    try {
+        const patternType = alert.type;
+        const params = alert.patternParams || {};
+        const minConfidence = params.minConfidence || 70;
+        const lookback = params.lookbackPeriod || 50;
+
+        // Check if this pattern was recently triggered for this symbol
+        const cacheKey = `${alert.symbol}-${patternType}`;
+        const patternState = patternStateCache.get(cacheKey);
+        if (patternState && Date.now() - patternState.lastDetectedTime < PATTERN_COOLDOWN) {
+            // Pattern was recently triggered, skip to avoid spam
+            return false;
+        }
+
+        // Detect the specific pattern
+        const patternResult = detectSpecificPattern(candleData, patternType, { lookback });
+
+        if (!patternResult || patternResult.confidence < minConfidence) {
+            // Pattern not detected or confidence too low
+            alert.lastChecked = new Date();
+            alert.checkCount = (alert.checkCount || 0) + 1;
+            await alert.save();
+            return false;
+        }
+
+        // Pattern detected with sufficient confidence!
+        console.log(`[AlertChecker] Pattern detected: ${patternType} on ${alert.symbol} (${patternResult.confidence}% confidence)`);
+
+        // Update alert as triggered
+        alert.status = 'triggered';
+        alert.triggeredAt = new Date();
+        alert.triggeredPrice = patternResult.currentPrice;
+        alert.patternTriggerData = {
+            patternName: patternResult.pattern,
+            confidence: patternResult.confidence,
+            priceTarget: patternResult.priceTarget,
+            stopLoss: patternResult.stopLoss,
+            breakoutLevel: patternResult.breakoutLevel,
+            patternStartDate: new Date(),
+            patternEndDate: new Date(),
+            direction: patternResult.direction
+        };
+        alert.lastChecked = new Date();
+        alert.checkCount = (alert.checkCount || 0) + 1;
+
+        await alert.save();
+        await createNotification(alert);
+
+        // Update pattern cache to prevent re-triggering
+        patternStateCache.set(cacheKey, {
+            lastPatternType: patternType,
+            lastDetectedTime: Date.now()
+        });
+
+        // Send Telegram notification if enabled
+        try {
+            const { sendTechnicalAlertNotification } = require('./telegramScheduler');
+            await sendTechnicalAlertNotification(alert.user, alert);
+        } catch (telegramError) {
+            console.error(`[AlertChecker] Error sending Telegram notification:`, telegramError.message);
+        }
+
+        console.log(`[AlertChecker] ✅ Pattern alert triggered: ${patternType} for ${alert.symbol}`);
+        return true;
+
+    } catch (error) {
+        console.error(`[AlertChecker] Error checking pattern alert ${alert._id}:`, error.message);
+        return false;
+    }
+}
+
+// Main function to check all pattern alerts
+async function checkPatternAlerts() {
+    try {
+        console.log('[AlertChecker] Starting pattern alert check...');
+
+        // Get all active pattern alerts
+        const patternAlerts = await Alert.getActivePatternAlerts();
+
+        if (patternAlerts.length === 0) {
+            console.log('[AlertChecker] No active pattern alerts to check');
+            return;
+        }
+
+        console.log(`[AlertChecker] Checking ${patternAlerts.length} pattern alerts...`);
+
+        // Group alerts by symbol to minimize API calls
+        const alertsBySymbol = {};
+        patternAlerts.forEach(alert => {
+            if (!alertsBySymbol[alert.symbol]) {
+                alertsBySymbol[alert.symbol] = [];
+            }
+            alertsBySymbol[alert.symbol].push(alert);
+        });
+
+        let triggeredCount = 0;
+
+        // Process each symbol
+        for (const [symbol, symbolAlerts] of Object.entries(alertsBySymbol)) {
+            console.log(`[AlertChecker] Fetching chart data for ${symbol} pattern analysis...`);
+
+            // Fetch chart data (daily candles for pattern recognition)
+            const chartResult = await getChartData(symbol, '1D');
+
+            if (!chartResult.success || !chartResult.data || chartResult.data.length < 30) {
+                console.log(`[AlertChecker] Insufficient data for ${symbol} pattern analysis`);
+                continue;
+            }
+
+            const candleData = prepareCandleData(chartResult.data);
+
+            console.log(`[AlertChecker] ${symbol}: Analyzing ${candleData.length} candles for patterns`);
+
+            // Check each alert for this symbol
+            for (const alert of symbolAlerts) {
+                const triggered = await checkPatternAlert(alert, candleData);
+                if (triggered) triggeredCount++;
+            }
+
+            // Rate limiting between symbols
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        console.log(`[AlertChecker] Pattern check complete: ${triggeredCount} alerts triggered`);
+
+    } catch (error) {
+        console.error('[AlertChecker] Error in checkPatternAlerts:', error.message);
+    }
+}
+
 // Start the alert checker service
 function startAlertChecker() {
     console.log('[AlertChecker] Starting alert checker service...');
@@ -713,6 +933,12 @@ function startAlertChecker() {
     cron.schedule('*/5 * * * *', async () => {
         console.log('[AlertChecker] Running technical alert check...');
         await checkTechnicalAlerts();
+    });
+
+    // Check pattern alerts every 15 minutes (computationally intensive)
+    cron.schedule('*/15 * * * *', async () => {
+        console.log('[AlertChecker] Running pattern alert check...');
+        await checkPatternAlerts();
     });
 
     // Check prediction expiry every 10 minutes
@@ -733,12 +959,14 @@ function startAlertChecker() {
         setTimeout(async () => {
             await checkAllAlerts();
             await checkTechnicalAlerts();
+            await checkPatternAlerts();
         }, 10000); // Wait 10 seconds after startup
     }
 
     console.log('[AlertChecker] Cron jobs scheduled:');
     console.log('  - Price alerts: Every minute (* * * * *)');
     console.log('  - Technical alerts: Every 5 minutes (*/5 * * * *)');
+    console.log('  - Pattern alerts: Every 15 minutes (*/15 * * * *)');
     console.log('  - Prediction expiry: Every 10 minutes (*/10 * * * *)');
     console.log('  - Cleanup: Daily at 3 AM (0 3 * * *)');
 }
@@ -748,6 +976,7 @@ async function manualCheck() {
     console.log('[AlertChecker] Manual check triggered');
     await checkAllAlerts();
     await checkTechnicalAlerts();
+    await checkPatternAlerts();
     await checkPredictionExpiryAlerts();
 }
 
@@ -755,6 +984,7 @@ module.exports = {
     startAlertChecker,
     checkAllAlerts,
     checkTechnicalAlerts,
+    checkPatternAlerts,
     checkPredictionExpiryAlerts,
     manualCheck,
     fetchCurrentPrice, // Export for use in other services

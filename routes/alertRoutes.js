@@ -14,6 +14,15 @@ const TECHNICAL_ALERT_TYPES = [
     'support_test', 'resistance_test'
 ];
 
+// Pattern recognition alert types
+const PATTERN_ALERT_TYPES = [
+    'double_bottom', 'double_top',
+    'head_shoulders', 'inverse_head_shoulders',
+    'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+    'bull_flag', 'bear_flag',
+    'rising_wedge', 'falling_wedge'
+];
+
 // @route   GET /api/alerts/technical-types
 // @desc    Get available technical alert types
 // @access  Public
@@ -31,6 +40,300 @@ router.get('/technical-types', (req, res) => {
             { value: 'resistance_test', label: 'Resistance Level Test', description: 'Alert when price approaches resistance level', params: ['resistanceLevel', 'tolerance'] }
         ]
     });
+});
+
+// @route   GET /api/alerts/pattern-types
+// @desc    Get available pattern alert types
+// @access  Public
+router.get('/pattern-types', (req, res) => {
+    res.json({
+        success: true,
+        types: [
+            { value: 'double_bottom', label: 'Double Bottom', direction: 'bullish', description: 'W-shaped reversal pattern signaling bullish momentum' },
+            { value: 'double_top', label: 'Double Top', direction: 'bearish', description: 'M-shaped reversal pattern signaling bearish momentum' },
+            { value: 'head_shoulders', label: 'Head & Shoulders', direction: 'bearish', description: 'Classic reversal pattern with three peaks' },
+            { value: 'inverse_head_shoulders', label: 'Inverse Head & Shoulders', direction: 'bullish', description: 'Inverted three-trough pattern signaling reversal' },
+            { value: 'ascending_triangle', label: 'Ascending Triangle', direction: 'bullish', description: 'Bullish continuation with flat top and rising lows' },
+            { value: 'descending_triangle', label: 'Descending Triangle', direction: 'bearish', description: 'Bearish continuation with flat bottom and falling highs' },
+            { value: 'symmetrical_triangle', label: 'Symmetrical Triangle', direction: 'neutral', description: 'Consolidation pattern with converging trendlines' },
+            { value: 'bull_flag', label: 'Bull Flag', direction: 'bullish', description: 'Bullish continuation after strong upward move' },
+            { value: 'bear_flag', label: 'Bear Flag', direction: 'bearish', description: 'Bearish continuation after strong downward move' },
+            { value: 'rising_wedge', label: 'Rising Wedge', direction: 'bearish', description: 'Bearish reversal pattern with converging upward lines' },
+            { value: 'falling_wedge', label: 'Falling Wedge', direction: 'bullish', description: 'Bullish reversal pattern with converging downward lines' }
+        ]
+    });
+});
+
+// @route   POST /api/alerts/pattern
+// @desc    Create a pattern recognition alert
+// @access  Private
+router.post('/pattern', auth, async (req, res) => {
+    try {
+        const {
+            symbol,
+            assetType,
+            patternType,
+            timeframe,
+            minConfidence
+        } = req.body;
+
+        // Validation
+        if (!symbol) {
+            return res.status(400).json({ error: 'Symbol is required' });
+        }
+
+        if (!patternType) {
+            return res.status(400).json({ error: 'Pattern type is required' });
+        }
+
+        if (!PATTERN_ALERT_TYPES.includes(patternType)) {
+            return res.status(400).json({
+                error: 'Invalid pattern type',
+                validTypes: PATTERN_ALERT_TYPES
+            });
+        }
+
+        // Build alert object
+        const alertData = {
+            user: req.user.id,
+            type: patternType,
+            symbol: symbol.toUpperCase(),
+            assetType: assetType || 'stock',
+            notifyVia: { inApp: true, email: false, push: false },
+            patternParams: {
+                minConfidence: minConfidence || 70,
+                timeframe: timeframe || '1d',
+                lookbackPeriod: 50
+            }
+        };
+
+        // Create alert
+        const alert = new Alert(alertData);
+        await alert.save();
+
+        console.log(`[Alerts] Created pattern alert: ${patternType} for ${symbol} (user ${req.user.id})`);
+
+        // Award XP for creating alert
+        try {
+            await GamificationService.awardXP(req.user.id, 10, 'Pattern alert created');
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            alert
+        });
+
+    } catch (error) {
+        console.error('[Alerts] Pattern alert create error:', error);
+        res.status(500).json({
+            error: 'Failed to create pattern alert',
+            message: error.message
+        });
+    }
+});
+
+// @route   POST /api/alerts/technical
+// @desc    Create a technical indicator alert
+// @access  Private
+router.post('/technical', auth, async (req, res) => {
+    try {
+        const {
+            symbol,
+            assetType,
+            alertType,
+            threshold
+        } = req.body;
+
+        // Validation
+        if (!symbol) {
+            return res.status(400).json({ error: 'Symbol is required' });
+        }
+
+        if (!alertType) {
+            return res.status(400).json({ error: 'Alert type is required' });
+        }
+
+        if (!TECHNICAL_ALERT_TYPES.includes(alertType)) {
+            return res.status(400).json({
+                error: 'Invalid technical alert type',
+                validTypes: TECHNICAL_ALERT_TYPES
+            });
+        }
+
+        // Build technical params based on alert type
+        const technicalParams = {};
+        if (alertType.includes('rsi')) {
+            technicalParams.rsiThreshold = threshold || (alertType === 'rsi_oversold' ? 30 : 70);
+        } else if (alertType === 'support_test') {
+            if (!threshold) {
+                return res.status(400).json({ error: 'Support level is required' });
+            }
+            technicalParams.supportLevel = threshold;
+            technicalParams.tolerance = 2;
+        } else if (alertType === 'resistance_test') {
+            if (!threshold) {
+                return res.status(400).json({ error: 'Resistance level is required' });
+            }
+            technicalParams.resistanceLevel = threshold;
+            technicalParams.tolerance = 2;
+        }
+
+        // Build alert object
+        const alertData = {
+            user: req.user.id,
+            type: alertType,
+            symbol: symbol.toUpperCase(),
+            assetType: assetType || 'stock',
+            notifyVia: { inApp: true, email: false, push: false },
+            technicalParams
+        };
+
+        // Create alert
+        const alert = new Alert(alertData);
+        await alert.save();
+
+        console.log(`[Alerts] Created technical alert: ${alertType} for ${symbol} (user ${req.user.id})`);
+
+        // Award XP for creating alert
+        try {
+            await GamificationService.awardXP(req.user.id, 8, 'Technical alert created');
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            alert
+        });
+
+    } catch (error) {
+        console.error('[Alerts] Technical alert create error:', error);
+        res.status(500).json({
+            error: 'Failed to create technical alert',
+            message: error.message
+        });
+    }
+});
+
+// @route   POST /api/alerts/price
+// @desc    Create a price alert
+// @access  Private
+router.post('/price', auth, async (req, res) => {
+    try {
+        const {
+            symbol,
+            assetType,
+            condition,
+            targetPrice
+        } = req.body;
+
+        // Validation
+        if (!symbol) {
+            return res.status(400).json({ error: 'Symbol is required' });
+        }
+
+        if (!targetPrice) {
+            return res.status(400).json({ error: 'Target price is required' });
+        }
+
+        const type = condition === 'above' ? 'price_above' : 'price_below';
+
+        // Build alert object
+        const alertData = {
+            user: req.user.id,
+            type,
+            symbol: symbol.toUpperCase(),
+            assetType: assetType || 'stock',
+            targetPrice: parseFloat(targetPrice),
+            notifyVia: { inApp: true, email: false, push: false }
+        };
+
+        // Create alert
+        const alert = new Alert(alertData);
+        await alert.save();
+
+        console.log(`[Alerts] Created price alert: ${type} $${targetPrice} for ${symbol} (user ${req.user.id})`);
+
+        // Award XP for creating alert
+        try {
+            await GamificationService.awardXP(req.user.id, 5, 'Price alert created');
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            alert
+        });
+
+    } catch (error) {
+        console.error('[Alerts] Price alert create error:', error);
+        res.status(500).json({
+            error: 'Failed to create price alert',
+            message: error.message
+        });
+    }
+});
+
+// @route   POST /api/alerts/percent-change
+// @desc    Create a percent change alert
+// @access  Private
+router.post('/percent-change', auth, async (req, res) => {
+    try {
+        const {
+            symbol,
+            assetType,
+            percentChange,
+            timeframe
+        } = req.body;
+
+        // Validation
+        if (!symbol) {
+            return res.status(400).json({ error: 'Symbol is required' });
+        }
+
+        if (!percentChange) {
+            return res.status(400).json({ error: 'Percent change is required' });
+        }
+
+        // Build alert object
+        const alertData = {
+            user: req.user.id,
+            type: 'percent_change',
+            symbol: symbol.toUpperCase(),
+            assetType: assetType || 'stock',
+            percentChange: parseFloat(percentChange),
+            timeframe: timeframe || '24h',
+            notifyVia: { inApp: true, email: false, push: false }
+        };
+
+        // Create alert
+        const alert = new Alert(alertData);
+        await alert.save();
+
+        console.log(`[Alerts] Created percent change alert: ${percentChange}% in ${timeframe} for ${symbol} (user ${req.user.id})`);
+
+        // Award XP for creating alert
+        try {
+            await GamificationService.awardXP(req.user.id, 5, 'Percent change alert created');
+        } catch (error) {
+            console.warn('Failed to award XP:', error.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            alert
+        });
+
+    } catch (error) {
+        console.error('[Alerts] Percent change alert create error:', error);
+        res.status(500).json({
+            error: 'Failed to create percent change alert',
+            message: error.message
+        });
+    }
 });
 
 // @route   POST /api/alerts

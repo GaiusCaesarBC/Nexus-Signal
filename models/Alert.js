@@ -23,7 +23,13 @@ const alertSchema = new mongoose.Schema({
             'macd_bullish_crossover', 'macd_bearish_crossover',
             'bollinger_upper_breakout', 'bollinger_lower_breakout',
             // Support/Resistance alerts
-            'support_test', 'resistance_test'
+            'support_test', 'resistance_test',
+            // Pattern recognition alerts
+            'head_shoulders', 'inverse_head_shoulders',
+            'double_top', 'double_bottom',
+            'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+            'bull_flag', 'bear_flag',
+            'rising_wedge', 'falling_wedge'
         ],
         required: true
     },
@@ -32,13 +38,18 @@ const alertSchema = new mongoose.Schema({
     symbol: {
         type: String,
         required: function() {
-            // All price and technical alerts require a symbol
+            // All price, technical, and pattern alerts require a symbol
             const symbolRequiredTypes = [
                 'price_above', 'price_below', 'percent_change',
                 'rsi_oversold', 'rsi_overbought',
                 'macd_bullish_crossover', 'macd_bearish_crossover',
                 'bollinger_upper_breakout', 'bollinger_lower_breakout',
-                'support_test', 'resistance_test'
+                'support_test', 'resistance_test',
+                'head_shoulders', 'inverse_head_shoulders',
+                'double_top', 'double_bottom',
+                'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+                'bull_flag', 'bear_flag',
+                'rising_wedge', 'falling_wedge'
             ];
             return symbolRequiredTypes.includes(this.type);
         },
@@ -178,6 +189,28 @@ const alertSchema = new mongoose.Schema({
         indicatorValue: { type: Number },
         indicatorName: { type: String },
         signalDescription: { type: String }
+    },
+
+    // Pattern recognition parameters
+    patternParams: {
+        // Timeframe for pattern detection
+        timeframe: { type: String, enum: ['1d', '4h', '1h'], default: '1d' },
+        // Minimum pattern confidence threshold (0-100)
+        minConfidence: { type: Number, default: 70 },
+        // Pattern detection lookback period
+        lookbackPeriod: { type: Number, default: 50 }
+    },
+
+    // Pattern trigger data (populated when triggered)
+    patternTriggerData: {
+        patternName: { type: String },
+        confidence: { type: Number },
+        priceTarget: { type: Number },
+        stopLoss: { type: Number },
+        breakoutLevel: { type: Number },
+        patternStartDate: { type: Date },
+        patternEndDate: { type: Date },
+        direction: { type: String, enum: ['bullish', 'bearish', 'neutral'] }
     }
 
 }, {
@@ -238,6 +271,30 @@ alertSchema.virtual('message').get(function() {
             return `${this.symbol} testing support at $${support?.toFixed(2) || 'N/A'}`;
         case 'resistance_test':
             return `${this.symbol} testing resistance at $${resistance?.toFixed(2) || 'N/A'}`;
+
+        // Pattern recognition alerts
+        case 'head_shoulders':
+            return `${this.symbol} Head & Shoulders pattern detected - Bearish reversal signal`;
+        case 'inverse_head_shoulders':
+            return `${this.symbol} Inverse Head & Shoulders pattern detected - Bullish reversal signal`;
+        case 'double_top':
+            return `${this.symbol} Double Top pattern detected - Bearish reversal signal`;
+        case 'double_bottom':
+            return `${this.symbol} Double Bottom pattern detected - Bullish reversal signal`;
+        case 'ascending_triangle':
+            return `${this.symbol} Ascending Triangle pattern detected - Bullish continuation`;
+        case 'descending_triangle':
+            return `${this.symbol} Descending Triangle pattern detected - Bearish continuation`;
+        case 'symmetrical_triangle':
+            return `${this.symbol} Symmetrical Triangle pattern detected - Breakout imminent`;
+        case 'bull_flag':
+            return `${this.symbol} Bull Flag pattern detected - Bullish continuation`;
+        case 'bear_flag':
+            return `${this.symbol} Bear Flag pattern detected - Bearish continuation`;
+        case 'rising_wedge':
+            return `${this.symbol} Rising Wedge pattern detected - Bearish reversal`;
+        case 'falling_wedge':
+            return `${this.symbol} Falling Wedge pattern detected - Bullish reversal`;
 
         default:
             return 'Alert triggered';
@@ -330,6 +387,23 @@ alertSchema.statics.getActiveTechnicalAlerts = function() {
     }).sort({ symbol: 1 });
 };
 
+// Static method to get active pattern alerts (for pattern checker)
+alertSchema.statics.getActivePatternAlerts = function() {
+    const patternTypes = [
+        'head_shoulders', 'inverse_head_shoulders',
+        'double_top', 'double_bottom',
+        'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+        'bull_flag', 'bear_flag',
+        'rising_wedge', 'falling_wedge'
+    ];
+
+    return this.find({
+        type: { $in: patternTypes },
+        status: 'active',
+        expiresAt: { $gt: new Date() }
+    }).sort({ symbol: 1 });
+};
+
 // Helper to check if this is a technical alert type
 alertSchema.methods.isTechnicalAlert = function() {
     const technicalTypes = [
@@ -339,6 +413,18 @@ alertSchema.methods.isTechnicalAlert = function() {
         'support_test', 'resistance_test'
     ];
     return technicalTypes.includes(this.type);
+};
+
+// Helper to check if this is a pattern alert type
+alertSchema.methods.isPatternAlert = function() {
+    const patternTypes = [
+        'head_shoulders', 'inverse_head_shoulders',
+        'double_top', 'double_bottom',
+        'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+        'bull_flag', 'bear_flag',
+        'rising_wedge', 'falling_wedge'
+    ];
+    return patternTypes.includes(this.type);
 };
 
 // Middleware to auto-expire old alerts
