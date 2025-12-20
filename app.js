@@ -214,6 +214,11 @@ const connectDB = async () => {
         // Delay scheduler start to ensure bot is fully initialized (after Telegram)
         setTimeout(() => initializeDiscordSchedulers(), 7000);
 
+        // ✅ START WEBSOCKET PRICE SERVICE (Real-time price streaming)
+        const { startWebSocketService } = require('./services/websocketPriceService');
+        startWebSocketService();
+        logger.info('✅ WebSocket Price Service started');
+
     } catch (error) {
         logger.error(`MongoDB Connection Error: ${error.message}`);
     }

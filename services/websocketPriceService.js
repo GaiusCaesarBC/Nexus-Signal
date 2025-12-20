@@ -187,6 +187,12 @@ function connectBinance() {
 
                 priceCache.set(symbol, { price, timestamp: Date.now() });
 
+                // Check if we have SSE clients for this symbol
+                const clients = sseClients.get(symbol);
+                if (clients && clients.size > 0) {
+                    console.log(`[WebSocket] 💰 ${symbol}: $${price.toFixed(2)} → ${clients.size} SSE clients`);
+                }
+
                 // Broadcast to SSE clients
                 broadcastPrice(symbol, price, 'crypto');
 

@@ -148,7 +148,12 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
 
                 } catch (binanceError) {
                     console.error(`[Chart] ❌ Binance error:`, binanceError.message);
-                    // Fall through to Alpha Vantage as backup
+                    // For intraday crypto, if Binance fails, return error rather than wrong data
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Crypto intraday data temporarily unavailable',
+                        message: binanceError.message
+                    });
                 }
             }
 
