@@ -20,6 +20,9 @@ const priceCache = new Map(); // symbol -> { price, timestamp }
 const stockSubscriptions = new Set();
 const cryptoSubscriptions = new Set();
 
+// SSE clients for live streaming to frontend
+const sseClients = new Map(); // symbol -> Set of response objects
+
 // WebSocket connections
 let alpacaWs = null;
 let binanceWs = null;
@@ -72,6 +75,9 @@ function connectAlpaca() {
 
                     priceCache.set(symbol, { price, timestamp: Date.now() });
 
+                    // Broadcast to SSE clients
+                    broadcastPrice(symbol, price, 'stock');
+
                     // Check alerts for this symbol
                     await checkPriceAlerts(symbol, price, 'stock');
                 }
@@ -82,6 +88,10 @@ function connectAlpaca() {
                     const price = (msg.bp + msg.ap) / 2; // Mid price
 
                     priceCache.set(symbol, { price, timestamp: Date.now() });
+
+                    // Broadcast to SSE clients
+                    broadcastPrice(symbol, price, 'stock');
+
                     await checkPriceAlerts(symbol, price, 'stock');
                 }
             }
@@ -176,6 +186,9 @@ function connectBinance() {
                 const price = parseFloat(msg.p);
 
                 priceCache.set(symbol, { price, timestamp: Date.now() });
+
+                // Broadcast to SSE clients
+                broadcastPrice(symbol, price, 'crypto');
 
                 // Check alerts for this crypto
                 await checkPriceAlerts(symbol, price, 'crypto');
@@ -337,6 +350,75 @@ async function syncSubscriptions() {
     }
 }
 
+// ==================== SSE BROADCASTING ====================
+
+function broadcastPrice(symbol, price, assetType) {
+    const upperSymbol = symbol.toUpperCase();
+    const clients = sseClients.get(upperSymbol);
+
+    if (!clients || clients.size === 0) return;
+
+    const data = JSON.stringify({
+        symbol: upperSymbol,
+        price,
+        timestamp: Date.now(),
+        assetType
+    });
+
+    clients.forEach(res => {
+        try {
+            res.write(`data: ${data}\n\n`);
+        } catch (error) {
+            // Client disconnected, remove from set
+            clients.delete(res);
+        }
+    });
+}
+
+function subscribeSSE(symbol, res) {
+    const upperSymbol = symbol.toUpperCase();
+
+    if (!sseClients.has(upperSymbol)) {
+        sseClients.set(upperSymbol, new Set());
+    }
+
+    sseClients.get(upperSymbol).add(res);
+
+    // Also subscribe to the WebSocket feed if not already
+    // Check if it's a crypto symbol
+    const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'DOGE', 'SHIB', 'XRP',
+                          'BNB', 'LINK', 'UNI', 'AAVE', 'LTC', 'ATOM', 'NEAR', 'APT', 'ARB', 'OP'];
+
+    if (cryptoSymbols.includes(upperSymbol)) {
+        subscribeToCrypto([upperSymbol]);
+    } else {
+        subscribeToStocks([upperSymbol]);
+    }
+
+    // Send current cached price immediately if available
+    const cached = priceCache.get(upperSymbol);
+    if (cached) {
+        res.write(`data: ${JSON.stringify({
+            symbol: upperSymbol,
+            price: cached.price,
+            timestamp: cached.timestamp,
+            assetType: cryptoSymbols.includes(upperSymbol) ? 'crypto' : 'stock'
+        })}\n\n`);
+    }
+
+    console.log(`[SSE] Client subscribed to ${upperSymbol} (${sseClients.get(upperSymbol).size} clients)`);
+}
+
+function unsubscribeSSE(symbol, res) {
+    const upperSymbol = symbol.toUpperCase();
+    const clients = sseClients.get(upperSymbol);
+
+    if (clients) {
+        clients.delete(res);
+        console.log(`[SSE] Client unsubscribed from ${upperSymbol} (${clients.size} clients remaining)`);
+    }
+}
+
 // ==================== PUBLIC API ====================
 
 function getCurrentPrice(symbol) {
@@ -378,5 +460,8 @@ module.exports = {
     subscribeToCrypto,
     getCurrentPrice,
     syncSubscriptions,
-    priceCache
+    priceCache,
+    // SSE functions for frontend streaming
+    subscribeSSE,
+    unsubscribeSSE
 };

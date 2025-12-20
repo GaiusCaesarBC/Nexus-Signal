@@ -354,6 +354,7 @@ const technicalIndicatorsRoutes = require('./routes/technicalIndicatorsRoutes');
 const telegramRoutes = require('./routes/telegramRoutes'); // Telegram Bot Notifications
 const discordRoutes = require('./routes/discordRoutes'); // Discord Bot Notifications
 const backtestRoutes = require('./routes/apibacktestRoutes'); // 📊 Strategy Backtesting (Elite)
+const livePriceRoutes = require('./routes/livePriceRoutes'); // 📈 Live Price SSE Streaming
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -415,6 +416,7 @@ app.use('/api/sentiment', sentimentRoutes);
 app.use('/api/portfolio', portfolioHistoryRoutes);
 app.use('/api/portfolio', aiInsightsRoutes);
 app.use('/api/chart', chartRoutes);
+app.use('/api/live-price', livePriceRoutes); // 📈 Live Price SSE Streaming
 app.use('/api/calculators', calculatorRoutes); 
 app.use('/api/paper-trading', paperTradingRoutes);
 app.use('/api/gamification', gamificationRoutes);
