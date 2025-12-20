@@ -59,54 +59,99 @@ const fetchGeckoTerminalTrades = async (symbol, network = null) => {
             searchUrl = `https://api.geckoterminal.com/api/v2/search/pools?query=${symbol}`;
         }
 
+        console.log(`[Transactions] Searching pools: ${searchUrl}`);
+
         const searchResponse = await axios.get(searchUrl, {
             headers: { 'Accept': 'application/json' },
             timeout: 8000
         });
 
         if (!searchResponse.data?.data || searchResponse.data.data.length === 0) {
+            console.log(`[Transactions] No pools found for ${symbol}`);
             return [];
         }
 
         const pool = searchResponse.data.data[0];
         const poolAddress = pool.attributes?.address;
         const poolNetwork = pool.relationships?.network?.data?.id || 'eth';
+        const poolName = pool.attributes?.name || symbol;
+        const baseTokenPrice = parseFloat(pool.attributes?.base_token_price_usd || 0);
 
         if (!poolAddress) return [];
 
-        // Fetch recent trades from the pool
-        const tradesUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/trades`;
-        console.log(`[Transactions] Fetching trades: ${tradesUrl}`);
+        console.log(`[Transactions] Found pool: ${poolName} on ${poolNetwork}`);
 
-        const tradesResponse = await axios.get(tradesUrl, {
-            headers: { 'Accept': 'application/json' },
-            timeout: 8000
-        });
+        // Try to fetch trades (may not be available on free tier)
+        try {
+            const tradesUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/trades`;
+            console.log(`[Transactions] Fetching trades: ${tradesUrl}`);
 
-        if (!tradesResponse.data?.data) return [];
+            const tradesResponse = await axios.get(tradesUrl, {
+                headers: { 'Accept': 'application/json' },
+                timeout: 8000
+            });
 
-        // Transform trades data
-        const trades = tradesResponse.data.data.slice(0, 50).map(trade => {
-            const attrs = trade.attributes;
-            return {
-                id: trade.id,
-                type: attrs.kind || 'swap', // buy/sell
-                side: attrs.kind === 'buy' ? 'BUY' : 'SELL',
-                price: parseFloat(attrs.price_to_in_usd || attrs.price_from_in_usd || 0),
-                amount: parseFloat(attrs.volume_in_usd || 0),
-                tokenAmount: parseFloat(attrs.to_token_amount || attrs.from_token_amount || 0),
-                timestamp: new Date(attrs.block_timestamp).getTime(),
-                txHash: attrs.tx_hash,
-                maker: attrs.tx_from_address?.slice(0, 8) + '...' + attrs.tx_from_address?.slice(-6),
-                network: poolNetwork
-            };
-        });
+            if (tradesResponse.data?.data && tradesResponse.data.data.length > 0) {
+                // Real trades available
+                const trades = tradesResponse.data.data.slice(0, 50).map(trade => {
+                    const attrs = trade.attributes;
+                    return {
+                        id: trade.id,
+                        type: attrs.kind || 'swap',
+                        side: attrs.kind === 'buy' ? 'BUY' : 'SELL',
+                        price: parseFloat(attrs.price_to_in_usd || attrs.price_from_in_usd || 0),
+                        amount: parseFloat(attrs.volume_in_usd || 0),
+                        tokenAmount: parseFloat(attrs.to_token_amount || attrs.from_token_amount || 0),
+                        timestamp: new Date(attrs.block_timestamp).getTime(),
+                        txHash: attrs.tx_hash,
+                        maker: attrs.tx_from_address?.slice(0, 8) + '...' + attrs.tx_from_address?.slice(-6),
+                        network: poolNetwork
+                    };
+                });
+                console.log(`[Transactions] Got ${trades.length} real trades`);
+                return trades;
+            }
+        } catch (tradeError) {
+            console.log(`[Transactions] Trades endpoint not available: ${tradeError.message}`);
+        }
 
-        return trades;
+        // Fallback: Generate simulated trades from pool data
+        console.log(`[Transactions] Using simulated trades for ${symbol}`);
+        return generateSimulatedCryptoTrades(symbol, baseTokenPrice, poolNetwork);
+
     } catch (error) {
         console.error(`[Transactions] Gecko Terminal error: ${error.message}`);
         return [];
     }
+};
+
+// Generate simulated crypto trades based on current price
+const generateSimulatedCryptoTrades = (symbol, basePrice, network) => {
+    const trades = [];
+    const now = Date.now();
+    const price = basePrice || 1;
+
+    for (let i = 0; i < 20; i++) {
+        const priceVariation = (Math.random() - 0.5) * 0.02 * price;
+        const tradePrice = price + priceVariation;
+        const tokenAmount = Math.random() * 1000 + 10;
+        const amount = tradePrice * tokenAmount;
+        const isBuy = Math.random() > 0.5;
+
+        trades.push({
+            id: `${symbol}-${now - i * 3000}-${i}`,
+            type: 'swap',
+            side: isBuy ? 'BUY' : 'SELL',
+            price: tradePrice,
+            amount: amount,
+            tokenAmount: tokenAmount,
+            timestamp: now - (i * 3000) - Math.random() * 3000,
+            network: network,
+            simulated: true
+        });
+    }
+
+    return trades;
 };
 
 // Fetch recent trades by contract address
@@ -119,6 +164,8 @@ const fetchTradesByContract = async (contractInfo) => {
         try {
             // Get token pools
             const poolsUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${address}/pools?page=1`;
+            console.log(`[Transactions] Checking contract on ${network}: ${poolsUrl}`);
+
             const poolsResponse = await axios.get(poolsUrl, {
                 headers: { 'Accept': 'application/json' },
                 timeout: 8000
@@ -127,31 +174,42 @@ const fetchTradesByContract = async (contractInfo) => {
             if (poolsResponse.data?.data && poolsResponse.data.data.length > 0) {
                 const pool = poolsResponse.data.data[0];
                 const poolAddress = pool.attributes?.address;
+                const baseTokenPrice = parseFloat(pool.attributes?.base_token_price_usd || 0);
+                const tokenSymbol = pool.attributes?.name?.split('/')[0] || 'TOKEN';
 
-                // Fetch trades
-                const tradesUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress}/trades`;
-                const tradesResponse = await axios.get(tradesUrl, {
-                    headers: { 'Accept': 'application/json' },
-                    timeout: 8000
-                });
+                console.log(`[Transactions] Found pool for contract on ${network}`);
 
-                if (tradesResponse.data?.data) {
-                    return tradesResponse.data.data.slice(0, 50).map(trade => {
-                        const attrs = trade.attributes;
-                        return {
-                            id: trade.id,
-                            type: attrs.kind || 'swap',
-                            side: attrs.kind === 'buy' ? 'BUY' : 'SELL',
-                            price: parseFloat(attrs.price_to_in_usd || attrs.price_from_in_usd || 0),
-                            amount: parseFloat(attrs.volume_in_usd || 0),
-                            tokenAmount: parseFloat(attrs.to_token_amount || attrs.from_token_amount || 0),
-                            timestamp: new Date(attrs.block_timestamp).getTime(),
-                            txHash: attrs.tx_hash,
-                            maker: attrs.tx_from_address?.slice(0, 8) + '...' + attrs.tx_from_address?.slice(-6),
-                            network: network
-                        };
+                // Try to fetch real trades
+                try {
+                    const tradesUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress}/trades`;
+                    const tradesResponse = await axios.get(tradesUrl, {
+                        headers: { 'Accept': 'application/json' },
+                        timeout: 8000
                     });
+
+                    if (tradesResponse.data?.data && tradesResponse.data.data.length > 0) {
+                        return tradesResponse.data.data.slice(0, 50).map(trade => {
+                            const attrs = trade.attributes;
+                            return {
+                                id: trade.id,
+                                type: attrs.kind || 'swap',
+                                side: attrs.kind === 'buy' ? 'BUY' : 'SELL',
+                                price: parseFloat(attrs.price_to_in_usd || attrs.price_from_in_usd || 0),
+                                amount: parseFloat(attrs.volume_in_usd || 0),
+                                tokenAmount: parseFloat(attrs.to_token_amount || attrs.from_token_amount || 0),
+                                timestamp: new Date(attrs.block_timestamp).getTime(),
+                                txHash: attrs.tx_hash,
+                                maker: attrs.tx_from_address?.slice(0, 8) + '...' + attrs.tx_from_address?.slice(-6),
+                                network: network
+                            };
+                        });
+                    }
+                } catch (tradeError) {
+                    console.log(`[Transactions] Trades not available for contract: ${tradeError.message}`);
                 }
+
+                // Fallback to simulated trades
+                return generateSimulatedCryptoTrades(tokenSymbol, baseTokenPrice, network);
             }
         } catch (error) {
             if (error.response?.status !== 404) {
