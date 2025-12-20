@@ -11,7 +11,8 @@ const ALPACA_API_KEY = process.env.ALPACA_API_KEY;
 const ALPACA_SECRET_KEY = process.env.ALPACA_SECRET_KEY;
 const ALPACA_WS_URL = process.env.ALPACA_WS_URL || 'wss://stream.data.alpaca.markets/v2/iex';
 
-const BINANCE_WS_URL = 'wss://stream.binance.com:9443/ws';
+// Use Binance US for US-based servers (global Binance returns 451 from US)
+const BINANCE_WS_URL = 'wss://stream.binance.us:9443/ws';
 
 // Price cache for quick lookups
 const priceCache = new Map(); // symbol -> { price, timestamp }
