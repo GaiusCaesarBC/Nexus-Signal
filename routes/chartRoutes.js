@@ -180,21 +180,47 @@ const fetchTokenByContract = async (contractInfo, interval) => {
             timeframe = 'hour';
     }
 
-    // Fetch OHLCV data from the pool
+    // Fetch OHLCV data from the pool with pagination (up to 5000 candles)
     const poolAddress = poolData.pool.attributes?.address;
-    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolData.network}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
-    console.log(`[Chart] 🦎 Fetching OHLCV: ${ohlcvUrl}`);
+    const TARGET_CANDLES = 5000;
+    const BATCH_SIZE = 1000;
+    let allCandles = [];
+    let beforeTimestamp = null;
 
-    const ohlcvResponse = await axios.get(ohlcvUrl, {
-        headers: { 'Accept': 'application/json' },
-        timeout: 10000
-    });
+    while (allCandles.length < TARGET_CANDLES) {
+        let ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolData.network}/pools/${poolAddress}/ohlcv/${timeframe}?limit=${BATCH_SIZE}`;
+        if (beforeTimestamp) {
+            ohlcvUrl += `&before_timestamp=${beforeTimestamp}`;
+        }
+        console.log(`[Chart] 🦎 Fetching OHLCV (batch ${Math.floor(allCandles.length / BATCH_SIZE) + 1}): ${ohlcvUrl}`);
 
-    if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
-        throw new Error('No OHLCV data available for this token');
+        const ohlcvResponse = await axios.get(ohlcvUrl, {
+            headers: { 'Accept': 'application/json' },
+            timeout: 10000
+        });
+
+        if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
+            if (allCandles.length === 0) {
+                throw new Error('No OHLCV data available for this token');
+            }
+            break;
+        }
+
+        const batch = ohlcvResponse.data.data.attributes.ohlcv_list;
+        if (batch.length === 0) break;
+
+        allCandles = allCandles.concat(batch);
+
+        const oldestTimestamp = batch[batch.length - 1][0];
+        if (oldestTimestamp === beforeTimestamp) break;
+        beforeTimestamp = oldestTimestamp;
+
+        if (batch.length < BATCH_SIZE) break;
     }
 
-    const ohlcvList = ohlcvResponse.data.data.attributes.ohlcv_list;
+    console.log(`[Chart] 🦎 Fetched ${allCandles.length} total candles for contract`);
+
+    const ohlcvList = allCandles;
     const chartData = ohlcvList.map(candle => ({
         time: candle[0],
         open: parseFloat(candle[1]),
@@ -388,7 +414,8 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
     // Get the first (most liquid) pool
     const pool = searchResponse.data.data[0];
     const poolAddress = pool.attributes?.address;
-    const poolNetwork = pool.relationships?.network?.data?.id || network || 'unknown';
+    // Extract network from pool ID (format: network_address, e.g., "base_0x...")
+    const poolNetwork = pool.id?.split('_')[0] || network || 'eth';
 
     if (!poolAddress) {
         throw new Error(`Invalid pool data for ${symbol}`);
@@ -422,21 +449,49 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
             timeframe = 'hour';
     }
 
-    // Fetch OHLCV data
-    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
-    console.log(`[Chart] 🦎 Gecko Terminal OHLCV: ${ohlcvUrl}`);
+    // Fetch OHLCV data with pagination (up to 5000 candles)
+    const TARGET_CANDLES = 5000;
+    const BATCH_SIZE = 1000;
+    let allCandles = [];
+    let beforeTimestamp = null;
 
-    const ohlcvResponse = await axios.get(ohlcvUrl, {
-        headers: { 'Accept': 'application/json' },
-        timeout: 10000
-    });
+    while (allCandles.length < TARGET_CANDLES) {
+        let ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?limit=${BATCH_SIZE}`;
+        if (beforeTimestamp) {
+            ohlcvUrl += `&before_timestamp=${beforeTimestamp}`;
+        }
+        console.log(`[Chart] 🦎 Gecko Terminal OHLCV (batch ${Math.floor(allCandles.length / BATCH_SIZE) + 1}): ${ohlcvUrl}`);
 
-    if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
-        throw new Error('No OHLCV data from Gecko Terminal');
+        const ohlcvResponse = await axios.get(ohlcvUrl, {
+            headers: { 'Accept': 'application/json' },
+            timeout: 10000
+        });
+
+        if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
+            if (allCandles.length === 0) {
+                throw new Error('No OHLCV data from Gecko Terminal');
+            }
+            break; // No more data available
+        }
+
+        const batch = ohlcvResponse.data.data.attributes.ohlcv_list;
+        if (batch.length === 0) break;
+
+        allCandles = allCandles.concat(batch);
+
+        // Get the oldest timestamp for the next batch
+        const oldestTimestamp = batch[batch.length - 1][0];
+        if (oldestTimestamp === beforeTimestamp) break; // No progress, stop
+        beforeTimestamp = oldestTimestamp;
+
+        // If we got less than requested, no more data available
+        if (batch.length < BATCH_SIZE) break;
     }
 
+    console.log(`[Chart] 🦎 Fetched ${allCandles.length} total candles for ${symbol}`);
+
     // Gecko Terminal format: [timestamp, open, high, low, close, volume]
-    const ohlcvList = ohlcvResponse.data.data.attributes.ohlcv_list;
+    const ohlcvList = allCandles;
     const chartData = ohlcvList.map(candle => ({
         time: candle[0],
         open: parseFloat(candle[1]),
