@@ -34,6 +34,10 @@ let binanceReconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 5000;
 
+// Flags to prevent double reconnection when intentionally closing
+let binanceIntentionalClose = false;
+let alpacaIntentionalClose = false;
+
 // ==================== ALPACA (STOCKS) ====================
 
 function connectAlpaca() {
@@ -63,10 +67,23 @@ function connectAlpaca() {
             const messages = JSON.parse(data);
 
             for (const msg of messages) {
+                // Log all message types for debugging
+                if (msg.T !== 't' && msg.T !== 'q') {
+                    console.log(`[WebSocket] Alpaca message: ${JSON.stringify(msg)}`);
+                }
+
                 if (msg.T === 'success' && msg.msg === 'authenticated') {
                     console.log('[WebSocket] Alpaca authenticated');
                     // Subscribe to any pending symbols
                     subscribeToStocks([...stockSubscriptions]);
+                }
+
+                if (msg.T === 'error') {
+                    console.error(`[WebSocket] Alpaca error message: ${msg.msg} (code: ${msg.code})`);
+                }
+
+                if (msg.T === 'subscription') {
+                    console.log(`[WebSocket] Alpaca subscribed - trades: ${msg.trades?.join(', ') || 'none'}, quotes: ${msg.quotes?.join(', ') || 'none'}`);
                 }
 
                 if (msg.T === 't') {
@@ -75,6 +92,12 @@ function connectAlpaca() {
                     const price = msg.p;
 
                     priceCache.set(symbol, { price, timestamp: Date.now() });
+
+                    // Log price updates when there are SSE clients
+                    const clients = sseClients.get(symbol);
+                    if (clients && clients.size > 0) {
+                        console.log(`[WebSocket] 💰 ${symbol}: $${price.toFixed(2)} → ${clients.size} SSE clients`);
+                    }
 
                     // Broadcast to SSE clients
                     broadcastPrice(symbol, price, 'stock');
@@ -101,8 +124,8 @@ function connectAlpaca() {
         }
     });
 
-    alpacaWs.on('close', () => {
-        console.log('[WebSocket] Alpaca disconnected');
+    alpacaWs.on('close', (code, reason) => {
+        console.log(`[WebSocket] Alpaca disconnected (code: ${code}, reason: ${reason || 'none'})`);
         reconnectAlpaca();
     });
 
@@ -216,9 +239,14 @@ function connectBinance() {
         }
     });
 
-    binanceWs.on('close', () => {
-        console.log('[WebSocket] Binance disconnected');
-        reconnectBinance();
+    binanceWs.on('close', (code, reason) => {
+        console.log(`[WebSocket] Binance disconnected (code: ${code}, reason: ${reason || 'none'})`);
+        if (binanceIntentionalClose) {
+            binanceIntentionalClose = false;
+            console.log('[WebSocket] Binance close was intentional, not reconnecting');
+        } else {
+            reconnectBinance();
+        }
     });
 
     binanceWs.on('error', (error) => {
@@ -245,13 +273,25 @@ function reconnectBinance() {
 }
 
 function subscribeToCrypto(symbols) {
-    symbols.forEach(s => cryptoSubscriptions.add(s.toUpperCase()));
+    const newSymbols = symbols.filter(s => !cryptoSubscriptions.has(s.toUpperCase()));
 
-    // Reconnect with new subscriptions
-    if (binanceWs) {
-        binanceWs.close();
+    if (newSymbols.length === 0) {
+        console.log('[WebSocket] All crypto symbols already subscribed');
+        return;
     }
-    connectBinance();
+
+    newSymbols.forEach(s => cryptoSubscriptions.add(s.toUpperCase()));
+    console.log(`[WebSocket] Adding crypto subscriptions: ${newSymbols.join(', ')}`);
+
+    // Close existing connection and reconnect with new subscriptions
+    if (binanceWs && binanceWs.readyState === WebSocket.OPEN) {
+        binanceIntentionalClose = true;
+        binanceWs.close();
+        // Wait a bit before reconnecting
+        setTimeout(connectBinance, 500);
+    } else {
+        connectBinance();
+    }
 }
 
 // ==================== ALERT CHECKING ====================
