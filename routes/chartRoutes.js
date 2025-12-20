@@ -46,6 +46,7 @@ const parseCryptoSymbol = (symbol) => {
 router.get('/:symbol/:interval', auth, async (req, res) => {
     try {
         const { interval } = req.params;
+        console.log(`[Chart] 📊 Request received: symbol=${req.params.symbol}, interval=${interval}`);
 
         // Validate symbol to prevent SSRF/injection attacks
         let symbol;
@@ -60,11 +61,12 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
         }
 
         const cacheKey = `${symbol}-${interval}`;
-        
+        console.log(`[Chart] Cache key: ${cacheKey}`);
+
         // Check cache
         const cached = chartDataCache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-            console.log(`[Chart] Cache HIT for ${symbol} ${interval}`);
+            console.log(`[Chart] ✅ Cache HIT for ${symbol} ${interval} (${cached.data.length} candles)`);
             return res.json({
                 success: true,
                 data: cached.data,
@@ -72,6 +74,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 interval
             });
         }
+        console.log(`[Chart] ❌ Cache MISS for ${symbol} ${interval}`);
         
         console.log(`[Chart] Fetching data for ${symbol} ${interval}`);
         
