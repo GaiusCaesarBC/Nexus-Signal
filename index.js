@@ -2,6 +2,7 @@ require('dotenv').config(); // Load environment variables
 
 const app = require('./app'); // Import the Express app from app.js
 const { startPredictionChecker } = require('./services/predictionChecker'); // ✅ ADDED
+const { startWebSocketService } = require('./services/websocketPriceService'); // Real-time price streaming
 
 const MAX_RETRIES = 5;
 let attempts = 0;
@@ -19,6 +20,9 @@ function startServer() {
         
         // ✅ START PREDICTION CHECKER AFTER SERVER STARTS
         startPredictionChecker();
+
+        // ✅ START REAL-TIME PRICE STREAMING (Alpaca stocks, Binance crypto)
+        startWebSocketService();
     });
 
     // Attach an error handler to the server instance

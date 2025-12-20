@@ -171,6 +171,103 @@ router.post('/technical',
     }
 );
 
+// POST create pattern recognition alert - GATED PREMIUM+
+router.post('/pattern',
+    alertsLimiter,
+    auth,
+    requireFeature('hasCustomAlerts'),
+    async (req, res) => {
+        try {
+            const {
+                symbol,
+                patternType,
+                assetType,
+                timeframe,
+                minConfidence,
+                notifyEmail,
+                notifyPush
+            } = req.body;
+
+            // Validate input
+            if (!symbol || !patternType) {
+                return res.status(400).json({
+                    error: 'Symbol and pattern type are required'
+                });
+            }
+
+            const validPatterns = [
+                'head_shoulders', 'inverse_head_shoulders',
+                'double_top', 'double_bottom',
+                'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+                'bull_flag', 'bear_flag',
+                'rising_wedge', 'falling_wedge'
+            ];
+
+            if (!validPatterns.includes(patternType)) {
+                return res.status(400).json({
+                    error: `Pattern type must be one of: ${validPatterns.join(', ')}`
+                });
+            }
+
+            const validTimeframes = ['1d', '4h', '1h'];
+            const alertTimeframe = validTimeframes.includes(timeframe) ? timeframe : '1d';
+
+            // Create pattern alert
+            const alert = new Alert({
+                user: req.user.id,
+                type: patternType,
+                symbol: symbol.toUpperCase(),
+                assetType: assetType || 'stock',
+                patternParams: {
+                    timeframe: alertTimeframe,
+                    minConfidence: minConfidence || 70,
+                    lookbackPeriod: alertTimeframe === '1d' ? 50 : (alertTimeframe === '4h' ? 100 : 200)
+                },
+                notifyVia: {
+                    inApp: true,
+                    email: notifyEmail !== false,
+                    push: notifyPush || false
+                },
+                status: 'active'
+            });
+
+            await alert.save();
+
+            res.json({
+                success: true,
+                alert,
+                message: `Pattern alert created for ${patternType} on ${symbol}`
+            });
+        } catch (error) {
+            console.error('Error creating pattern alert:', error);
+            res.status(500).json({ error: 'Server error' });
+        }
+    }
+);
+
+// GET available pattern types
+router.get('/pattern-types', alertsLimiter, auth, async (req, res) => {
+    const patternTypes = [
+        { type: 'head_shoulders', name: 'Head & Shoulders', direction: 'bearish', description: 'Classic reversal pattern with three peaks' },
+        { type: 'inverse_head_shoulders', name: 'Inverse Head & Shoulders', direction: 'bullish', description: 'Bullish reversal with three troughs' },
+        { type: 'double_top', name: 'Double Top', direction: 'bearish', description: 'Two peaks at similar levels' },
+        { type: 'double_bottom', name: 'Double Bottom', direction: 'bullish', description: 'Two troughs at similar levels' },
+        { type: 'ascending_triangle', name: 'Ascending Triangle', direction: 'bullish', description: 'Flat resistance with rising support' },
+        { type: 'descending_triangle', name: 'Descending Triangle', direction: 'bearish', description: 'Flat support with falling resistance' },
+        { type: 'symmetrical_triangle', name: 'Symmetrical Triangle', direction: 'neutral', description: 'Converging trend lines, breakout imminent' },
+        { type: 'bull_flag', name: 'Bull Flag', direction: 'bullish', description: 'Strong move up followed by consolidation' },
+        { type: 'bear_flag', name: 'Bear Flag', direction: 'bearish', description: 'Strong move down followed by consolidation' },
+        { type: 'rising_wedge', name: 'Rising Wedge', direction: 'bearish', description: 'Converging upward lines, bearish reversal' },
+        { type: 'falling_wedge', name: 'Falling Wedge', direction: 'bullish', description: 'Converging downward lines, bullish reversal' }
+    ];
+
+    res.json({
+        success: true,
+        patterns: patternTypes,
+        timeframes: ['1d', '4h', '1h']
+    });
+});
+
 // POST create percent change alert - GATED PRO+
 router.post('/percent-change',
     alertsLimiter,
