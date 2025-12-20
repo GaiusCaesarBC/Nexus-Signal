@@ -385,9 +385,13 @@ function subscribeSSE(symbol, res) {
     sseClients.get(upperSymbol).add(res);
 
     // Also subscribe to the WebSocket feed if not already
-    // Check if it's a crypto symbol
-    const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'DOGE', 'SHIB', 'XRP',
-                          'BNB', 'LINK', 'UNI', 'AAVE', 'LTC', 'ATOM', 'NEAR', 'APT', 'ARB', 'OP'];
+    // Check if it's a crypto symbol (expanded list matching frontend)
+    const cryptoSymbols = [
+        'BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'DOGE', 'SHIB', 'XRP',
+        'BNB', 'LINK', 'UNI', 'AAVE', 'LTC', 'ATOM', 'NEAR', 'APT', 'ARB', 'OP',
+        'PEPE', 'FLOKI', 'BONK', 'WIF', 'RENDER', 'FET', 'INJ', 'SUI', 'SEI', 'TIA',
+        'ALGO', 'VET', 'FIL', 'THETA', 'EOS', 'XLM', 'TRX', 'XMR', 'HBAR', 'ICP'
+    ];
 
     if (cryptoSymbols.includes(upperSymbol)) {
         subscribeToCrypto([upperSymbol]);
