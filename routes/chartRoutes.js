@@ -80,19 +80,81 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             // ====== CRYPTO PATH ======
             const { crypto, market } = parseCryptoSymbol(symbol);
             console.log(`[Chart] 🪙 Detected CRYPTO: ${crypto}/${market}`);
-            
+
+            // Use Binance API for intraday (free, no API key required)
+            // Use Alpha Vantage for daily/weekly/monthly
+            const isIntraday = ['LIVE', '1m', '5m', '15m', '30m', '1h', '4h'].includes(interval);
+
+            if (isIntraday) {
+                // ====== BINANCE INTRADAY CRYPTO ======
+                // Map interval to Binance format
+                let binanceInterval;
+                switch(interval) {
+                    case 'LIVE':
+                    case '1m': binanceInterval = '1m'; break;
+                    case '5m': binanceInterval = '5m'; break;
+                    case '15m': binanceInterval = '15m'; break;
+                    case '30m': binanceInterval = '30m'; break;
+                    case '1h': binanceInterval = '1h'; break;
+                    case '4h': binanceInterval = '4h'; break;
+                    default: binanceInterval = '1m';
+                }
+
+                // Binance uses BTCUSDT format (no dash)
+                const binanceSymbol = `${crypto}USDT`;
+                const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
+
+                console.log(`[Chart] 🔗 Crypto intraday API call to Binance (${binanceInterval})`);
+
+                try {
+                    const response = await axios.get(binanceUrl);
+
+                    if (!response.data || response.data.length === 0) {
+                        console.log(`[Chart] ❌ No Binance data for ${binanceSymbol}`);
+                        return res.status(404).json({
+                            success: false,
+                            error: 'No crypto data found for this symbol'
+                        });
+                    }
+
+                    // Transform Binance kline data to chart format
+                    // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
+                    const chartData = response.data.map(kline => ({
+                        time: Math.floor(kline[0] / 1000), // openTime in seconds
+                        open: parseFloat(kline[1]),
+                        high: parseFloat(kline[2]),
+                        low: parseFloat(kline[3]),
+                        close: parseFloat(kline[4]),
+                        volume: parseFloat(kline[5])
+                    }));
+
+                    // Cache the data
+                    chartDataCache.set(cacheKey, {
+                        data: chartData,
+                        timestamp: Date.now()
+                    });
+
+                    console.log(`[Chart] ✅ Successfully fetched ${chartData.length} crypto candles from Binance for ${crypto}/${binanceInterval}`);
+
+                    return res.json({
+                        success: true,
+                        data: chartData,
+                        symbol: `${crypto}-USD`,
+                        interval
+                    });
+
+                } catch (binanceError) {
+                    console.error(`[Chart] ❌ Binance error:`, binanceError.message);
+                    // Fall through to Alpha Vantage as backup
+                }
+            }
+
+            // ====== ALPHA VANTAGE DAILY/WEEKLY/MONTHLY CRYPTO ======
             let alphaVantageFunction;
             let dataKey;
-            
+
             // Map interval to Alpha Vantage crypto function
             switch(interval) {
-                case 'LIVE':
-                case '1m':
-                case '5m':
-                case '15m':
-                case '30m':
-                case '1h':
-                case '4h':
                 case '1D':
                     alphaVantageFunction = 'DIGITAL_CURRENCY_DAILY';
                     dataKey = 'Time Series (Digital Currency Daily)';
@@ -109,14 +171,14 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     alphaVantageFunction = 'DIGITAL_CURRENCY_DAILY';
                     dataKey = 'Time Series (Digital Currency Daily)';
             }
-            
+
             // Build API URL for CRYPTO
             const apiUrl = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${crypto}&market=${market}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-            
+
             console.log(`[Chart] 🔗 Crypto API call to Alpha Vantage`);
-            
+
             const response = await axios.get(apiUrl);
-            
+
             // Check for API errors
             if (response.data['Error Message']) {
                 console.log(`[Chart] ❌ Crypto symbol not found: ${crypto}`);
@@ -125,7 +187,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     error: 'Crypto symbol not found'
                 });
             }
-            
+
             if (response.data['Note']) {
                 console.log(`[Chart] ⏱️ API rate limit reached`);
                 return res.status(429).json({
@@ -133,9 +195,9 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     error: 'API rate limit reached. Please try again in a minute.'
                 });
             }
-            
+
             const timeSeries = response.data[dataKey];
-            
+
             if (!timeSeries) {
                 console.log('[Chart] ❌ No crypto data in response');
                 console.log('[Chart] Response keys:', Object.keys(response.data));
@@ -144,7 +206,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     error: 'No crypto data found for this symbol'
                 });
             }
-            
+
             // Transform CRYPTO data to chart format
 const entries = Object.entries(timeSeries);
 const uniqueData = new Map(); // Use Map to ensure unique timestamps
@@ -156,11 +218,11 @@ entries.forEach(([time, values]) => {
     const lowKey = `3a. low (${market})`;
     const closeKey = `4a. close (${market})`;
     const volumeKey = '5. volume';
-    
+
     // Convert to Unix timestamp (in seconds)
     const dateObj = new Date(time);
     const timestamp = Math.floor(dateObj.getTime() / 1000);
-    
+
     // Only keep the first entry for each timestamp
     if (!uniqueData.has(timestamp)) {
         uniqueData.set(timestamp, {
