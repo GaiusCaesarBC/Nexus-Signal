@@ -221,14 +221,17 @@ const fetchTokenByContract = async (contractInfo, interval) => {
     console.log(`[Chart] 🦎 Fetched ${allCandles.length} total candles for contract`);
 
     const ohlcvList = allCandles;
-    const chartData = ohlcvList.map(candle => ({
-        time: candle[0],
-        open: parseFloat(candle[1]),
-        high: parseFloat(candle[2]),
-        low: parseFloat(candle[3]),
-        close: parseFloat(candle[4]),
-        volume: parseFloat(candle[5])
-    })).sort((a, b) => a.time - b.time);
+    const chartData = ohlcvList
+        .map(candle => ({
+            time: candle[0],
+            open: parseFloat(candle[1]),
+            high: parseFloat(candle[2]),
+            low: parseFloat(candle[3]),
+            close: parseFloat(candle[4]),
+            volume: parseFloat(candle[5]) || 0
+        }))
+        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .sort((a, b) => a.time - b.time);
 
     // Debug logging
     if (chartData.length > 0) {
@@ -492,14 +495,17 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
 
     // Gecko Terminal format: [timestamp, open, high, low, close, volume]
     const ohlcvList = allCandles;
-    const chartData = ohlcvList.map(candle => ({
-        time: candle[0],
-        open: parseFloat(candle[1]),
-        high: parseFloat(candle[2]),
-        low: parseFloat(candle[3]),
-        close: parseFloat(candle[4]),
-        volume: parseFloat(candle[5])
-    })).sort((a, b) => a.time - b.time); // Sort ascending by time
+    const chartData = ohlcvList
+        .map(candle => ({
+            time: candle[0],
+            open: parseFloat(candle[1]),
+            high: parseFloat(candle[2]),
+            low: parseFloat(candle[3]),
+            close: parseFloat(candle[4]),
+            volume: parseFloat(candle[5]) || 0
+        }))
+        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .sort((a, b) => a.time - b.time); // Sort ascending by time
 
     // Debug: Log sample candles to verify OHLC variation
     if (chartData.length > 0) {
@@ -747,14 +753,16 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                         });
                     }
 
-                    const chartData = response.data.map(kline => ({
-                        time: Math.floor(kline[0] / 1000),
-                        open: parseFloat(kline[1]),
-                        high: parseFloat(kline[2]),
-                        low: parseFloat(kline[3]),
-                        close: parseFloat(kline[4]),
-                        volume: parseFloat(kline[5])
-                    }));
+                    const chartData = response.data
+                        .map(kline => ({
+                            time: Math.floor(kline[0] / 1000),
+                            open: parseFloat(kline[1]),
+                            high: parseFloat(kline[2]),
+                            low: parseFloat(kline[3]),
+                            close: parseFloat(kline[4]),
+                            volume: parseFloat(kline[5]) || 0
+                        }))
+                        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close));
 
                     // Cache the data
                     chartDataCache.set(cacheKey, {
@@ -788,14 +796,16 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                         });
 
                         if (usResponse.data && usResponse.data.length > 0) {
-                            const chartData = usResponse.data.map(kline => ({
-                                time: Math.floor(kline[0] / 1000),
-                                open: parseFloat(kline[1]),
-                                high: parseFloat(kline[2]),
-                                low: parseFloat(kline[3]),
-                                close: parseFloat(kline[4]),
-                                volume: parseFloat(kline[5])
-                            }));
+                            const chartData = usResponse.data
+                                .map(kline => ({
+                                    time: Math.floor(kline[0] / 1000),
+                                    open: parseFloat(kline[1]),
+                                    high: parseFloat(kline[2]),
+                                    low: parseFloat(kline[3]),
+                                    close: parseFloat(kline[4]),
+                                    volume: parseFloat(kline[5]) || 0
+                                }))
+                                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close));
 
                             chartDataCache.set(cacheKey, {
                                 data: chartData,
@@ -980,6 +990,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             });
 
             const chartData = Array.from(uniqueData.values())
+                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
                 .sort((a, b) => a.time - b.time)
                 .slice(-1000);
 
@@ -1111,8 +1122,9 @@ entries.forEach(([time, values]) => {
     }
 });
 
-// Convert Map to array and sort by timestamp
+// Convert Map to array, filter invalid candles, sort by timestamp
 const chartData = Array.from(uniqueData.values())
+    .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
     .slice(-1000); // Take last 1000 candles for more history
 
