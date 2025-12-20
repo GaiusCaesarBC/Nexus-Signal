@@ -164,7 +164,7 @@ entries.forEach(([time, values]) => {
 // Convert Map to array and sort by timestamp
 const chartData = Array.from(uniqueData.values())
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-500); // Take last 500 candles
+    .slice(-1000); // Take last 1000 candles for more history
 
 
             // Cache the data
@@ -172,7 +172,7 @@ const chartData = Array.from(uniqueData.values())
                 data: chartData,
                 timestamp: Date.now()
             });
-            
+
             console.log(`[Chart] ✅ Successfully fetched ${chartData.length} crypto candles for ${crypto}/${market}`);
             
             return res.json({
@@ -230,14 +230,17 @@ switch(interval) {
             let apiUrl = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
             
             if (alphaVantageFunction === 'TIME_SERIES_INTRADAY') {
-    let avInterval;
-    if (interval === '1h') {
-        avInterval = '60min';
-    } else {
-        avInterval = interval.replace('m', 'min'); // 1m -> 1min, 5m -> 5min
-    }
-    apiUrl += `&interval=${avInterval}&outputsize=full`;
-}
+                let avInterval;
+                if (interval === '1h') {
+                    avInterval = '60min';
+                } else {
+                    avInterval = interval.replace('m', 'min'); // 1m -> 1min, 5m -> 5min
+                }
+                apiUrl += `&interval=${avInterval}&outputsize=full`;
+            } else if (alphaVantageFunction === 'TIME_SERIES_DAILY') {
+                // Get full historical data for daily charts
+                apiUrl += `&outputsize=full`;
+            }
             
             console.log(`[Chart] 🔗 Stock API call to Alpha Vantage`);
             
@@ -292,14 +295,14 @@ entries.forEach(([time, values]) => {
 // Convert Map to array and sort by timestamp
 const chartData = Array.from(uniqueData.values())
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-500); // Take last 500 candles
-            
+    .slice(-1000); // Take last 1000 candles for more history
+
             // Cache the data
             chartDataCache.set(cacheKey, {
                 data: chartData,
                 timestamp: Date.now()
             });
-            
+
             console.log(`[Chart] ✅ Successfully fetched ${chartData.length} stock candles for ${symbol}`);
             
             return res.json({
