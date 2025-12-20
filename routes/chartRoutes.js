@@ -107,10 +107,16 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 const binanceSymbol = `${crypto}USDT`;
                 const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
 
-                console.log(`[Chart] 🔗 Crypto intraday API call to Binance (${binanceInterval})`);
+                console.log(`[Chart] 🔗 Crypto intraday API call to Binance: ${binanceUrl}`);
 
                 try {
-                    const response = await axios.get(binanceUrl);
+                    const response = await axios.get(binanceUrl, {
+                        headers: {
+                            'User-Agent': 'NexusSignal/1.0',
+                            'Accept': 'application/json'
+                        },
+                        timeout: 10000
+                    });
 
                     if (!response.data || response.data.length === 0) {
                         console.log(`[Chart] ❌ No Binance data for ${binanceSymbol}`);
@@ -148,7 +154,48 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
 
                 } catch (binanceError) {
                     console.error(`[Chart] ❌ Binance error:`, binanceError.message);
-                    // For intraday crypto, if Binance fails, return error rather than wrong data
+                    console.error(`[Chart] ❌ Binance error details:`, binanceError.response?.data || 'No response data');
+
+                    // Try alternative: use Binance US API as fallback
+                    try {
+                        console.log(`[Chart] 🔄 Trying Binance US API as fallback...`);
+                        const binanceUsUrl = `https://api.binance.us/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
+                        const usResponse = await axios.get(binanceUsUrl, {
+                            headers: {
+                                'User-Agent': 'NexusSignal/1.0',
+                                'Accept': 'application/json'
+                            },
+                            timeout: 10000
+                        });
+
+                        if (usResponse.data && usResponse.data.length > 0) {
+                            const chartData = usResponse.data.map(kline => ({
+                                time: Math.floor(kline[0] / 1000),
+                                open: parseFloat(kline[1]),
+                                high: parseFloat(kline[2]),
+                                low: parseFloat(kline[3]),
+                                close: parseFloat(kline[4]),
+                                volume: parseFloat(kline[5])
+                            }));
+
+                            chartDataCache.set(cacheKey, {
+                                data: chartData,
+                                timestamp: Date.now()
+                            });
+
+                            console.log(`[Chart] ✅ Binance US fallback succeeded: ${chartData.length} candles`);
+                            return res.json({
+                                success: true,
+                                data: chartData,
+                                symbol: `${crypto}-USD`,
+                                interval
+                            });
+                        }
+                    } catch (usError) {
+                        console.error(`[Chart] ❌ Binance US also failed:`, usError.message);
+                    }
+
+                    // Both failed, return error
                     return res.status(503).json({
                         success: false,
                         error: 'Crypto intraday data temporarily unavailable',
