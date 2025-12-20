@@ -17,12 +17,316 @@ const KNOWN_CRYPTOS = [
     'BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'DOGE', 'SHIB', 'XRP',
     'BNB', 'LINK', 'UNI', 'AAVE', 'LTC', 'ATOM', 'NEAR', 'APT', 'ARB', 'OP',
     'PEPE', 'FLOKI', 'BONK', 'WIF', 'RENDER', 'FET', 'INJ', 'SUI', 'SEI', 'TIA',
-    'ALGO', 'VET', 'FIL', 'THETA', 'EOS', 'XLM', 'TRX', 'XMR', 'HBAR', 'ICP'
+    'ALGO', 'VET', 'FIL', 'THETA', 'EOS', 'XLM', 'TRX', 'XMR', 'HBAR', 'ICP',
+    // Additional popular coins
+    'TON', 'BCH', 'LEO', 'DAI', 'USDC', 'USDT', 'WBTC', 'STETH', 'OKB', 'MKR',
+    'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'IMX', 'LRC', 'CHZ', 'CRV', 'SNX',
+    'COMP', 'YFI', 'SUSHI', 'BAL', 'ZRX', '1INCH', 'CAKE', 'RUNE', 'KCS', 'GT',
+    'FTM', 'ONE', 'KAVA', 'CELO', 'ZIL', 'WAVES', 'IOTA', 'NEO', 'QTUM', 'ONT',
+    'ZEC', 'DASH', 'DCR', 'SC', 'BTT', 'HOT', 'WIN', 'JST', 'SUN', 'JUST',
+    'TRUMP', 'MELANIA', 'FARTCOIN', 'AI16Z', 'VIRTUAL', 'AIXBT', 'GRIFFAIN',
+    'ZEREBRO', 'GOAT', 'ARC', 'ELIZA', 'SWARMS', 'ALCH', 'AVA', 'PRIME', 'AGIX',
+    'TAO', 'WLD', 'RNDR', 'OCEAN', 'GRT', 'AR', 'PENDLE', 'JUP', 'PYTH', 'JTO',
+    'W', 'DYM', 'STRK', 'MANTA', 'ALT', 'PIXEL', 'PORTAL', 'XAI', 'ACE', 'AI',
+    'ONDO', 'ENA', 'ETHFI', 'AEVO', 'SAGA', 'BB', 'REZ', 'NOT', 'IO', 'ZK', 'ZRO',
+    'LISTA', 'BLAST', 'BANANA', 'BOME', 'MEW', 'POPCAT', 'NEIRO', 'TURBO', 'BRETT',
+    'MOG', 'SPX', 'GIGA', 'MOODENG', 'PNUT', 'ACT', 'CHILLGUY', 'GOATSEUS'
 ];
+
+// Comprehensive CoinGecko ID mapping (symbol -> coingecko id)
+const COINGECKO_ID_MAP = {
+    // Top coins
+    'BTC': 'bitcoin', 'ETH': 'ethereum', 'USDT': 'tether', 'BNB': 'binancecoin',
+    'SOL': 'solana', 'USDC': 'usd-coin', 'XRP': 'ripple', 'DOGE': 'dogecoin',
+    'ADA': 'cardano', 'TRX': 'tron', 'AVAX': 'avalanche-2', 'SHIB': 'shiba-inu',
+    'TON': 'the-open-network', 'LINK': 'chainlink', 'DOT': 'polkadot',
+    'BCH': 'bitcoin-cash', 'NEAR': 'near', 'MATIC': 'matic-network', 'LTC': 'litecoin',
+    'LEO': 'leo-token', 'DAI': 'dai', 'UNI': 'uniswap', 'APT': 'aptos',
+    'PEPE': 'pepe', 'ICP': 'internet-computer', 'ATOM': 'cosmos', 'RENDER': 'render-token',
+    'FET': 'fetch-ai', 'HBAR': 'hedera-hashgraph', 'ETC': 'ethereum-classic',
+    'CRO': 'crypto-com-chain', 'ARB': 'arbitrum', 'FIL': 'filecoin', 'INJ': 'injective-protocol',
+    'IMX': 'immutable-x', 'OP': 'optimism', 'STX': 'stacks', 'MKR': 'maker',
+    'VET': 'vechain', 'GRT': 'the-graph', 'WIF': 'dogwifcoin', 'SUI': 'sui',
+    'AAVE': 'aave', 'TAO': 'bittensor', 'TIA': 'celestia', 'SEI': 'sei-network',
+    'BONK': 'bonk', 'THETA': 'theta-token', 'RUNE': 'thorchain', 'JUP': 'jupiter-exchange-solana',
+    'ALGO': 'algorand', 'FTM': 'fantom', 'PYTH': 'pyth-network', 'LDO': 'lido-dao',
+    'FLOKI': 'floki', 'FLOW': 'flow', 'XLM': 'stellar', 'QNT': 'quant-network',
+    'SAND': 'the-sandbox', 'MANA': 'decentraland', 'AXS': 'axie-infinity', 'GALA': 'gala',
+    'ENJ': 'enjincoin', 'CHZ': 'chiliz', 'LRC': 'loopring', 'CRV': 'curve-dao-token',
+    'SNX': 'havven', 'COMP': 'compound-governance-token', 'YFI': 'yearn-finance',
+    'SUSHI': 'sushi', 'BAL': 'balancer', 'ZRX': '0x', '1INCH': '1inch',
+    'CAKE': 'pancakeswap-token', 'KCS': 'kucoin-shares', 'GT': 'gatechain-token',
+    'ONE': 'harmony', 'KAVA': 'kava', 'CELO': 'celo', 'ZIL': 'zilliqa',
+    'WAVES': 'waves', 'IOTA': 'iota', 'NEO': 'neo', 'QTUM': 'qtum', 'ONT': 'ontology',
+    'ZEC': 'zcash', 'DASH': 'dash', 'DCR': 'decred', 'SC': 'siacoin',
+    'XMR': 'monero', 'EOS': 'eos', 'HOT': 'holotoken', 'BTT': 'bittorrent',
+    // Meme coins
+    'TRUMP': 'official-trump', 'MELANIA': 'melania-meme', 'FARTCOIN': 'fartcoin',
+    'TURBO': 'turbo', 'BRETT': 'brett', 'MOG': 'mog-coin', 'POPCAT': 'popcat',
+    'NEIRO': 'neiro-3', 'MOODENG': 'moo-deng', 'PNUT': 'peanut-the-squirrel',
+    'SPX': 'spx6900', 'GIGA': 'gigachad', 'BOME': 'book-of-meme', 'MEW': 'cat-in-a-dogs-world',
+    'CHILLGUY': 'chill-guy', 'ACT': 'act-i-the-ai-prophecy', 'GOAT': 'goatseus-maximus',
+    // AI coins
+    'AI16Z': 'ai16z', 'VIRTUAL': 'virtual-protocol', 'AIXBT': 'aixbt',
+    'GRIFFAIN': 'griffain', 'ZEREBRO': 'zerebro', 'ARC': 'arc',
+    'ELIZA': 'elizawakesup', 'SWARMS': 'swarms', 'ALCH': 'alchemist-ai',
+    'AVA': 'ava-ai', 'PRIME': 'echelon-prime', 'AGIX': 'singularitynet',
+    'WLD': 'worldcoin-wld', 'OCEAN': 'ocean-protocol', 'AR': 'arweave',
+    // New launches
+    'PENDLE': 'pendle', 'JTO': 'jito-governance-token', 'W': 'wormhole',
+    'DYM': 'dymension', 'STRK': 'starknet', 'MANTA': 'manta-network',
+    'ALT': 'altlayer', 'PIXEL': 'pixels', 'PORTAL': 'portal-2', 'XAI': 'xai-blockchain',
+    'ONDO': 'ondo-finance', 'ENA': 'ethena', 'ETHFI': 'ether-fi',
+    'SAGA': 'saga-2', 'NOT': 'notcoin', 'IO': 'io', 'ZK': 'zksync',
+    'ZRO': 'layerzero', 'LISTA': 'lista-dao', 'BLAST': 'blast',
+    'BANANA': 'banana-gun', 'RNDR': 'render-token'
+};
+
+// Gecko Terminal network mapping for DEX tokens
+const GECKO_TERMINAL_NETWORKS = {
+    'ethereum': 'eth', 'solana': 'solana', 'base': 'base',
+    'arbitrum': 'arbitrum', 'polygon': 'polygon_pos', 'bsc': 'bsc',
+    'avalanche': 'avax', 'optimism': 'optimism', 'fantom': 'ftm'
+};
+
+// Helper: Get CoinGecko ID for a symbol
+const getCoinGeckoId = (symbol) => {
+    const upper = symbol.toUpperCase();
+    return COINGECKO_ID_MAP[upper] || upper.toLowerCase();
+};
+
+// Helper: Synthesize OHLC candles from raw price data points
+const synthesizeOHLC = (prices, volumes, candleMinutes) => {
+    if (!prices || prices.length === 0) return [];
+
+    const candleMs = candleMinutes * 60 * 1000;
+    const candles = new Map();
+
+    // Group price points into candle buckets
+    prices.forEach(([timestamp, price]) => {
+        const bucketTime = Math.floor(timestamp / candleMs) * candleMs;
+
+        if (!candles.has(bucketTime)) {
+            candles.set(bucketTime, {
+                time: Math.floor(bucketTime / 1000),
+                open: price,
+                high: price,
+                low: price,
+                close: price,
+                prices: [price],
+                volume: 0
+            });
+        } else {
+            const candle = candles.get(bucketTime);
+            candle.high = Math.max(candle.high, price);
+            candle.low = Math.min(candle.low, price);
+            candle.close = price; // Last price becomes close
+            candle.prices.push(price);
+        }
+    });
+
+    // Add volume data if available
+    if (volumes && volumes.length > 0) {
+        volumes.forEach(([timestamp, volume]) => {
+            const bucketTime = Math.floor(timestamp / candleMs) * candleMs;
+            if (candles.has(bucketTime)) {
+                candles.get(bucketTime).volume += volume / (24 * 60 / candleMinutes); // Approximate per-candle volume
+            }
+        });
+    }
+
+    // Convert to array and sort
+    return Array.from(candles.values())
+        .map(c => ({
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: Math.round(c.volume)
+        }))
+        .sort((a, b) => a.time - b.time);
+};
+
+// Helper: Fetch price data from CoinGecko market_chart and synthesize OHLC
+const fetchCoinGeckoOHLC = async (symbol, interval) => {
+    const cgId = getCoinGeckoId(symbol);
+
+    // Map interval to CoinGecko days parameter and candle size
+    // /market_chart returns: 1 day = 5-minute data, 2-90 days = hourly, 90+ = daily
+    let days, candleMinutes;
+    switch(interval) {
+        case 'LIVE':
+        case '1m':
+            days = 1;        // Get 5-min data points
+            candleMinutes = 5; // Synthesize 5-min candles (finest available)
+            break;
+        case '5m':
+            days = 1;
+            candleMinutes = 5;
+            break;
+        case '15m':
+            days = 1;
+            candleMinutes = 15;
+            break;
+        case '30m':
+            days = 2;        // Gets hourly data
+            candleMinutes = 30;
+            break;
+        case '1h':
+            days = 7;
+            candleMinutes = 60;
+            break;
+        case '4h':
+            days = 30;
+            candleMinutes = 240;
+            break;
+        case '1D':
+            days = 90;
+            candleMinutes = 1440; // 24 hours
+            break;
+        case '1W':
+            days = 365;
+            candleMinutes = 10080; // 7 days
+            break;
+        default:
+            days = 7;
+            candleMinutes = 60;
+    }
+
+    const url = `https://api.coingecko.com/api/v3/coins/${cgId}/market_chart?vs_currency=usd&days=${days}`;
+    console.log(`[Chart] 🦎 CoinGecko market_chart: ${url}`);
+
+    const response = await axios.get(url, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+
+    if (!response.data || !response.data.prices || response.data.prices.length === 0) {
+        throw new Error('No data from CoinGecko');
+    }
+
+    console.log(`[Chart] 📊 CoinGecko raw data: ${response.data.prices.length} price points`);
+
+    // Synthesize OHLC candles from raw price data
+    const chartData = synthesizeOHLC(
+        response.data.prices,
+        response.data.total_volumes,
+        candleMinutes
+    );
+
+    // Debug: Log sample candles to verify OHLC variation
+    if (chartData.length > 0) {
+        console.log(`[Chart] 📊 Synthesized ${chartData.length} candles for ${symbol} (${candleMinutes}min):`);
+        chartData.slice(0, 3).forEach((c, i) => {
+            const variation = ((c.high - c.low) / c.low * 100).toFixed(2);
+            console.log(`  [${i}] O:${c.open.toFixed(6)} H:${c.high.toFixed(6)} L:${c.low.toFixed(6)} C:${c.close.toFixed(6)} (${variation}% range)`);
+        });
+    }
+
+    return chartData;
+};
+
+// Helper: Fetch from Gecko Terminal (DEX data - has more tokens)
+const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
+    // First, search for the token to get the pool address
+    // If network is specified, search that network; otherwise search all networks
+    let searchUrl;
+    if (network) {
+        searchUrl = `https://api.geckoterminal.com/api/v2/search/pools?query=${symbol}&network=${network}`;
+    } else {
+        // Search all networks
+        searchUrl = `https://api.geckoterminal.com/api/v2/search/pools?query=${symbol}`;
+    }
+    console.log(`[Chart] 🦎 Gecko Terminal search: ${searchUrl}`);
+
+    const searchResponse = await axios.get(searchUrl, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+
+    if (!searchResponse.data?.data || searchResponse.data.data.length === 0) {
+        throw new Error(`No pool found for ${symbol}${network ? ` on ${network}` : ''}`);
+    }
+
+    // Get the first (most liquid) pool
+    const pool = searchResponse.data.data[0];
+    const poolAddress = pool.attributes?.address;
+    const poolNetwork = pool.relationships?.network?.data?.id || network || 'unknown';
+
+    if (!poolAddress) {
+        throw new Error(`Invalid pool data for ${symbol}`);
+    }
+
+    console.log(`[Chart] 🦎 Found pool: ${poolAddress} on ${poolNetwork}`);
+
+    // Map interval to Gecko Terminal timeframe
+    let timeframe;
+    switch(interval) {
+        case 'LIVE':
+        case '1m':
+            timeframe = 'minute';
+            break;
+        case '5m':
+            timeframe = 'minute';
+            break;
+        case '15m':
+            timeframe = 'minute';
+            break;
+        case '1h':
+            timeframe = 'hour';
+            break;
+        case '4h':
+            timeframe = 'hour';
+            break;
+        case '1D':
+            timeframe = 'day';
+            break;
+        default:
+            timeframe = 'hour';
+    }
+
+    // Fetch OHLCV data
+    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
+    console.log(`[Chart] 🦎 Gecko Terminal OHLCV: ${ohlcvUrl}`);
+
+    const ohlcvResponse = await axios.get(ohlcvUrl, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+
+    if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
+        throw new Error('No OHLCV data from Gecko Terminal');
+    }
+
+    // Gecko Terminal format: [timestamp, open, high, low, close, volume]
+    const ohlcvList = ohlcvResponse.data.data.attributes.ohlcv_list;
+    const chartData = ohlcvList.map(candle => ({
+        time: candle[0],
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5])
+    })).sort((a, b) => a.time - b.time); // Sort ascending by time
+
+    // Debug: Log sample candles to verify OHLC variation
+    if (chartData.length > 0) {
+        console.log(`[Chart] 📊 Gecko Terminal ${chartData.length} candles for ${symbol}:`);
+        chartData.slice(0, 3).forEach((c, i) => {
+            const variation = ((c.high - c.low) / c.low * 100).toFixed(4);
+            console.log(`  [${i}] O:${c.open.toFixed(8)} H:${c.high.toFixed(8)} L:${c.low.toFixed(8)} C:${c.close.toFixed(8)} (${variation}% range)`);
+        });
+    }
+
+    return chartData;
+};
 
 // Helper: Check if symbol is crypto
 const isCrypto = (symbol) => {
     const upper = symbol.toUpperCase();
+    // Check for network specifier (e.g., XRP:bsc, PEPE:eth)
+    if (upper.includes(':')) return true;
     // Check for -USD, -USDT suffixes
     if (upper.includes('-USD') || upper.includes('USDT')) return true;
     // Check if base symbol is a known crypto
@@ -30,14 +334,24 @@ const isCrypto = (symbol) => {
     return KNOWN_CRYPTOS.includes(base);
 };
 
-// Helper: Parse crypto symbol (BTC-USD -> BTC + USD)
+// Helper: Parse crypto symbol with network support
+// Formats: BTC-USD, BTC, XRP:bsc, PEPE:eth, TOKEN:solana
 const parseCryptoSymbol = (symbol) => {
+    // Check for network specifier (e.g., XRP:bsc, PEPE:eth)
+    if (symbol.includes(':')) {
+        const [crypto, network] = symbol.split(':');
+        return {
+            crypto: crypto.toUpperCase(),
+            market: 'USD',
+            network: network.toLowerCase()
+        };
+    }
     if (symbol.includes('-')) {
         const [crypto, market] = symbol.split('-');
-        return { crypto: crypto.toUpperCase(), market: market.toUpperCase() };
+        return { crypto: crypto.toUpperCase(), market: market.toUpperCase(), network: null };
     }
     // Default to USD if no market specified
-    return { crypto: symbol.toUpperCase(), market: 'USD' };
+    return { crypto: symbol.toUpperCase(), market: 'USD', network: null };
 };
 
 // @route   GET /api/chart/:symbol/:interval
@@ -81,33 +395,110 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
         // Check if crypto or stock
         if (isCrypto(symbol)) {
             // ====== CRYPTO PATH ======
-            const { crypto, market } = parseCryptoSymbol(symbol);
-            console.log(`[Chart] 🪙 Detected CRYPTO: ${crypto}/${market}`);
+            const { crypto, market, network } = parseCryptoSymbol(symbol);
+            console.log(`[Chart] 🪙 Detected CRYPTO: ${crypto}/${market}${network ? ` (network: ${network})` : ''}`);
 
             // Use Binance API for intraday (free, no API key required)
             // Use Alpha Vantage for daily/weekly/monthly
             const isIntraday = ['LIVE', '1m', '5m', '15m', '30m', '1h', '4h'].includes(interval);
 
             if (isIntraday) {
-                // ====== BINANCE INTRADAY CRYPTO ======
+                // ====== CRYPTO INTRADAY - PRIORITY ORDER ======
+                // If network is specified, prioritize Gecko Terminal (DEX data)
+                // Otherwise: 1. CoinGecko, 2. Gecko Terminal, 3. Binance
+
+                // If network is specified (e.g., XRP:bsc), try Gecko Terminal FIRST
+                if (network) {
+                    try {
+                        console.log(`[Chart] 🦎 Network specified (${network}), trying Gecko Terminal first for ${crypto}...`);
+                        const chartData = await fetchGeckoTerminalOHLC(crypto, interval, network);
+
+                        chartDataCache.set(cacheKey, {
+                            data: chartData,
+                            timestamp: Date.now()
+                        });
+
+                        console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto} on ${network}`);
+
+                        return res.json({
+                            success: true,
+                            data: chartData,
+                            symbol: `${crypto}-USD`,
+                            interval,
+                            source: 'geckoterminal',
+                            network: network
+                        });
+                    } catch (gtError) {
+                        console.log(`[Chart] ⚠️ Gecko Terminal failed for ${network}: ${gtError.message}`);
+                        // Continue to other sources
+                    }
+                }
+
+                // Try CoinGecko (best data quality for major tokens)
+                try {
+                    console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto}...`);
+                    const chartData = await fetchCoinGeckoOHLC(crypto, interval);
+
+                    chartDataCache.set(cacheKey, {
+                        data: chartData,
+                        timestamp: Date.now()
+                    });
+
+                    console.log(`[Chart] ✅ CoinGecko succeeded: ${chartData.length} candles for ${crypto}`);
+
+                    return res.json({
+                        success: true,
+                        data: chartData,
+                        symbol: `${crypto}-USD`,
+                        interval,
+                        source: 'coingecko'
+                    });
+                } catch (cgError) {
+                    console.log(`[Chart] ⚠️ CoinGecko failed: ${cgError.message}`);
+                }
+
+                // Try Gecko Terminal without specific network (searches all networks)
+                try {
+                    console.log(`[Chart] 🦎 Trying Gecko Terminal (any network) for ${crypto}...`);
+                    const chartData = await fetchGeckoTerminalOHLC(crypto, interval);
+
+                    // Cache the data
+                    chartDataCache.set(cacheKey, {
+                        data: chartData,
+                        timestamp: Date.now()
+                    });
+
+                    console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto}`);
+
+                    return res.json({
+                        success: true,
+                        data: chartData,
+                        symbol: `${crypto}-USD`,
+                        interval,
+                        source: 'geckoterminal'
+                    });
+                } catch (gtError) {
+                    console.log(`[Chart] ⚠️ Gecko Terminal failed: ${gtError.message}`);
+                }
+
+                // Fallback to Binance
+                console.log(`[Chart] 🔄 Falling back to Binance for ${crypto}...`);
+
                 // Map interval to Binance format
                 let binanceInterval;
                 switch(interval) {
-                    case 'LIVE': binanceInterval = '5m'; break; // Use 5m for LIVE to get better OHLC variation
-                    case '1m': binanceInterval = '1m'; break;
-                    case '5m': binanceInterval = '5m'; break;
+                    case 'LIVE': binanceInterval = '1h'; break;
+                    case '1m': binanceInterval = '15m'; break;
+                    case '5m': binanceInterval = '15m'; break;
                     case '15m': binanceInterval = '15m'; break;
                     case '30m': binanceInterval = '30m'; break;
                     case '1h': binanceInterval = '1h'; break;
                     case '4h': binanceInterval = '4h'; break;
-                    default: binanceInterval = '1m';
+                    default: binanceInterval = '1h';
                 }
 
-                // Binance uses BTCUSDT format (no dash)
                 const binanceSymbol = `${crypto}USDT`;
                 const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
-
-                console.log(`[Chart] 🔗 Crypto intraday API call to Binance: ${binanceUrl}`);
 
                 try {
                     const response = await axios.get(binanceUrl, {
@@ -126,10 +517,8 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                         });
                     }
 
-                    // Transform Binance kline data to chart format
-                    // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
                     const chartData = response.data.map(kline => ({
-                        time: Math.floor(kline[0] / 1000), // openTime in seconds
+                        time: Math.floor(kline[0] / 1000),
                         open: parseFloat(kline[1]),
                         high: parseFloat(kline[2]),
                         low: parseFloat(kline[3]),
@@ -143,22 +532,22 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                         timestamp: Date.now()
                     });
 
-                    console.log(`[Chart] ✅ Successfully fetched ${chartData.length} crypto candles from Binance for ${crypto}/${binanceInterval}`);
+                    console.log(`[Chart] ✅ Binance succeeded: ${chartData.length} candles for ${crypto}/${binanceInterval}`);
 
                     return res.json({
                         success: true,
                         data: chartData,
                         symbol: `${crypto}-USD`,
-                        interval
+                        interval,
+                        source: 'binance'
                     });
 
                 } catch (binanceError) {
-                    console.error(`[Chart] ❌ Binance error:`, binanceError.message);
-                    console.error(`[Chart] ❌ Binance error details:`, binanceError.response?.data || 'No response data');
+                    console.error(`[Chart] ❌ Binance Global error:`, binanceError.message);
 
-                    // Try alternative: use Binance US API as fallback
+                    // Try Binance US as last resort
                     try {
-                        console.log(`[Chart] 🔄 Trying Binance US API as fallback...`);
+                        console.log(`[Chart] 🔄 Trying Binance US as final fallback...`);
                         const binanceUsUrl = `https://api.binance.us/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
                         const usResponse = await axios.get(binanceUsUrl, {
                             headers: {
@@ -183,32 +572,57 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                                 timestamp: Date.now()
                             });
 
-                            console.log(`[Chart] ✅ Binance US fallback succeeded: ${chartData.length} candles`);
+                            console.log(`[Chart] ✅ Binance US succeeded: ${chartData.length} candles`);
                             return res.json({
                                 success: true,
                                 data: chartData,
                                 symbol: `${crypto}-USD`,
-                                interval
+                                interval,
+                                source: 'binance-us'
                             });
                         }
                     } catch (usError) {
                         console.error(`[Chart] ❌ Binance US also failed:`, usError.message);
                     }
 
-                    // Both failed, return error
+                    // All sources failed
                     return res.status(503).json({
                         success: false,
-                        error: 'Crypto intraday data temporarily unavailable',
-                        message: binanceError.message
+                        error: 'Unable to fetch crypto data',
+                        message: 'All data sources failed (CoinGecko, Gecko Terminal, Binance)',
+                        symbol: crypto
                     });
                 }
             }
 
-            // ====== ALPHA VANTAGE DAILY/WEEKLY/MONTHLY CRYPTO ======
+            // ====== DAILY/WEEKLY/MONTHLY CRYPTO ======
+            // Try CoinGecko first (better coverage for newer tokens)
+            try {
+                console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto} (${interval})...`);
+                const chartData = await fetchCoinGeckoOHLC(crypto, interval);
+
+                chartDataCache.set(cacheKey, {
+                    data: chartData,
+                    timestamp: Date.now()
+                });
+
+                console.log(`[Chart] ✅ CoinGecko succeeded: ${chartData.length} candles for ${crypto} (${interval})`);
+
+                return res.json({
+                    success: true,
+                    data: chartData,
+                    symbol: `${crypto}-USD`,
+                    interval,
+                    source: 'coingecko'
+                });
+            } catch (cgError) {
+                console.log(`[Chart] ⚠️ CoinGecko failed for daily: ${cgError.message}, trying Alpha Vantage...`);
+            }
+
+            // Fallback to Alpha Vantage for daily/weekly/monthly
             let alphaVantageFunction;
             let dataKey;
 
-            // Map interval to Alpha Vantage crypto function
             switch(interval) {
                 case '1D':
                     alphaVantageFunction = 'DIGITAL_CURRENCY_DAILY';
@@ -227,14 +641,12 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     dataKey = 'Time Series (Digital Currency Daily)';
             }
 
-            // Build API URL for CRYPTO
             const apiUrl = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${crypto}&market=${market}&apikey=${ALPHA_VANTAGE_API_KEY}`;
 
             console.log(`[Chart] 🔗 Crypto API call to Alpha Vantage`);
 
             const response = await axios.get(apiUrl);
 
-            // Check for API errors
             if (response.data['Error Message']) {
                 console.log(`[Chart] ❌ Crypto symbol not found: ${crypto}`);
                 return res.status(404).json({
@@ -255,7 +667,6 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
 
             if (!timeSeries) {
                 console.log('[Chart] ❌ No crypto data in response');
-                console.log('[Chart] Response keys:', Object.keys(response.data));
                 return res.status(404).json({
                     success: false,
                     error: 'No crypto data found for this symbol'
@@ -263,41 +674,35 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             }
 
             // Transform CRYPTO data to chart format
-const entries = Object.entries(timeSeries);
-const uniqueData = new Map(); // Use Map to ensure unique timestamps
+            const entries = Object.entries(timeSeries);
+            const uniqueData = new Map();
 
-entries.forEach(([time, values]) => {
-    // Alpha Vantage crypto has different field names
-    const openKey = `1a. open (${market})`;
-    const highKey = `2a. high (${market})`;
-    const lowKey = `3a. low (${market})`;
-    const closeKey = `4a. close (${market})`;
-    const volumeKey = '5. volume';
+            entries.forEach(([time, values]) => {
+                const openKey = `1a. open (${market})`;
+                const highKey = `2a. high (${market})`;
+                const lowKey = `3a. low (${market})`;
+                const closeKey = `4a. close (${market})`;
+                const volumeKey = '5. volume';
 
-    // Convert to Unix timestamp (in seconds)
-    const dateObj = new Date(time);
-    const timestamp = Math.floor(dateObj.getTime() / 1000);
+                const dateObj = new Date(time);
+                const timestamp = Math.floor(dateObj.getTime() / 1000);
 
-    // Only keep the first entry for each timestamp
-    if (!uniqueData.has(timestamp)) {
-        uniqueData.set(timestamp, {
-            time: timestamp,
-            open: parseFloat(values[openKey] || values['1. open'] || 0),
-            high: parseFloat(values[highKey] || values['2. high'] || 0),
-            low: parseFloat(values[lowKey] || values['3. low'] || 0),
-            close: parseFloat(values[closeKey] || values['4. close'] || 0),
-            volume: parseFloat(values[volumeKey] || 0)
-        });
-    }
-});
+                if (!uniqueData.has(timestamp)) {
+                    uniqueData.set(timestamp, {
+                        time: timestamp,
+                        open: parseFloat(values[openKey] || values['1. open'] || 0),
+                        high: parseFloat(values[highKey] || values['2. high'] || 0),
+                        low: parseFloat(values[lowKey] || values['3. low'] || 0),
+                        close: parseFloat(values[closeKey] || values['4. close'] || 0),
+                        volume: parseFloat(values[volumeKey] || 0)
+                    });
+                }
+            });
 
-// Convert Map to array and sort by timestamp
-const chartData = Array.from(uniqueData.values())
-    .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-1000); // Take last 1000 candles for more history
+            const chartData = Array.from(uniqueData.values())
+                .sort((a, b) => a.time - b.time)
+                .slice(-1000);
 
-
-            // Cache the data
             chartDataCache.set(cacheKey, {
                 data: chartData,
                 timestamp: Date.now()

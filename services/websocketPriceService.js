@@ -215,6 +215,18 @@ function connectBinance() {
         try {
             const msg = JSON.parse(data);
 
+            // Handle subscription response
+            if (msg.result === null && msg.id) {
+                console.log(`[WebSocket] Binance subscription confirmed (id: ${msg.id})`);
+                return;
+            }
+
+            // Handle subscription error
+            if (msg.error) {
+                console.error(`[WebSocket] Binance error: ${msg.error.msg} (code: ${msg.error.code})`);
+                return;
+            }
+
             if (msg.e === 'trade') {
                 // Extract symbol (remove USDT suffix)
                 const symbol = msg.s.replace('USDT', '');
@@ -283,13 +295,18 @@ function subscribeToCrypto(symbols) {
     newSymbols.forEach(s => cryptoSubscriptions.add(s.toUpperCase()));
     console.log(`[WebSocket] Adding crypto subscriptions: ${newSymbols.join(', ')}`);
 
-    // Close existing connection and reconnect with new subscriptions
+    // If connection is open, use dynamic subscription (no reconnection needed)
     if (binanceWs && binanceWs.readyState === WebSocket.OPEN) {
-        binanceIntentionalClose = true;
-        binanceWs.close();
-        // Wait a bit before reconnecting
-        setTimeout(connectBinance, 500);
+        const streams = newSymbols.map(s => `${s.toLowerCase()}usdt@trade`);
+        const subscribeMsg = {
+            method: 'SUBSCRIBE',
+            params: streams,
+            id: Date.now()
+        };
+        console.log(`[WebSocket] Sending Binance SUBSCRIBE for: ${streams.join(', ')}`);
+        binanceWs.send(JSON.stringify(subscribeMsg));
     } else {
+        // No connection yet, start one
         connectBinance();
     }
 }
