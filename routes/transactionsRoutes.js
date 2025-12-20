@@ -115,43 +115,14 @@ const fetchGeckoTerminalTrades = async (symbol, network = null) => {
             console.log(`[Transactions] Trades endpoint not available: ${tradeError.message}`);
         }
 
-        // Fallback: Generate simulated trades from pool data
-        console.log(`[Transactions] Using simulated trades for ${symbol}`);
-        return generateSimulatedCryptoTrades(symbol, baseTokenPrice, poolNetwork);
+        // No simulated data - return empty if trades endpoint not available
+        console.log(`[Transactions] No trades available for ${symbol}`);
+        return [];
 
     } catch (error) {
         console.error(`[Transactions] Gecko Terminal error: ${error.message}`);
         return [];
     }
-};
-
-// Generate simulated crypto trades based on current price
-const generateSimulatedCryptoTrades = (symbol, basePrice, network) => {
-    const trades = [];
-    const now = Date.now();
-    const price = basePrice || 1;
-
-    for (let i = 0; i < 20; i++) {
-        const priceVariation = (Math.random() - 0.5) * 0.02 * price;
-        const tradePrice = price + priceVariation;
-        const tokenAmount = Math.random() * 1000 + 10;
-        const amount = tradePrice * tokenAmount;
-        const isBuy = Math.random() > 0.5;
-
-        trades.push({
-            id: `${symbol}-${now - i * 3000}-${i}`,
-            type: 'swap',
-            side: isBuy ? 'BUY' : 'SELL',
-            price: tradePrice,
-            amount: amount,
-            tokenAmount: tokenAmount,
-            timestamp: now - (i * 3000) - Math.random() * 3000,
-            network: network,
-            simulated: true
-        });
-    }
-
-    return trades;
 };
 
 // Fetch recent trades by contract address
@@ -208,8 +179,8 @@ const fetchTradesByContract = async (contractInfo) => {
                     console.log(`[Transactions] Trades not available for contract: ${tradeError.message}`);
                 }
 
-                // Fallback to simulated trades
-                return generateSimulatedCryptoTrades(tokenSymbol, baseTokenPrice, network);
+                // No simulated data - return empty if trades not available
+                return [];
             }
         } catch (error) {
             if (error.response?.status !== 404) {
@@ -221,19 +192,42 @@ const fetchTradesByContract = async (contractInfo) => {
     return [];
 };
 
-// Fetch recent stock trades from Alpaca
+// Check if US stock market is currently open
+const isMarketOpen = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday, 6 = Saturday
+
+    // Weekend check
+    if (day === 0 || day === 6) return false;
+
+    // Get current time in Eastern Time
+    const etOptions = { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false };
+    const etTime = new Intl.DateTimeFormat('en-US', etOptions).format(now);
+    const [hours, minutes] = etTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+
+    // Market hours: 9:30 AM - 4:00 PM ET
+    const marketOpen = 9 * 60 + 30;  // 9:30 AM = 570 minutes
+    const marketClose = 16 * 60;      // 4:00 PM = 960 minutes
+
+    return totalMinutes >= marketOpen && totalMinutes < marketClose;
+};
+
+// Fetch recent stock trades from Alpaca (real data only)
 const fetchAlpacaTrades = async (symbol) => {
     const apiKey = process.env.ALPACA_API_KEY;
     const secretKey = process.env.ALPACA_SECRET_KEY;
 
+    // No mock data - return empty if no API key or market closed
     if (!apiKey || apiKey === 'your_alpaca_api_key_here') {
-        // Return mock data if no API key
-        return generateMockStockTrades(symbol);
+        console.log(`[Transactions] No Alpaca API key configured`);
+        return { trades: [], marketClosed: !isMarketOpen() };
     }
 
     try {
+        // Fetch actual recent trades from Alpaca
         const response = await axios.get(
-            `https://data.alpaca.markets/v2/stocks/${symbol}/trades/latest`,
+            `https://data.alpaca.markets/v2/stocks/${symbol}/trades?limit=25`,
             {
                 headers: {
                     'APCA-API-KEY-ID': apiKey,
@@ -243,77 +237,31 @@ const fetchAlpacaTrades = async (symbol) => {
             }
         );
 
-        // Alpaca returns latest trade, we'll simulate some recent ones
-        const latestTrade = response.data?.trade;
-        if (latestTrade) {
-            return generateRecentTradesFromLatest(symbol, latestTrade);
+        const rawTrades = response.data?.trades || [];
+
+        if (rawTrades.length === 0) {
+            return { trades: [], marketClosed: !isMarketOpen() };
         }
 
-        return [];
+        // Transform Alpaca trades to our format
+        const trades = rawTrades.map((trade, index) => ({
+            id: `${symbol}-${trade.t}-${index}`,
+            type: 'trade',
+            side: trade.c?.includes('B') ? 'BUY' : 'SELL', // Alpaca condition codes
+            price: trade.p,
+            amount: trade.p * trade.s,
+            shares: trade.s,
+            timestamp: new Date(trade.t).getTime(),
+            exchange: trade.x || 'NYSE'
+        }));
+
+        console.log(`[Transactions] Got ${trades.length} real trades for ${symbol}`);
+        return { trades, marketClosed: false };
+
     } catch (error) {
         console.error(`[Transactions] Alpaca error: ${error.message}`);
-        return generateMockStockTrades(symbol);
+        return { trades: [], marketClosed: !isMarketOpen(), error: error.message };
     }
-};
-
-// Generate mock recent trades based on latest trade data
-const generateRecentTradesFromLatest = (symbol, latestTrade) => {
-    const trades = [];
-    const basePrice = latestTrade.p;
-    const now = Date.now();
-
-    for (let i = 0; i < 20; i++) {
-        const priceVariation = (Math.random() - 0.5) * 0.02 * basePrice;
-        const price = basePrice + priceVariation;
-        const size = Math.floor(Math.random() * 500) + 10;
-        const isBuy = Math.random() > 0.5;
-
-        trades.push({
-            id: `${symbol}-${now - i * 5000}-${i}`,
-            type: 'trade',
-            side: isBuy ? 'BUY' : 'SELL',
-            price: price,
-            amount: price * size,
-            shares: size,
-            timestamp: now - (i * 5000) - Math.random() * 5000,
-            exchange: latestTrade.x || 'NYSE'
-        });
-    }
-
-    return trades;
-};
-
-// Generate mock stock trades for demo
-const generateMockStockTrades = (symbol) => {
-    const trades = [];
-    const now = Date.now();
-
-    // Use a base price based on symbol
-    const basePrices = {
-        'AAPL': 175, 'TSLA': 250, 'NVDA': 480, 'MSFT': 420,
-        'GOOGL': 140, 'AMD': 140, 'META': 500, 'AMZN': 180
-    };
-    const basePrice = basePrices[symbol] || 100;
-
-    for (let i = 0; i < 20; i++) {
-        const priceVariation = (Math.random() - 0.5) * 0.01 * basePrice;
-        const price = basePrice + priceVariation;
-        const size = Math.floor(Math.random() * 500) + 10;
-        const isBuy = Math.random() > 0.5;
-
-        trades.push({
-            id: `${symbol}-${now - i * 5000}-${i}`,
-            type: 'trade',
-            side: isBuy ? 'BUY' : 'SELL',
-            price: price,
-            amount: price * size,
-            shares: size,
-            timestamp: now - (i * 5000) - Math.random() * 5000,
-            exchange: ['NYSE', 'NASDAQ', 'ARCA', 'BATS'][Math.floor(Math.random() * 4)]
-        });
-    }
-
-    return trades;
 };
 
 // @route   GET /api/transactions/:symbol
@@ -331,6 +279,7 @@ router.get('/:symbol', auth, transactionLimiter, async (req, res) => {
 
         let trades = [];
         let assetType = 'stock';
+        let marketClosed = false;
 
         // Check if it's a contract address
         const contractInfo = isContractAddress(symbol);
@@ -349,11 +298,13 @@ router.get('/:symbol', auth, transactionLimiter, async (req, res) => {
         // Otherwise treat as stock
         else {
             console.log(`[Transactions] Stock detected: ${symbol}`);
-            trades = await fetchAlpacaTrades(symbol.toUpperCase());
+            const result = await fetchAlpacaTrades(symbol.toUpperCase());
+            trades = result.trades;
+            marketClosed = result.marketClosed;
             assetType = 'stock';
         }
 
-        console.log(`[Transactions] Found ${trades.length} trades for ${symbol}`);
+        console.log(`[Transactions] Found ${trades.length} trades for ${symbol}${marketClosed ? ' (market closed)' : ''}`);
 
         res.json({
             success: true,
@@ -361,6 +312,7 @@ router.get('/:symbol', auth, transactionLimiter, async (req, res) => {
             assetType: assetType,
             trades: trades,
             count: trades.length,
+            marketClosed: marketClosed,
             timestamp: Date.now()
         });
 
