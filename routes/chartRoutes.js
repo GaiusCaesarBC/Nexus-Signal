@@ -93,7 +93,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 // Map interval to Binance format
                 let binanceInterval;
                 switch(interval) {
-                    case 'LIVE':
+                    case 'LIVE': binanceInterval = '5m'; break; // Use 5m for LIVE to get better OHLC variation
                     case '1m': binanceInterval = '1m'; break;
                     case '5m': binanceInterval = '5m'; break;
                     case '15m': binanceInterval = '15m'; break;
