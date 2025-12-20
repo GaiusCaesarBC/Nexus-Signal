@@ -164,11 +164,22 @@ function connectBinance() {
     // Build stream URL for subscribed symbols
     const streams = [...cryptoSubscriptions].map(s => `${s.toLowerCase()}usdt@trade`);
 
+    let wsUrl;
     if (streams.length === 0) {
         // Connect to BTC as default to keep connection alive
-        binanceWs = new WebSocket(`${BINANCE_WS_URL}/btcusdt@trade`);
+        wsUrl = `${BINANCE_WS_URL}/btcusdt@trade`;
     } else {
-        binanceWs = new WebSocket(`${BINANCE_WS_URL}/${streams.join('/')}`);
+        wsUrl = `${BINANCE_WS_URL}/${streams.join('/')}`;
+    }
+
+    console.log(`[WebSocket] Binance URL: ${wsUrl}`);
+
+    try {
+        binanceWs = new WebSocket(wsUrl);
+    } catch (error) {
+        console.error('[WebSocket] Failed to create Binance WebSocket:', error.message);
+        setTimeout(connectBinance, 5000);
+        return;
     }
 
     binanceWs.on('open', () => {
@@ -211,8 +222,12 @@ function connectBinance() {
 
     binanceWs.on('error', (error) => {
         console.error('[WebSocket] Binance error:', error.message);
+        console.error('[WebSocket] Binance error code:', error.code);
     });
 }
+
+// Log when module loads
+console.log('[WebSocket] websocketPriceService module loaded');
 
 function reconnectBinance() {
     if (binanceReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
