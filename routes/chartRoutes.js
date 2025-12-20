@@ -12,10 +12,22 @@ const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const chartDataCache = new Map();
 const CACHE_DURATION = 15 * 1000; // 15 seconds for Pro users
 
+// Known crypto symbols (expanded list)
+const KNOWN_CRYPTOS = [
+    'BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'DOGE', 'SHIB', 'XRP',
+    'BNB', 'LINK', 'UNI', 'AAVE', 'LTC', 'ATOM', 'NEAR', 'APT', 'ARB', 'OP',
+    'PEPE', 'FLOKI', 'BONK', 'WIF', 'RENDER', 'FET', 'INJ', 'SUI', 'SEI', 'TIA',
+    'ALGO', 'VET', 'FIL', 'THETA', 'EOS', 'XLM', 'TRX', 'XMR', 'HBAR', 'ICP'
+];
+
 // Helper: Check if symbol is crypto
 const isCrypto = (symbol) => {
-    const cryptoPatterns = ['-USD', '-USDT', 'BTC', 'ETH', 'DOGE', 'SOL', 'ADA', 'XRP', 'SHIB', 'AVAX', 'DOT', 'MATIC', 'LINK'];
-    return cryptoPatterns.some(pattern => symbol.toUpperCase().includes(pattern));
+    const upper = symbol.toUpperCase();
+    // Check for -USD, -USDT suffixes
+    if (upper.includes('-USD') || upper.includes('USDT')) return true;
+    // Check if base symbol is a known crypto
+    const base = upper.replace(/-USD.*$/, '').replace(/USDT$/, '');
+    return KNOWN_CRYPTOS.includes(base);
 };
 
 // Helper: Parse crypto symbol (BTC-USD -> BTC + USD)
@@ -74,6 +86,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             
             // Map interval to Alpha Vantage crypto function
             switch(interval) {
+                case 'LIVE':
                 case '1m':
                 case '5m':
                 case '15m':
@@ -190,8 +203,8 @@ const chartData = Array.from(uniqueData.values())
             let dataKey;
             
             // Map interval to Alpha Vantage function
-           // Map interval to Alpha Vantage function
 switch(interval) {
+    case 'LIVE':
     case '1m':
     case '5m':
     case '15m':
@@ -199,10 +212,12 @@ switch(interval) {
     case '60m':
     case '1h':
         alphaVantageFunction = 'TIME_SERIES_INTRADAY';
-        // Convert to Alpha Vantage format: 1m -> 1min, 5m -> 5min, etc.
+        // Convert to Alpha Vantage format: LIVE/1m -> 1min, 5m -> 5min, etc.
         let avInterval;
         if (interval === '1h') {
             avInterval = '60min';
+        } else if (interval === 'LIVE') {
+            avInterval = '1min'; // LIVE uses 1-minute candles
         } else {
             avInterval = interval.replace('m', 'min'); // 1m -> 1min, 5m -> 5min
         }
@@ -233,6 +248,8 @@ switch(interval) {
                 let avInterval;
                 if (interval === '1h') {
                     avInterval = '60min';
+                } else if (interval === 'LIVE') {
+                    avInterval = '1min'; // LIVE uses 1-minute candles
                 } else {
                     avInterval = interval.replace('m', 'min'); // 1m -> 1min, 5m -> 5min
                 }
