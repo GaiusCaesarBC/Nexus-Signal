@@ -18,13 +18,25 @@
 const DANGEROUS_CHARS = /[&=?#@%\/\\<>'"`;|{}[\]()!$^*+]/;
 
 // Maximum symbol length (most exchanges use 1-10 chars, DEX tokens can be longer)
+// Contract addresses: EVM = 42 chars, Solana = 32-44 chars
 const MAX_SYMBOL_LENGTH = 50;
+const MAX_CONTRACT_LENGTH = 64; // Allow for contract addresses
 
 // Minimum symbol length
 const MIN_SYMBOL_LENGTH = 1;
 
 // Valid symbol pattern: alphanumeric, dash, dot, colon, underscore
 const VALID_SYMBOL_PATTERN = /^[A-Za-z0-9\-._:]+$/;
+
+// Helper: Detect if input is a contract address
+const isContractAddress = (input) => {
+    if (!input) return false;
+    // EVM address (0x followed by 40 hex chars)
+    if (/^0x[a-fA-F0-9]{40}$/i.test(input)) return 'evm';
+    // Solana address (base58, typically 32-44 chars, no 0/O/I/l)
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input)) return 'solana';
+    return false;
+};
 
 /**
  * Validates a symbol for use in external API requests
@@ -63,6 +75,32 @@ function validateSymbol(symbol, options = {}) {
         };
     }
 
+    // Check if it's a contract address (special handling)
+    const contractType = isContractAddress(trimmed);
+    if (contractType) {
+        // Contract addresses have different length limits
+        if (trimmed.length > MAX_CONTRACT_LENGTH) {
+            return {
+                valid: false,
+                sanitized: null,
+                error: `Contract address exceeds maximum length`
+            };
+        }
+
+        // For EVM addresses, lowercase is standard
+        // For Solana, preserve original case
+        const sanitized = contractType === 'evm' ? trimmed.toLowerCase() : trimmed;
+
+        return {
+            valid: true,
+            sanitized,
+            error: null,
+            isContract: true,
+            contractType
+        };
+    }
+
+    // Regular symbol validation
     if (trimmed.length > maxLength) {
         return {
             valid: false,
@@ -95,7 +133,7 @@ function validateSymbol(symbol, options = {}) {
         };
     }
 
-    // Convert to uppercase for consistency
+    // Convert to uppercase for consistency (regular symbols only)
     const sanitized = trimmed.toUpperCase();
 
     return {
@@ -158,6 +196,8 @@ module.exports = {
     validateSymbolMiddleware,
     sanitizeSymbol,
     encodeSymbolForUrl,
+    isContractAddress,
     DANGEROUS_CHARS,
-    MAX_SYMBOL_LENGTH
+    MAX_SYMBOL_LENGTH,
+    MAX_CONTRACT_LENGTH
 };

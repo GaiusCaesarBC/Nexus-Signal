@@ -89,6 +89,142 @@ const GECKO_TERMINAL_NETWORKS = {
     'avalanche': 'avax', 'optimism': 'optimism', 'fantom': 'ftm'
 };
 
+// Helper: Detect if input is a contract address
+const isContractAddress = (input) => {
+    if (!input) return false;
+    const trimmed = input.trim();
+    // EVM address (0x followed by 40 hex chars)
+    if (/^0x[a-fA-F0-9]{40}$/i.test(trimmed)) return { type: 'evm', address: trimmed.toLowerCase() };
+    // Solana address (base58, typically 32-44 chars, no 0/O/I/l)
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) return { type: 'solana', address: trimmed };
+    return false;
+};
+
+// Helper: Fetch token info by contract address from Gecko Terminal
+const fetchTokenByContract = async (contractInfo, interval) => {
+    const { type, address } = contractInfo;
+
+    // Determine network based on address type
+    // For EVM, we need to search across multiple networks
+    const evmNetworks = ['eth', 'bsc', 'base', 'arbitrum', 'polygon_pos', 'avalanche', 'optimism', 'fantom'];
+    const networksToSearch = type === 'solana' ? ['solana'] : evmNetworks;
+
+    console.log(`[Chart] 🔍 Looking up contract ${address} (${type}) across networks: ${networksToSearch.join(', ')}`);
+
+    let tokenData = null;
+    let poolData = null;
+
+    // Try to find the token across networks
+    for (const network of networksToSearch) {
+        try {
+            // First try to get token info directly
+            const tokenUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${address}`;
+            console.log(`[Chart] 🦎 Trying: ${tokenUrl}`);
+
+            const tokenResponse = await axios.get(tokenUrl, {
+                headers: { 'Accept': 'application/json' },
+                timeout: 8000
+            });
+
+            if (tokenResponse.data?.data) {
+                tokenData = tokenResponse.data.data;
+                console.log(`[Chart] ✅ Found token on ${network}: ${tokenData.attributes?.name || 'Unknown'} (${tokenData.attributes?.symbol || 'N/A'})`);
+
+                // Get the top pool for this token
+                const poolsUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${address}/pools?page=1`;
+                const poolsResponse = await axios.get(poolsUrl, {
+                    headers: { 'Accept': 'application/json' },
+                    timeout: 8000
+                });
+
+                if (poolsResponse.data?.data && poolsResponse.data.data.length > 0) {
+                    poolData = {
+                        pool: poolsResponse.data.data[0],
+                        network: network
+                    };
+                    console.log(`[Chart] ✅ Found pool: ${poolData.pool.attributes?.address}`);
+                }
+                break;
+            }
+        } catch (error) {
+            // Token not found on this network, continue
+            if (error.response?.status !== 404) {
+                console.log(`[Chart] ⚠️ Error checking ${network}: ${error.message}`);
+            }
+        }
+    }
+
+    if (!poolData) {
+        throw new Error(`Token not found for contract ${address}`);
+    }
+
+    // Map interval to Gecko Terminal timeframe
+    let timeframe;
+    switch(interval) {
+        case 'LIVE':
+        case '1m':
+        case '5m':
+        case '15m':
+            timeframe = 'minute';
+            break;
+        case '30m':
+        case '1h':
+        case '4h':
+            timeframe = 'hour';
+            break;
+        case '1D':
+        case '1W':
+            timeframe = 'day';
+            break;
+        default:
+            timeframe = 'hour';
+    }
+
+    // Fetch OHLCV data from the pool
+    const poolAddress = poolData.pool.attributes?.address;
+    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolData.network}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
+    console.log(`[Chart] 🦎 Fetching OHLCV: ${ohlcvUrl}`);
+
+    const ohlcvResponse = await axios.get(ohlcvUrl, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+
+    if (!ohlcvResponse.data?.data?.attributes?.ohlcv_list) {
+        throw new Error('No OHLCV data available for this token');
+    }
+
+    const ohlcvList = ohlcvResponse.data.data.attributes.ohlcv_list;
+    const chartData = ohlcvList.map(candle => ({
+        time: candle[0],
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5])
+    })).sort((a, b) => a.time - b.time);
+
+    // Debug logging
+    if (chartData.length > 0) {
+        const tokenSymbol = tokenData?.attributes?.symbol || 'UNKNOWN';
+        console.log(`[Chart] 📊 Contract ${address} (${tokenSymbol}): ${chartData.length} candles`);
+        chartData.slice(0, 3).forEach((c, i) => {
+            const variation = ((c.high - c.low) / c.low * 100).toFixed(4);
+            console.log(`  [${i}] O:${c.open.toFixed(10)} H:${c.high.toFixed(10)} L:${c.low.toFixed(10)} C:${c.close.toFixed(10)} (${variation}% range)`);
+        });
+    }
+
+    return {
+        chartData,
+        tokenInfo: {
+            symbol: tokenData?.attributes?.symbol || 'UNKNOWN',
+            name: tokenData?.attributes?.name || 'Unknown Token',
+            network: poolData.network,
+            address: address
+        }
+    };
+};
+
 // Helper: Get CoinGecko ID for a symbol
 const getCoinGeckoId = (symbol) => {
     const upper = symbol.toUpperCase();
@@ -389,9 +525,48 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             });
         }
         console.log(`[Chart] ❌ Cache MISS for ${symbol} ${interval}`);
-        
+
         console.log(`[Chart] Fetching data for ${symbol} ${interval}`);
-        
+
+        // ====== CONTRACT ADDRESS PATH ======
+        // Check if the symbol is actually a contract address (0x... or Solana base58)
+        const contractInfo = isContractAddress(symbol);
+        if (contractInfo) {
+            console.log(`[Chart] 📝 Detected CONTRACT ADDRESS: ${contractInfo.address} (${contractInfo.type})`);
+
+            try {
+                const result = await fetchTokenByContract(contractInfo, interval);
+
+                // Cache the data
+                chartDataCache.set(cacheKey, {
+                    data: result.chartData,
+                    timestamp: Date.now()
+                });
+
+                console.log(`[Chart] ✅ Contract lookup succeeded: ${result.chartData.length} candles for ${result.tokenInfo.symbol}`);
+
+                return res.json({
+                    success: true,
+                    data: result.chartData,
+                    symbol: result.tokenInfo.symbol,
+                    name: result.tokenInfo.name,
+                    network: result.tokenInfo.network,
+                    address: result.tokenInfo.address,
+                    interval,
+                    source: 'geckoterminal-contract'
+                });
+            } catch (contractError) {
+                console.error(`[Chart] ❌ Contract lookup failed: ${contractError.message}`);
+                return res.status(404).json({
+                    success: false,
+                    error: 'Token not found',
+                    message: `Could not find token for contract address: ${contractInfo.address}`,
+                    address: contractInfo.address
+                });
+            }
+        }
+
+        // ====== SYMBOL PATH (traditional) ======
         // Check if crypto or stock
         if (isCrypto(symbol)) {
             // ====== CRYPTO PATH ======
