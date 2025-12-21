@@ -2,6 +2,7 @@
 
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const PushNotificationService = require('./pushNotificationService');
 
 class NotificationService {
     
@@ -20,6 +21,18 @@ class NotificationService {
             });
 
             console.log(`[Notification] Created ${data.type} notification for user ${userId}`);
+
+            // Also send push notification (non-blocking)
+            if (PushNotificationService.isAvailable()) {
+                PushNotificationService.sendToUser(userId, {
+                    type: data.type,
+                    title: data.title,
+                    message: data.message,
+                    link: data.link,
+                    data: data.data
+                }).catch(err => console.warn('[Notification] Push send error:', err.message));
+            }
+
             return notification;
         } catch (error) {
             console.error('[Notification] Create error:', error);

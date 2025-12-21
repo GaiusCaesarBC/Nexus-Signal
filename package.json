@@ -48,6 +48,7 @@
     "twilio": "^5.10.7",
     "twitter-api-v2": "^1.28.0",
     "uuid": "^13.0.0",
+    "web-push": "^3.6.7",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.3",

@@ -26,10 +26,11 @@ router.get('/', notificationLimiter, auth, async (req, res) => {
             query.read = false;
         }
 
-        // Don't show expired notifications
+        // Don't show expired notifications (include null, undefined, and future dates)
         query.$or = [
             { expiresAt: { $gt: new Date() } },
-            { expiresAt: { $exists: false } }
+            { expiresAt: { $exists: false } },
+            { expiresAt: null }
         ];
 
         const notifications = await Notification.find(query)

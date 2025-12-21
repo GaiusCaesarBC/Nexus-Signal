@@ -361,6 +361,7 @@ const discordRoutes = require('./routes/discordRoutes'); // Discord Bot Notifica
 const backtestRoutes = require('./routes/apibacktestRoutes'); // 📊 Strategy Backtesting (Elite)
 const livePriceRoutes = require('./routes/livePriceRoutes'); // 📈 Live Price SSE Streaming
 const transactionsRoutes = require('./routes/transactionsRoutes'); // 💰 Recent Transactions
+const pushRoutes = require('./routes/pushRoutes'); // 🔔 Web Push Notifications
 
 // Basic root route for health check
 app.get('/', (req, res) => res.send('API is running...'));
@@ -452,6 +453,7 @@ app.use('/api/telegram', telegramRoutes); // 📱 Telegram Bot Notifications
 app.use('/api/discord', discordRoutes); // 🎮 Discord Bot Notifications
 app.use('/api', backtestRoutes); // 📊 Strategy Backtesting (Elite) - mounts /backtest, /backtests
 app.use('/api/transactions', transactionsRoutes); // 💰 Recent Transactions
+app.use('/api/push', pushRoutes); // 🔔 Web Push Notifications
 
 // ============================================
 // ROUTES WITHOUT /api PREFIX 
