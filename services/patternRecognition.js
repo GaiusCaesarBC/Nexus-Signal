@@ -118,9 +118,9 @@ const PATTERNS = {
  * Detect Head and Shoulders pattern
  */
 function detectHeadShoulders(candles, type = 'bearish') {
-    if (candles.length < 50) return null;
-    
-    const peaks = findPeaks(candles, 5);
+    if (candles.length < 30) return null; // Reduced from 50
+
+    const peaks = findPeaks(candles, 3); // Reduced window from 5 to 3
     if (peaks.length < 3) return null;
     
     // Look for 3 consecutive peaks where middle is highest
@@ -130,9 +130,9 @@ function detectHeadShoulders(candles, type = 'bearish') {
         const rightShoulder = peaks[i + 2];
         
         // Check if middle peak is higher
-        const isValidPattern = head.value > leftShoulder.value && 
+        const isValidPattern = head.value > leftShoulder.value &&
                                head.value > rightShoulder.value &&
-                               Math.abs(leftShoulder.value - rightShoulder.value) / leftShoulder.value < 0.03; // Shoulders roughly equal
+                               Math.abs(leftShoulder.value - rightShoulder.value) / leftShoulder.value < 0.08; // Shoulders roughly equal (relaxed from 3% to 8%)
         
         if (isValidPattern) {
             // Find neckline (support between shoulders)
@@ -177,9 +177,9 @@ function detectHeadShoulders(candles, type = 'bearish') {
  * Detect Double Top/Bottom pattern
  */
 function detectDoubleTopBottom(candles, type = 'top') {
-    if (candles.length < 30) return null;
-    
-    const extremes = type === 'top' ? findPeaks(candles, 5) : findTroughs(candles, 5);
+    if (candles.length < 20) return null; // Reduced from 30
+
+    const extremes = type === 'top' ? findPeaks(candles, 3) : findTroughs(candles, 3); // Reduced window from 5 to 3
     if (extremes.length < 2) return null;
     
     // Look for two peaks/troughs at similar levels
@@ -187,13 +187,13 @@ function detectDoubleTopBottom(candles, type = 'top') {
         const first = extremes[i];
         const second = extremes[i + 1];
         
-        // Check if roughly equal (within 2%)
+        // Check if roughly equal (within 5% - relaxed from 2%)
         const priceDiff = Math.abs(first.value - second.value) / first.value;
-        if (priceDiff > 0.02) continue;
-        
-        // Check distance between (should be 20-60 candles apart)
+        if (priceDiff > 0.05) continue;
+
+        // Check distance between (should be 10-80 candles apart - relaxed from 20-60)
         const distance = second.index - first.index;
-        if (distance < 20 || distance > 60) continue;
+        if (distance < 10 || distance > 80) continue;
         
         // Find neckline (support/resistance between the two)
         const between = candles.slice(first.index, second.index);
@@ -239,19 +239,19 @@ function detectDoubleTopBottom(candles, type = 'top') {
  * Detect Triangle patterns (Ascending, Descending)
  */
 function detectTriangle(candles, type = 'ascending') {
-    if (candles.length < 40) return null;
-    
+    if (candles.length < 25) return null; // Reduced from 40
+
     const recentCandles = candles.slice(-60);
-    const peaks = findPeaks(recentCandles, 3);
-    const troughs = findTroughs(recentCandles, 3);
-    
-    if (peaks.length < 3 || troughs.length < 3) return null;
+    const peaks = findPeaks(recentCandles, 2); // Reduced window from 3 to 2
+    const troughs = findTroughs(recentCandles, 2);
+
+    if (peaks.length < 2 || troughs.length < 2) return null; // Reduced from 3 to 2
     
     if (type === 'ascending') {
         // Ascending: flat resistance, rising support
         const resistanceLevel = peaks.reduce((sum, p) => sum + p.value, 0) / peaks.length;
-        const resistanceFlat = peaks.every(p => Math.abs(p.value - resistanceLevel) / resistanceLevel < 0.02);
-        
+        const resistanceFlat = peaks.every(p => Math.abs(p.value - resistanceLevel) / resistanceLevel < 0.05); // Relaxed from 2% to 5%
+
         if (!resistanceFlat) return null;
         
         // Check if troughs are rising
@@ -287,8 +287,8 @@ function detectTriangle(candles, type = 'ascending') {
     } else {
         // Descending: declining resistance, flat support
         const supportLevel = troughs.reduce((sum, t) => sum + t.value, 0) / troughs.length;
-        const supportFlat = troughs.every(t => Math.abs(t.value - supportLevel) / supportLevel < 0.02);
-        
+        const supportFlat = troughs.every(t => Math.abs(t.value - supportLevel) / supportLevel < 0.05); // Relaxed from 2% to 5%
+
         if (!supportFlat) return null;
         
         // Check if peaks are declining
@@ -327,8 +327,8 @@ function detectTriangle(candles, type = 'ascending') {
  * Detect Flag patterns (Bull/Bear Flag)
  */
 function detectFlag(candles, type = 'bull') {
-    if (candles.length < 30) return null;
-    
+    if (candles.length < 20) return null; // Reduced from 30
+
     const recentCandles = candles.slice(-40);
     
     // Find the pole (sharp move)
@@ -340,8 +340,8 @@ function detectFlag(candles, type = 'bull') {
             const start = recentCandles[i].low;
             const end = recentCandles[i + 10].high;
             const rise = (end - start) / start;
-            
-            if (rise > 0.08) { // >8% move
+
+            if (rise > 0.05) { // >5% move (relaxed from 8%)
                 poleStart = i;
                 poleEnd = i + 10;
                 poleHeight = end - start;
@@ -354,8 +354,8 @@ function detectFlag(candles, type = 'bull') {
             const start = recentCandles[i].high;
             const end = recentCandles[i + 10].low;
             const fall = (start - end) / start;
-            
-            if (fall > 0.08) { // >8% move
+
+            if (fall > 0.05) { // >5% move (relaxed from 8%)
                 poleStart = i;
                 poleEnd = i + 10;
                 poleHeight = start - end;
@@ -374,8 +374,8 @@ function detectFlag(candles, type = 'bull') {
     const flagLow = Math.min(...flagCandles.map(c => c.low));
     const flagRange = (flagHigh - flagLow) / flagLow;
     
-    // Flag should be tight consolidation (<5% range)
-    if (flagRange > 0.05) return null;
+    // Flag should be tight consolidation (<8% range - relaxed from 5%)
+    if (flagRange > 0.08) return null;
     
     const currentPrice = candles[candles.length - 1].close;
     const target = type === 'bull' ? 
@@ -405,13 +405,13 @@ function detectFlag(candles, type = 'bull') {
  * Detect Cup and Handle pattern
  */
 function detectCupHandle(candles) {
-    if (candles.length < 60) return null;
-    
+    if (candles.length < 40) return null; // Reduced from 60
+
     const recentCandles = candles.slice(-100);
-    
+
     // Find the cup (U-shaped bottom)
-    const peaks = findPeaks(recentCandles, 10);
-    const troughs = findTroughs(recentCandles, 10);
+    const peaks = findPeaks(recentCandles, 5); // Reduced window from 10 to 5
+    const troughs = findTroughs(recentCandles, 5);
     
     if (peaks.length < 2 || troughs.length < 1) return null;
     
@@ -420,18 +420,18 @@ function detectCupHandle(candles) {
         const leftPeak = peaks[i];
         const rightPeak = peaks[i + 1];
         
-        // Peaks should be similar height (within 5%)
-        if (Math.abs(leftPeak.value - rightPeak.value) / leftPeak.value > 0.05) continue;
-        
+        // Peaks should be similar height (within 10% - relaxed from 5%)
+        if (Math.abs(leftPeak.value - rightPeak.value) / leftPeak.value > 0.10) continue;
+
         // Find deepest trough between peaks
         const cupTroughs = troughs.filter(t => t.index > leftPeak.index && t.index < rightPeak.index);
         if (cupTroughs.length === 0) continue;
-        
+
         const bottom = cupTroughs.reduce((lowest, t) => t.value < lowest.value ? t : lowest, cupTroughs[0]);
-        
-        // Cup depth should be significant (>10%)
+
+        // Cup depth should be significant (>5% - relaxed from 10%)
         const cupDepth = (leftPeak.value - bottom.value) / leftPeak.value;
-        if (cupDepth < 0.10) continue;
+        if (cupDepth < 0.05) continue;
         
         // Look for handle (slight pullback after right peak)
         const afterPeak = recentCandles.slice(rightPeak.index);
