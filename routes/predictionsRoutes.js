@@ -24,6 +24,7 @@ const stockDataService = require('../services/stockDataService');
 const geckoTerminalService = require('../services/geckoTerminalService');
 const { sendMLPredictionAlert } = require('../services/telegramScheduler');
 const { sendMLPredictionAlert: sendDiscordMLPredictionAlert } = require('../services/discordScheduler');
+const CopyTradingService = require('../services/copyTradingService');
 const fs = require('fs');
 const path = require('path');
 
@@ -941,6 +942,16 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
         console.log(`[Predictions] ✅ Created NEW prediction ${prediction._id} for ${dbSymbol}`);
         console.log(`[Predictions] Price: $${predictionData.current_price}, Target: $${predictionData.prediction.target_price}`);
 
+        // Copy Trading: Auto-copy this prediction to all copiers
+        try {
+            const copyResult = await CopyTradingService.processPredictionForCopiers(prediction, req.user.id);
+            if (copyResult.copied > 0) {
+                console.log(`[Predictions] Copy trading: ${copyResult.copied} users copied this prediction`);
+            }
+        } catch (copyError) {
+            console.warn('[Predictions] Copy trading error:', copyError.message);
+        }
+
         // Gamification
         try {
             await GamificationService.trackPrediction(req.user.id);
@@ -1097,6 +1108,12 @@ router.get('/live/:id', predictionLimiter, auth, async (req, res) => {
 
         if (hasExpired && prediction.status === 'pending') {
             await prediction.calculateOutcome(currentPrice);
+            // Update copied prediction outcomes
+            try {
+                await CopyTradingService.updateCopiedPredictionOutcomes(prediction);
+            } catch (copyErr) {
+                console.warn('[Predictions] Error updating copy outcomes:', copyErr.message);
+            }
         }
 
         res.json({
@@ -1191,7 +1208,14 @@ router.post('/check-outcomes', predictionLimiter, auth, async (req, res) => {
                 if (!priceResult.price) continue;
 
                 await prediction.calculateOutcome(priceResult.price);
-                
+
+                // Update copied prediction outcomes
+                try {
+                    await CopyTradingService.updateCopiedPredictionOutcomes(prediction);
+                } catch (copyErr) {
+                    console.warn('[Check] Error updating copy outcomes:', copyErr.message);
+                }
+
                 results.push({
                     symbol: prediction.symbol,
                     wasCorrect: prediction.outcome.wasCorrect,

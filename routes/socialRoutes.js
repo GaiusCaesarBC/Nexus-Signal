@@ -3,9 +3,11 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
-const Gamification = require('../models/Gamification'); // 🔥 ADD THIS
+const Gamification = require('../models/Gamification');
 const PaperTradingAccount = require('../models/PaperTradingAccount');
 const BrokerageConnection = require('../models/BrokerageConnection');
+const CopyTrade = require('../models/CopyTrade');
+const CopiedPrediction = require('../models/CopiedPrediction');
 const { updateUserStats, updateAllUserStats } = require('../services/statsService');
 const NotificationService = require('../services/notificationService');
 
@@ -1036,7 +1038,196 @@ router.get('/search', async (req, res) => {
     }
 });
 
-// ============ COPY TRADING (Placeholder) ============
+// ============ COPY TRADING ============
+
+// @route   GET /api/social/copy/traders
+// @desc    Get list of traders the user is copying
+// @access  Private
+router.get('/copy/traders', auth, async (req, res) => {
+    try {
+        const copyTrades = await CopyTrade.getCopiedTraders(req.user.id);
+
+        const traders = copyTrades.map(ct => ({
+            copyTradeId: ct._id,
+            trader: {
+                userId: ct.trader._id,
+                username: ct.trader.username,
+                displayName: ct.trader.profile?.displayName || ct.trader.username,
+                avatar: ct.trader.profile?.avatar || '',
+                winRate: ct.trader.stats?.winRate || 0,
+                totalTrades: ct.trader.stats?.totalTrades || 0,
+                level: ct.trader.gamification?.level || 1
+            },
+            settings: ct.settings,
+            stats: {
+                totalCopiedTrades: ct.stats.totalCopiedTrades,
+                successfulTrades: ct.stats.successfulTrades,
+                failedTrades: ct.stats.failedTrades,
+                totalProfitLoss: ct.stats.totalProfitLoss,
+                totalProfitLossPercent: ct.stats.totalProfitLossPercent,
+                winRate: ct.stats.totalCopiedTrades > 0
+                    ? (ct.stats.successfulTrades / ct.stats.totalCopiedTrades) * 100
+                    : 0,
+                lastCopiedAt: ct.stats.lastCopiedAt
+            },
+            status: ct.status,
+            createdAt: ct.createdAt
+        }));
+
+        res.json({ success: true, traders });
+    } catch (error) {
+        console.error('[Social] Error fetching copied traders:', error);
+        res.status(500).json({ error: 'Failed to fetch copied traders' });
+    }
+});
+
+// @route   GET /api/social/copy/copiers
+// @desc    Get list of users copying the current user
+// @access  Private
+router.get('/copy/copiers', auth, async (req, res) => {
+    try {
+        const copyTrades = await CopyTrade.getCopiers(req.user.id);
+
+        const copiers = copyTrades.map(ct => ({
+            copier: {
+                userId: ct.copier._id,
+                username: ct.copier.username,
+                displayName: ct.copier.profile?.displayName || ct.copier.username,
+                avatar: ct.copier.profile?.avatar || ''
+            },
+            stats: {
+                totalCopiedTrades: ct.stats.totalCopiedTrades,
+                lastCopiedAt: ct.stats.lastCopiedAt
+            },
+            status: ct.status,
+            createdAt: ct.createdAt
+        }));
+
+        res.json({
+            success: true,
+            copiers,
+            totalCopiers: copiers.length
+        });
+    } catch (error) {
+        console.error('[Social] Error fetching copiers:', error);
+        res.status(500).json({ error: 'Failed to fetch copiers' });
+    }
+});
+
+// @route   GET /api/social/copy/active
+// @desc    Get active copied predictions
+// @access  Private
+router.get('/copy/active', auth, async (req, res) => {
+    try {
+        const activeCopies = await CopiedPrediction.getActiveCopies(req.user.id);
+
+        const copies = activeCopies.map(cp => ({
+            copyId: cp._id,
+            trader: {
+                userId: cp.trader._id,
+                username: cp.trader.username,
+                displayName: cp.trader.profile?.displayName || cp.trader.username,
+                avatar: cp.trader.profile?.avatar || ''
+            },
+            prediction: {
+                symbol: cp.copyDetails.symbol,
+                assetType: cp.copyDetails.assetType,
+                direction: cp.copyDetails.direction,
+                entryPrice: cp.copyDetails.entryPrice,
+                targetPrice: cp.copyDetails.targetPrice,
+                confidence: cp.copyDetails.confidence,
+                signalStrength: cp.copyDetails.signalStrength
+            },
+            allocation: cp.allocationDetails,
+            status: cp.status,
+            createdAt: cp.createdAt
+        }));
+
+        res.json({ success: true, copies });
+    } catch (error) {
+        console.error('[Social] Error fetching active copies:', error);
+        res.status(500).json({ error: 'Failed to fetch active copies' });
+    }
+});
+
+// @route   GET /api/social/copy/history
+// @desc    Get copy trading history
+// @access  Private
+router.get('/copy/history', auth, async (req, res) => {
+    try {
+        const { limit = 50 } = req.query;
+        const history = await CopiedPrediction.getCopyHistory(req.user.id, parseInt(limit));
+
+        const copies = history.map(cp => ({
+            copyId: cp._id,
+            trader: {
+                userId: cp.trader._id,
+                username: cp.trader.username,
+                displayName: cp.trader.profile?.displayName || cp.trader.username
+            },
+            symbol: cp.copyDetails.symbol,
+            direction: cp.copyDetails.direction,
+            outcome: cp.outcome,
+            status: cp.status,
+            createdAt: cp.createdAt
+        }));
+
+        res.json({ success: true, copies });
+    } catch (error) {
+        console.error('[Social] Error fetching copy history:', error);
+        res.status(500).json({ error: 'Failed to fetch copy history' });
+    }
+});
+
+// @route   GET /api/social/copy/stats
+// @desc    Get overall copy trading stats for the user
+// @access  Private
+router.get('/copy/stats', auth, async (req, res) => {
+    try {
+        const stats = await CopiedPrediction.getCopierStats(req.user.id);
+        const tradersCount = await CopyTrade.countDocuments({
+            copier: req.user.id,
+            status: 'active'
+        });
+
+        res.json({
+            success: true,
+            stats: {
+                ...stats,
+                activeTraders: tradersCount
+            }
+        });
+    } catch (error) {
+        console.error('[Social] Error fetching copy stats:', error);
+        res.status(500).json({ error: 'Failed to fetch copy stats' });
+    }
+});
+
+// @route   GET /api/social/copy/check/:userId
+// @desc    Check if currently copying a user
+// @access  Private
+router.get('/copy/check/:userId', auth, async (req, res) => {
+    try {
+        const copyTrade = await CopyTrade.getCopyRelationship(req.user.id, req.params.userId);
+
+        if (!copyTrade) {
+            return res.json({ isCopying: false });
+        }
+
+        res.json({
+            isCopying: copyTrade.status === 'active',
+            isPaused: copyTrade.status === 'paused',
+            copyTradeId: copyTrade._id,
+            settings: copyTrade.settings,
+            stats: copyTrade.stats,
+            status: copyTrade.status
+        });
+    } catch (error) {
+        console.error('[Social] Error checking copy status:', error);
+        res.status(500).json({ error: 'Failed to check copy status' });
+    }
+});
+
 // @route   POST /api/social/copy/:userId
 // @desc    Start copy trading a user
 // @access  Private
@@ -1049,19 +1240,95 @@ router.post('/copy/:userId', auth, async (req, res) => {
             return res.status(400).json({ error: 'Cannot copy trade yourself' });
         }
 
-        const targetUser = await User.findById(targetUserId);
+        // Check if already copying
+        const existingCopy = await CopyTrade.findOne({
+            copier: currentUserId,
+            trader: targetUserId
+        });
+
+        if (existingCopy && existingCopy.status !== 'stopped') {
+            return res.status(400).json({
+                error: 'Already copying this trader',
+                copyTradeId: existingCopy._id
+            });
+        }
+
+        const targetUser = await User.findById(targetUserId)
+            .select('username profile stats gamification');
+
         if (!targetUser) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // TODO: Implement actual copy trading logic
-        // For now, just return a placeholder response
-        res.json({ 
-            success: true, 
-            message: 'Copy trading feature coming soon!',
-            trader: {
-                username: targetUser.username,
-                displayName: targetUser.profile?.displayName || targetUser.username
+        // Get settings from request body or use defaults
+        const settings = {
+            allocationPercent: req.body.allocationPercent || 10,
+            maxAmountPerTrade: req.body.maxAmountPerTrade || 1000,
+            maxActiveTrades: req.body.maxActiveTrades || 10,
+            copyAssetTypes: req.body.copyAssetTypes || { stocks: true, crypto: true, dex: false },
+            minConfidence: req.body.minConfidence || 60,
+            minSignalStrength: req.body.minSignalStrength || 'moderate',
+            copyDirections: req.body.copyDirections || { up: true, down: true },
+            enableStopLoss: req.body.enableStopLoss ?? true,
+            stopLossPercent: req.body.stopLossPercent || 10,
+            enableTakeProfit: req.body.enableTakeProfit ?? false,
+            takeProfitPercent: req.body.takeProfitPercent || 20,
+            notifyOnCopy: req.body.notifyOnCopy ?? true
+        };
+
+        // Create or reactivate copy trade
+        let copyTrade;
+        if (existingCopy) {
+            // Reactivate stopped copy trade
+            existingCopy.status = 'active';
+            existingCopy.settings = settings;
+            existingCopy.statusReason = null;
+            existingCopy.stoppedAt = null;
+            await existingCopy.save();
+            copyTrade = existingCopy;
+        } else {
+            copyTrade = await CopyTrade.create({
+                copier: currentUserId,
+                trader: targetUserId,
+                settings,
+                status: 'active'
+            });
+        }
+
+        // Update social arrays on both users
+        await Promise.all([
+            User.findByIdAndUpdate(currentUserId, {
+                $addToSet: { 'social.copying': targetUserId }
+            }),
+            User.findByIdAndUpdate(targetUserId, {
+                $addToSet: { 'social.copiedBy': currentUserId }
+            })
+        ]);
+
+        // Send notification to the trader
+        await NotificationService.createNotification(
+            targetUserId,
+            'copy_started',
+            'New Copier',
+            `${(await User.findById(currentUserId)).username} started copying your trades!`,
+            { copierId: currentUserId }
+        );
+
+        console.log(`[CopyTrade] ${currentUserId} started copying ${targetUserId}`);
+
+        res.json({
+            success: true,
+            message: 'Successfully started copy trading!',
+            copyTrade: {
+                id: copyTrade._id,
+                trader: {
+                    username: targetUser.username,
+                    displayName: targetUser.profile?.displayName || targetUser.username,
+                    avatar: targetUser.profile?.avatar || '',
+                    winRate: targetUser.stats?.winRate || 0,
+                    level: targetUser.gamification?.level || 1
+                },
+                settings: copyTrade.settings
             }
         });
     } catch (error) {
@@ -1070,19 +1337,213 @@ router.post('/copy/:userId', auth, async (req, res) => {
     }
 });
 
+// @route   PUT /api/social/copy/:userId
+// @desc    Update copy trading settings
+// @access  Private
+router.put('/copy/:userId', auth, async (req, res) => {
+    try {
+        const copyTrade = await CopyTrade.findOne({
+            copier: req.user.id,
+            trader: req.params.userId,
+            status: { $in: ['active', 'paused'] }
+        });
+
+        if (!copyTrade) {
+            return res.status(404).json({ error: 'Copy trade relationship not found' });
+        }
+
+        // Update settings
+        const allowedSettings = [
+            'allocationPercent', 'maxAmountPerTrade', 'maxActiveTrades',
+            'copyAssetTypes', 'minConfidence', 'minSignalStrength',
+            'copyDirections', 'enableStopLoss', 'stopLossPercent',
+            'enableTakeProfit', 'takeProfitPercent', 'notifyOnCopy'
+        ];
+
+        for (const key of allowedSettings) {
+            if (req.body[key] !== undefined) {
+                copyTrade.settings[key] = req.body[key];
+            }
+        }
+
+        await copyTrade.save();
+
+        res.json({
+            success: true,
+            message: 'Copy trading settings updated',
+            settings: copyTrade.settings
+        });
+    } catch (error) {
+        console.error('[Social] Error updating copy settings:', error);
+        res.status(500).json({ error: 'Failed to update copy settings' });
+    }
+});
+
+// @route   POST /api/social/copy/:userId/pause
+// @desc    Pause copy trading
+// @access  Private
+router.post('/copy/:userId/pause', auth, async (req, res) => {
+    try {
+        const copyTrade = await CopyTrade.findOne({
+            copier: req.user.id,
+            trader: req.params.userId,
+            status: 'active'
+        });
+
+        if (!copyTrade) {
+            return res.status(404).json({ error: 'Active copy trade not found' });
+        }
+
+        await copyTrade.pause(req.body.reason || 'Manual pause');
+
+        res.json({
+            success: true,
+            message: 'Copy trading paused',
+            status: 'paused'
+        });
+    } catch (error) {
+        console.error('[Social] Error pausing copy trading:', error);
+        res.status(500).json({ error: 'Failed to pause copy trading' });
+    }
+});
+
+// @route   POST /api/social/copy/:userId/resume
+// @desc    Resume copy trading
+// @access  Private
+router.post('/copy/:userId/resume', auth, async (req, res) => {
+    try {
+        const copyTrade = await CopyTrade.findOne({
+            copier: req.user.id,
+            trader: req.params.userId,
+            status: 'paused'
+        });
+
+        if (!copyTrade) {
+            return res.status(404).json({ error: 'Paused copy trade not found' });
+        }
+
+        await copyTrade.resume();
+
+        res.json({
+            success: true,
+            message: 'Copy trading resumed',
+            status: 'active'
+        });
+    } catch (error) {
+        console.error('[Social] Error resuming copy trading:', error);
+        res.status(500).json({ error: 'Failed to resume copy trading' });
+    }
+});
+
 // @route   DELETE /api/social/copy/:userId
 // @desc    Stop copy trading a user
 // @access  Private
 router.delete('/copy/:userId', auth, async (req, res) => {
     try {
-        // TODO: Implement actual copy trading removal logic
-        res.json({ 
-            success: true, 
-            message: 'Copy trading stopped'
+        const copyTrade = await CopyTrade.findOne({
+            copier: req.user.id,
+            trader: req.params.userId,
+            status: { $in: ['active', 'paused'] }
+        });
+
+        if (!copyTrade) {
+            return res.status(404).json({ error: 'Copy trade not found' });
+        }
+
+        await copyTrade.stop(req.body.reason || 'Manual stop');
+
+        // Update social arrays
+        await Promise.all([
+            User.findByIdAndUpdate(req.user.id, {
+                $pull: { 'social.copying': req.params.userId }
+            }),
+            User.findByIdAndUpdate(req.params.userId, {
+                $pull: { 'social.copiedBy': req.user.id }
+            })
+        ]);
+
+        // Cancel any pending copied predictions
+        await CopiedPrediction.updateMany(
+            {
+                copyTrade: copyTrade._id,
+                status: { $in: ['pending', 'active'] }
+            },
+            {
+                status: 'cancelled',
+                'outcome.closeReason': 'copy_stopped'
+            }
+        );
+
+        console.log(`[CopyTrade] ${req.user.id} stopped copying ${req.params.userId}`);
+
+        res.json({
+            success: true,
+            message: 'Copy trading stopped',
+            stats: {
+                totalCopiedTrades: copyTrade.stats.totalCopiedTrades,
+                successfulTrades: copyTrade.stats.successfulTrades,
+                totalProfitLoss: copyTrade.stats.totalProfitLoss
+            }
         });
     } catch (error) {
         console.error('[Social] Error stopping copy trading:', error);
         res.status(500).json({ error: 'Failed to stop copy trading' });
+    }
+});
+
+// @route   GET /api/social/copy/top-traders
+// @desc    Get top traders available to copy (by performance)
+// @access  Public
+router.get('/copy/top-traders', async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+
+        // Get users with good stats who have public profiles
+        const topTraders = await User.find({
+            $or: [
+                { 'profile.isPublic': true },
+                { 'profile.isPublic': { $exists: false } }
+            ],
+            'stats.totalTrades': { $gte: 10 },
+            'stats.winRate': { $gte: 50 }
+        })
+        .select('username profile stats gamification social vault')
+        .sort({ 'stats.winRate': -1, 'stats.totalReturnPercent': -1 })
+        .limit(parseInt(limit));
+
+        // Get copier counts for each trader
+        const traderIds = topTraders.map(t => t._id);
+        const copierCounts = await CopyTrade.aggregate([
+            { $match: { trader: { $in: traderIds }, status: 'active' } },
+            { $group: { _id: '$trader', count: { $sum: 1 } } }
+        ]);
+
+        const copierCountMap = {};
+        copierCounts.forEach(c => {
+            copierCountMap[c._id.toString()] = c.count;
+        });
+
+        const traders = topTraders.map(t => ({
+            userId: t._id,
+            username: t.username,
+            displayName: t.profile?.displayName || t.username,
+            avatar: t.profile?.avatar || '',
+            stats: {
+                winRate: t.stats?.winRate || 0,
+                totalReturnPercent: t.stats?.totalReturnPercent || 0,
+                totalTrades: t.stats?.totalTrades || 0,
+                currentStreak: t.stats?.currentStreak || 0
+            },
+            level: t.gamification?.level || 1,
+            followersCount: t.social?.followersCount || 0,
+            copiersCount: copierCountMap[t._id.toString()] || 0,
+            equippedBorder: t.vault?.equippedBorder || 'border-bronze'
+        }));
+
+        res.json({ success: true, traders });
+    } catch (error) {
+        console.error('[Social] Error fetching top traders:', error);
+        res.status(500).json({ error: 'Failed to fetch top traders' });
     }
 });
 
