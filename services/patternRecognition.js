@@ -473,53 +473,75 @@ function detectCupHandle(candles) {
 
 /**
  * Find peaks in price data
+ * Uses a more lenient approach - a peak just needs to be a local maximum
  */
 function findPeaks(candles, window = 5) {
     const peaks = [];
-    
-    for (let i = window; i < candles.length - window; i++) {
+
+    // Use smaller effective window to find more peaks
+    const effectiveWindow = Math.min(window, Math.floor(candles.length / 10));
+
+    for (let i = effectiveWindow; i < candles.length - effectiveWindow; i++) {
         const currentHigh = candles[i].high;
         let isPeak = true;
-        
-        // Check if this is higher than surrounding candles
-        for (let j = i - window; j <= i + window; j++) {
-            if (j !== i && candles[j].high >= currentHigh) {
+
+        // Check if this is higher than or equal to surrounding candles (relaxed from strictly greater)
+        for (let j = i - effectiveWindow; j <= i + effectiveWindow; j++) {
+            if (j !== i && candles[j].high > currentHigh) {
                 isPeak = false;
                 break;
             }
         }
-        
+
         if (isPeak) {
-            peaks.push({ index: i, value: currentHigh });
+            // Avoid adding duplicate peaks at same level (within 0.5%)
+            const isDuplicate = peaks.some(p =>
+                Math.abs(i - p.index) < effectiveWindow * 2 &&
+                Math.abs(p.value - currentHigh) / currentHigh < 0.005
+            );
+            if (!isDuplicate) {
+                peaks.push({ index: i, value: currentHigh });
+            }
         }
     }
-    
+
     return peaks;
 }
 
 /**
  * Find troughs in price data
+ * Uses a more lenient approach - a trough just needs to be a local minimum
  */
 function findTroughs(candles, window = 5) {
     const troughs = [];
-    
-    for (let i = window; i < candles.length - window; i++) {
+
+    // Use smaller effective window to find more troughs
+    const effectiveWindow = Math.min(window, Math.floor(candles.length / 10));
+
+    for (let i = effectiveWindow; i < candles.length - effectiveWindow; i++) {
         const currentLow = candles[i].low;
         let isTrough = true;
-        
-        // Check if this is lower than surrounding candles
-        for (let j = i - window; j <= i + window; j++) {
-            if (j !== i && candles[j].low <= currentLow) {
+
+        // Check if this is lower than or equal to surrounding candles (relaxed from strictly lower)
+        for (let j = i - effectiveWindow; j <= i + effectiveWindow; j++) {
+            if (j !== i && candles[j].low < currentLow) {
                 isTrough = false;
                 break;
             }
         }
-        
+
         if (isTrough) {
-            troughs.push({ index: i, value: currentLow });
+            // Avoid adding duplicate troughs at same level (within 0.5%)
+            const isDuplicate = troughs.some(t =>
+                Math.abs(i - t.index) < effectiveWindow * 2 &&
+                Math.abs(t.value - currentLow) / currentLow < 0.005
+            );
+            if (!isDuplicate) {
+                troughs.push({ index: i, value: currentLow });
+            }
         }
     }
-    
+
     return troughs;
 }
 
@@ -536,6 +558,133 @@ function checkVolumePattern(candles, startIndex, endIndex) {
     return Math.min(recentVolume / avgVolume, 1.5) / 1.5; // Normalize to 0-1
 }
 
+// ============ SIMPLE TREND DETECTION ============
+
+/**
+ * Detect simple uptrend/downtrend with support/resistance
+ * More lenient pattern that almost always finds something useful
+ */
+function detectTrend(candles) {
+    if (candles.length < 10) return null;
+
+    const recentCandles = candles.slice(-30);
+    const firstClose = recentCandles[0].close;
+    const lastClose = recentCandles[recentCandles.length - 1].close;
+    const priceChange = (lastClose - firstClose) / firstClose;
+
+    // Find recent high and low
+    const recentHigh = Math.max(...recentCandles.map(c => c.high));
+    const recentLow = Math.min(...recentCandles.map(c => c.low));
+    const currentPrice = lastClose;
+
+    // Determine trend direction (>3% move is significant)
+    if (Math.abs(priceChange) > 0.03) {
+        const isBullish = priceChange > 0;
+        const trendStrength = Math.min(Math.abs(priceChange) * 5, 1); // Normalize to 0-1
+
+        return {
+            pattern: isBullish ? 'UPTREND' : 'DOWNTREND',
+            confidence: Math.min(50 + trendStrength * 40, 85),
+            name: isBullish ? 'Uptrend Channel' : 'Downtrend Channel',
+            type: isBullish ? 'bullish' : 'bearish',
+            reliability: 0.65,
+            description: isBullish ?
+                'Price is in a sustained uptrend with higher highs and higher lows' :
+                'Price is in a sustained downtrend with lower highs and lower lows',
+            points: {
+                resistance: recentHigh,
+                support: recentLow,
+                trendStart: firstClose,
+                trendEnd: lastClose
+            },
+            target: isBullish ? recentHigh * 1.05 : recentLow * 0.95,
+            currentPrice: currentPrice,
+            potentialMove: isBullish ?
+                ((recentHigh * 1.05 - currentPrice) / currentPrice * 100).toFixed(2) :
+                ((recentLow * 0.95 - currentPrice) / currentPrice * 100).toFixed(2),
+            status: 'active',
+            detectedAt: new Date().toISOString()
+        };
+    }
+
+    // If no strong trend, detect consolidation/range
+    const range = (recentHigh - recentLow) / recentLow;
+    if (range < 0.08) { // Less than 8% range = consolidation
+        return {
+            pattern: 'CONSOLIDATION',
+            confidence: 60,
+            name: 'Consolidation Range',
+            type: 'neutral',
+            reliability: 0.70,
+            description: 'Price is consolidating in a tight range, potential breakout coming',
+            points: {
+                resistance: recentHigh,
+                support: recentLow,
+                midpoint: (recentHigh + recentLow) / 2
+            },
+            target: currentPrice > (recentHigh + recentLow) / 2 ? recentHigh * 1.02 : recentLow * 0.98,
+            currentPrice: currentPrice,
+            potentialMove: ((recentHigh - currentPrice) / currentPrice * 100).toFixed(2),
+            status: 'forming',
+            detectedAt: new Date().toISOString()
+        };
+    }
+
+    return null;
+}
+
+/**
+ * Detect support and resistance levels
+ */
+function detectSupportResistance(candles) {
+    if (candles.length < 20) return null;
+
+    const peaks = findPeaks(candles, 2);
+    const troughs = findTroughs(candles, 2);
+
+    if (peaks.length < 1 && troughs.length < 1) return null;
+
+    const currentPrice = candles[candles.length - 1].close;
+
+    // Find nearest resistance (peaks above current price)
+    const resistanceLevels = peaks
+        .filter(p => p.value > currentPrice)
+        .sort((a, b) => a.value - b.value);
+
+    // Find nearest support (troughs below current price)
+    const supportLevels = troughs
+        .filter(t => t.value < currentPrice)
+        .sort((a, b) => b.value - a.value);
+
+    if (resistanceLevels.length > 0 || supportLevels.length > 0) {
+        const nearestResistance = resistanceLevels[0]?.value;
+        const nearestSupport = supportLevels[0]?.value;
+
+        return {
+            pattern: 'SUPPORT_RESISTANCE',
+            confidence: 70,
+            name: 'Key Support & Resistance',
+            type: 'neutral',
+            reliability: 0.75,
+            description: `Key levels identified: Support at $${nearestSupport?.toFixed(2) || 'N/A'}, Resistance at $${nearestResistance?.toFixed(2) || 'N/A'}`,
+            points: {
+                resistance: nearestResistance,
+                support: nearestSupport,
+                allResistance: resistanceLevels.slice(0, 3).map(r => r.value),
+                allSupport: supportLevels.slice(0, 3).map(s => s.value)
+            },
+            target: nearestResistance || currentPrice * 1.05,
+            currentPrice: currentPrice,
+            potentialMove: nearestResistance ?
+                ((nearestResistance - currentPrice) / currentPrice * 100).toFixed(2) : '5.00',
+            status: 'active',
+            detectedAt: new Date().toISOString()
+        };
+    }
+
+    return null;
+}
+
 // ============ MAIN PATTERN SCANNER ============
 
 /**
@@ -543,41 +692,94 @@ function checkVolumePattern(candles, startIndex, endIndex) {
  */
 function scanForPatterns(candles) {
     const detectedPatterns = [];
-    
-    // Bullish patterns
+
+    console.log(`[Pattern Recognition] Scanning ${candles.length} candles...`);
+
+    // Find peaks and troughs first for debugging
+    const peaks = findPeaks(candles, 3);
+    const troughs = findTroughs(candles, 3);
+    console.log(`[Pattern Recognition] Found ${peaks.length} peaks, ${troughs.length} troughs`);
+
+    // Classic patterns (more strict)
     const invHS = detectHeadShoulders(candles, 'bullish');
-    if (invHS) detectedPatterns.push(invHS);
-    
+    if (invHS) {
+        console.log(`[Pattern Recognition] ✅ Found Inverse Head & Shoulders`);
+        detectedPatterns.push(invHS);
+    }
+
     const doubleBottom = detectDoubleTopBottom(candles, 'bottom');
-    if (doubleBottom) detectedPatterns.push(doubleBottom);
-    
+    if (doubleBottom) {
+        console.log(`[Pattern Recognition] ✅ Found Double Bottom`);
+        detectedPatterns.push(doubleBottom);
+    }
+
     const cupHandle = detectCupHandle(candles);
-    if (cupHandle) detectedPatterns.push(cupHandle);
-    
+    if (cupHandle) {
+        console.log(`[Pattern Recognition] ✅ Found Cup and Handle`);
+        detectedPatterns.push(cupHandle);
+    }
+
     const ascTriangle = detectTriangle(candles, 'ascending');
-    if (ascTriangle) detectedPatterns.push(ascTriangle);
-    
+    if (ascTriangle) {
+        console.log(`[Pattern Recognition] ✅ Found Ascending Triangle`);
+        detectedPatterns.push(ascTriangle);
+    }
+
     const bullFlag = detectFlag(candles, 'bull');
-    if (bullFlag) detectedPatterns.push(bullFlag);
-    
+    if (bullFlag) {
+        console.log(`[Pattern Recognition] ✅ Found Bull Flag`);
+        detectedPatterns.push(bullFlag);
+    }
+
     // Bearish patterns
     const hs = detectHeadShoulders(candles, 'bearish');
-    if (hs) detectedPatterns.push(hs);
-    
+    if (hs) {
+        console.log(`[Pattern Recognition] ✅ Found Head & Shoulders`);
+        detectedPatterns.push(hs);
+    }
+
     const doubleTop = detectDoubleTopBottom(candles, 'top');
-    if (doubleTop) detectedPatterns.push(doubleTop);
-    
+    if (doubleTop) {
+        console.log(`[Pattern Recognition] ✅ Found Double Top`);
+        detectedPatterns.push(doubleTop);
+    }
+
     const descTriangle = detectTriangle(candles, 'descending');
-    if (descTriangle) detectedPatterns.push(descTriangle);
-    
+    if (descTriangle) {
+        console.log(`[Pattern Recognition] ✅ Found Descending Triangle`);
+        detectedPatterns.push(descTriangle);
+    }
+
     const bearFlag = detectFlag(candles, 'bear');
-    if (bearFlag) detectedPatterns.push(bearFlag);
-    
+    if (bearFlag) {
+        console.log(`[Pattern Recognition] ✅ Found Bear Flag`);
+        detectedPatterns.push(bearFlag);
+    }
+
+    // If no classic patterns found, try simpler detection
+    if (detectedPatterns.length === 0) {
+        console.log(`[Pattern Recognition] No classic patterns, trying trend/S&R detection...`);
+
+        const trend = detectTrend(candles);
+        if (trend) {
+            console.log(`[Pattern Recognition] ✅ Found ${trend.pattern}`);
+            detectedPatterns.push(trend);
+        }
+
+        const sr = detectSupportResistance(candles);
+        if (sr) {
+            console.log(`[Pattern Recognition] ✅ Found Support/Resistance levels`);
+            detectedPatterns.push(sr);
+        }
+    }
+
+    console.log(`[Pattern Recognition] Total patterns found: ${detectedPatterns.length}`);
+
     // Enrich patterns with metadata
     return detectedPatterns.map(pattern => ({
         ...pattern,
-        ...PATTERNS[pattern.pattern],
-        detectedAt: new Date().toISOString(),
+        ...(PATTERNS[pattern.pattern] || {}),
+        detectedAt: pattern.detectedAt || new Date().toISOString(),
         risk: calculateRisk(pattern),
         reward: calculateReward(pattern)
     }));

@@ -115,7 +115,7 @@ const synthesizeOHLC = (prices, volumes, candleMinutes) => {
     }
 
     return Array.from(candles.values())
-        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
         .sort((a, b) => a.time - b.time);
 };
 
@@ -240,7 +240,7 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
             close: parseFloat(candle[4]),
             volume: parseFloat(candle[5]) || 0
         }))
-        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
         .sort((a, b) => a.time - b.time);
 
     console.log(`[Chart Service] 🦎 Gecko Terminal: ${chartData.length} candles for ${symbol}`);
@@ -288,7 +288,7 @@ const fetchTokenByContract = async (contractInfo, interval) => {
                             close: parseFloat(candle[4]),
                             volume: parseFloat(candle[5]) || 0
                         }))
-                        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+                        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
                         .sort((a, b) => a.time - b.time);
                 }
             }
@@ -444,7 +444,7 @@ const getChartData = async (symbol, interval = '1D') => {
             });
 
             const chartData = Array.from(uniqueData.values())
-                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
                 .sort((a, b) => a.time - b.time)
                 .slice(-200);
 
@@ -504,7 +504,7 @@ const getChartData = async (symbol, interval = '1D') => {
             });
 
             const chartData = Array.from(uniqueData.values())
-                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
                 .sort((a, b) => a.time - b.time)
                 .slice(-200);
 

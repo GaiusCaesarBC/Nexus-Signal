@@ -230,7 +230,7 @@ const fetchTokenByContract = async (contractInfo, interval) => {
             close: parseFloat(candle[4]),
             volume: parseFloat(candle[5]) || 0
         }))
-        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
         .sort((a, b) => a.time - b.time);
 
     // Debug logging
@@ -504,7 +504,7 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
             close: parseFloat(candle[4]),
             volume: parseFloat(candle[5]) || 0
         }))
-        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
         .sort((a, b) => a.time - b.time); // Sort ascending by time
 
     // Debug: Log sample candles to verify OHLC variation
@@ -762,7 +762,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                             close: parseFloat(kline[4]),
                             volume: parseFloat(kline[5]) || 0
                         }))
-                        .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close));
+                        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
 
                     // Cache the data
                     chartDataCache.set(cacheKey, {
@@ -805,7 +805,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                                     close: parseFloat(kline[4]),
                                     volume: parseFloat(kline[5]) || 0
                                 }))
-                                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close));
+                                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
 
                             chartDataCache.set(cacheKey, {
                                 data: chartData,
@@ -990,7 +990,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
             });
 
             const chartData = Array.from(uniqueData.values())
-                .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
                 .sort((a, b) => a.time - b.time)
                 .slice(-1000);
 
@@ -1124,7 +1124,7 @@ entries.forEach(([time, values]) => {
 
 // Convert Map to array, filter invalid candles, sort by timestamp
 const chartData = Array.from(uniqueData.values())
-    .filter(c => c.time && !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close))
+    .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
     .slice(-1000); // Take last 1000 candles for more history
 
