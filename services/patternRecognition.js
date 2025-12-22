@@ -1649,14 +1649,67 @@ function scanForPatterns(candles, interval = '1D') {
 
     console.log(`[Pattern Recognition] Total patterns found: ${detectedPatterns.length}`);
 
-    // Enrich patterns with metadata
-    return detectedPatterns.map(pattern => ({
-        ...pattern,
-        ...(PATTERNS[pattern.pattern] || {}),
-        detectedAt: pattern.detectedAt || new Date().toISOString(),
-        risk: calculateRisk(pattern),
-        reward: calculateReward(pattern)
-    }));
+    // Calculate the index offset: pattern indices are relative to analysisCandles,
+    // but need to be relative to the full candles array for correct chart positioning
+    const indexOffset = candles.length - analysisCandles.length;
+    console.log(`[Pattern Recognition] Applying index offset: ${indexOffset} (full: ${candles.length}, analysis: ${analysisCandles.length})`);
+
+    // Helper function to recursively adjust all index values in pattern points
+    const adjustPatternIndices = (points, offset) => {
+        if (!points || typeof points !== 'object') return points;
+
+        const adjusted = {};
+        for (const [key, value] of Object.entries(points)) {
+            if (value === null || value === undefined) {
+                adjusted[key] = value;
+            } else if (Array.isArray(value)) {
+                // Handle arrays (like curvePoints)
+                adjusted[key] = value.map(item => {
+                    if (item && typeof item === 'object' && 'index' in item) {
+                        return { ...item, index: item.index + offset };
+                    }
+                    return item;
+                });
+            } else if (typeof value === 'object' && 'index' in value) {
+                // Handle point objects with index property
+                adjusted[key] = { ...value, index: value.index + offset };
+            } else if (typeof value === 'object') {
+                // Recursively handle nested objects
+                adjusted[key] = adjustPatternIndices(value, offset);
+            } else if (key === 'index') {
+                // Handle direct index property
+                adjusted[key] = value + offset;
+            } else {
+                adjusted[key] = value;
+            }
+        }
+        return adjusted;
+    };
+
+    // Candlestick patterns use full candles array, so don't apply offset to them
+    const candlestickTypes = [
+        'DOJI', 'HAMMER', 'HANGING_MAN', 'INVERTED_HAMMER', 'SHOOTING_STAR', 'MARUBOZU',
+        'BULLISH_ENGULFING', 'BEARISH_ENGULFING', 'PIERCING_LINE', 'DARK_CLOUD_COVER',
+        'MORNING_STAR', 'EVENING_STAR', 'THREE_WHITE_SOLDIERS', 'THREE_BLACK_CROWS'
+    ];
+
+    // Enrich patterns with metadata and adjust indices for full chart coordinates
+    return detectedPatterns.map(pattern => {
+        // Only apply offset to non-candlestick patterns (they use analysisCandles)
+        const needsOffset = !candlestickTypes.includes(pattern.pattern);
+        const adjustedPoints = needsOffset
+            ? adjustPatternIndices(pattern.points, indexOffset)
+            : pattern.points;
+
+        return {
+            ...pattern,
+            ...(PATTERNS[pattern.pattern] || {}),
+            points: adjustedPoints,
+            detectedAt: pattern.detectedAt || new Date().toISOString(),
+            risk: calculateRisk(pattern),
+            reward: calculateReward(pattern)
+        };
+    });
 }
 
 /**
