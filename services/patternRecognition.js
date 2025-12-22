@@ -1561,78 +1561,115 @@ function scanWindowForPatterns(windowCandles, tf) {
 }
 
 /**
- * Scan for all patterns on given candle data using SLIDING WINDOW approach
- * This finds patterns THROUGHOUT the entire chart, not just one of each type
+ * Get the number of recent candles to analyze based on timeframe
+ * Lower timeframes = more candles (but still recent), Higher timeframes = fewer candles
+ */
+function getRecentCandleLookback(interval) {
+    const lookbacks = {
+        '1m': 300,   // ~5 hours of 1-minute candles
+        '5m': 300,   // ~25 hours of 5-minute candles
+        '15m': 250,  // ~2.5 days of 15-minute candles
+        '30m': 200,  // ~4 days of 30-minute candles
+        '1h': 150,   // ~6 days of hourly candles
+        '4h': 100,   // ~16 days of 4-hour candles
+        '1D': 50,    // ~2.5 months of daily candles
+        '1W': 50,    // ~1 year of weekly candles
+        '1M': 50,    // ~4 years of monthly candles
+        'LIVE': 300  // Assume intraday, similar to 5m
+    };
+    return lookbacks[interval] || 150; // Default to 150 if unknown
+}
+
+/**
+ * Scan for all patterns on RECENT candle data
+ * Focuses on actionable patterns in the most recent section of the chart
  * @param {Array} candles - OHLCV candle data
  * @param {string} interval - Timeframe interval (1m, 5m, 15m, 30m, 1h, 4h, 1D, 1W)
  */
 function scanForPatterns(candles, interval = '1D') {
     const detectedPatterns = [];
 
+    // Determine how many recent candles to analyze based on timeframe
+    const lookback = getRecentCandleLookback(interval);
+    const startIndex = Math.max(0, candles.length - lookback);
+    const recentCandles = candles.slice(startIndex);
+
+    console.log(`[Pattern Recognition] RECENT SCAN: ${interval} timeframe, analyzing last ${recentCandles.length} of ${candles.length} candles`);
+
+    if (recentCandles.length < 30) {
+        console.log(`[Pattern Recognition] Not enough candles for pattern detection (need 30, have ${recentCandles.length})`);
+        return [];
+    }
+
     // Get timeframe-adjusted parameters
-    const tf = getTimeframeScale(interval, candles.length);
+    const tf = getTimeframeScale(interval, recentCandles.length);
 
-    // SLIDING WINDOW APPROACH: Scan multiple overlapping windows across the data
-    // This finds patterns THROUGHOUT the chart, not just at one location
+    // SLIDING WINDOW within the recent section
+    // Window size: ~40% of recent candles, minimum 50
+    const windowSize = Math.max(50, Math.floor(recentCandles.length * 0.4));
 
-    // Window size: minimum needed for pattern detection (about 50-100 candles)
-    const minWindowSize = Math.max(50, Math.floor(candles.length / 20));
-    const windowSize = Math.min(minWindowSize, Math.floor(candles.length / 3));
-
-    // Step size: how much to move the window (30% overlap)
-    const stepSize = Math.max(20, Math.floor(windowSize * 0.7));
+    // Step size: 30% of window (70% overlap for better detection)
+    const stepSize = Math.max(15, Math.floor(windowSize * 0.3));
 
     // Calculate number of windows
-    const numWindows = Math.max(1, Math.floor((candles.length - windowSize) / stepSize) + 1);
+    const numWindows = Math.max(1, Math.floor((recentCandles.length - windowSize) / stepSize) + 1);
 
-    console.log(`[Pattern Recognition] SLIDING WINDOW SCAN: ${candles.length} candles, ${numWindows} windows (size=${windowSize}, step=${stepSize})`);
+    console.log(`[Pattern Recognition] Scanning ${numWindows} windows (size=${windowSize}, step=${stepSize})`);
 
     // Scan each window
     for (let w = 0; w < numWindows; w++) {
         const windowStart = w * stepSize;
-        const windowEnd = Math.min(windowStart + windowSize, candles.length);
-        const windowCandles = candles.slice(windowStart, windowEnd);
+        const windowEnd = Math.min(windowStart + windowSize, recentCandles.length);
+        const windowCandles = recentCandles.slice(windowStart, windowEnd);
 
-        if (windowCandles.length < 30) continue; // Skip too-small windows
+        if (windowCandles.length < 30) continue;
 
         // Scan this window for patterns
         const windowPatterns = scanWindowForPatterns(windowCandles, tf);
 
-        // Adjust indices to be relative to full candles array
+        // Adjust indices to be relative to FULL candles array (not just recent section)
+        const fullOffset = startIndex + windowStart;
         windowPatterns.forEach(pattern => {
-            // Add window offset to all pattern point indices
             if (pattern.points) {
-                pattern.points = adjustPatternPointIndices(pattern.points, windowStart);
+                pattern.points = adjustPatternPointIndices(pattern.points, fullOffset);
             }
-            pattern._windowIndex = w; // Track which window found it
+            pattern._windowIndex = w;
             detectedPatterns.push(pattern);
         });
     }
 
-    console.log(`[Pattern Recognition] Found ${detectedPatterns.length} patterns across ${numWindows} windows`);
+    console.log(`[Pattern Recognition] Found ${detectedPatterns.length} patterns in recent section`);
 
-    // Deduplicate overlapping patterns (same type within 10% of each other)
-    const deduped = deduplicatePatterns(detectedPatterns, candles.length);
+    // Deduplicate overlapping patterns
+    const deduped = deduplicatePatterns(detectedPatterns, recentCandles.length);
     console.log(`[Pattern Recognition] After deduplication: ${deduped.length} unique patterns`);
 
-    // Also scan for candlestick patterns across the full data
-    const candlestickPatterns = detectCandlestickPatterns(candles);
+    // Scan for candlestick patterns in recent candles only (last 20 candles)
+    const veryRecentCandles = recentCandles.slice(-20);
+    const candlestickPatterns = detectCandlestickPatterns(veryRecentCandles);
     if (candlestickPatterns.length > 0) {
+        // Adjust candlestick pattern indices to full array
+        const candlestickOffset = candles.length - 20;
+        candlestickPatterns.forEach(pattern => {
+            if (pattern.points) {
+                pattern.points = adjustPatternPointIndices(pattern.points, candlestickOffset);
+            }
+        });
         console.log(`[Pattern Recognition] ✅ Found ${candlestickPatterns.length} candlestick pattern(s)`);
         deduped.push(...candlestickPatterns);
     }
 
-    // If no patterns found, try simpler detection on full dataset
+    // If no patterns found, try trend/S&R on recent data
     if (deduped.length === 0) {
         console.log(`[Pattern Recognition] No classic patterns, trying trend/S&R detection...`);
 
-        const trend = detectTrend(candles);
+        const trend = detectTrend(recentCandles);
         if (trend) {
             console.log(`[Pattern Recognition] ✅ Found ${trend.pattern}`);
             deduped.push(trend);
         }
 
-        const sr = detectSupportResistance(candles);
+        const sr = detectSupportResistance(recentCandles);
         if (sr) {
             console.log(`[Pattern Recognition] ✅ Found Support/Resistance levels`);
             deduped.push(sr);
