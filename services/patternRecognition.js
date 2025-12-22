@@ -290,13 +290,13 @@ const PATTERNS = {
  * Detect Head and Shoulders pattern
  */
 function detectHeadShoulders(candles, type = 'bearish') {
-    if (candles.length < 30) return null; // Reduced from 50
+    if (candles.length < 30) return null;
 
-    const peaks = findPeaks(candles, 3); // Reduced window from 5 to 3
+    const peaks = findPeaks(candles, 3);
     if (peaks.length < 3) return null;
-    
-    // Look for 3 consecutive peaks where middle is highest
-    for (let i = 0; i < peaks.length - 2; i++) {
+
+    // Look for 3 consecutive peaks where middle is highest - START FROM MOST RECENT
+    for (let i = peaks.length - 3; i >= 0; i--) {
         const leftShoulder = peaks[i];
         const head = peaks[i + 1];
         const rightShoulder = peaks[i + 2];
@@ -349,13 +349,13 @@ function detectHeadShoulders(candles, type = 'bearish') {
  * Detect Double Top/Bottom pattern
  */
 function detectDoubleTopBottom(candles, type = 'top') {
-    if (candles.length < 20) return null; // Reduced from 30
+    if (candles.length < 20) return null;
 
-    const extremes = type === 'top' ? findPeaks(candles, 3) : findTroughs(candles, 3); // Reduced window from 5 to 3
+    const extremes = type === 'top' ? findPeaks(candles, 3) : findTroughs(candles, 3);
     if (extremes.length < 2) return null;
-    
-    // Look for two peaks/troughs at similar levels
-    for (let i = 0; i < extremes.length - 1; i++) {
+
+    // Look for two peaks/troughs at similar levels - START FROM MOST RECENT
+    for (let i = extremes.length - 2; i >= 0; i--) {
         const first = extremes[i];
         const second = extremes[i + 1];
         
@@ -507,13 +507,13 @@ function detectFlag(candles, type = 'bull') {
     let poleStart, poleEnd, poleHeight;
     
     if (type === 'bull') {
-        // Look for sharp upward move
-        for (let i = 0; i < recentCandles.length - 20; i++) {
+        // Look for sharp upward move - START FROM MOST RECENT
+        for (let i = recentCandles.length - 21; i >= 0; i--) {
             const start = recentCandles[i].low;
             const end = recentCandles[i + 10].high;
             const rise = (end - start) / start;
 
-            if (rise > 0.05) { // >5% move (relaxed from 8%)
+            if (rise > 0.05) {
                 poleStart = i;
                 poleEnd = i + 10;
                 poleHeight = end - start;
@@ -521,13 +521,13 @@ function detectFlag(candles, type = 'bull') {
             }
         }
     } else {
-        // Look for sharp downward move
-        for (let i = 0; i < recentCandles.length - 20; i++) {
+        // Look for sharp downward move - START FROM MOST RECENT
+        for (let i = recentCandles.length - 21; i >= 0; i--) {
             const start = recentCandles[i].high;
             const end = recentCandles[i + 10].low;
             const fall = (start - end) / start;
 
-            if (fall > 0.05) { // >5% move (relaxed from 8%)
+            if (fall > 0.05) {
                 poleStart = i;
                 poleEnd = i + 10;
                 poleHeight = start - end;
@@ -586,9 +586,9 @@ function detectCupHandle(candles) {
     const troughs = findTroughs(recentCandles, 5);
     
     if (peaks.length < 2 || troughs.length < 1) return null;
-    
-    // Cup should have two peaks at similar levels with a trough in between
-    for (let i = 0; i < peaks.length - 1; i++) {
+
+    // Cup should have two peaks at similar levels with a trough in between - START FROM MOST RECENT
+    for (let i = peaks.length - 2; i >= 0; i--) {
         const leftPeak = peaks[i];
         const rightPeak = peaks[i + 1];
         
@@ -705,7 +705,8 @@ function detectPennant(candles, type = 'bull') {
     let poleStart, poleEnd, poleHeight;
 
     if (type === 'bull') {
-        for (let i = 0; i < recentCandles.length - 20; i++) {
+        // Start from most recent
+        for (let i = recentCandles.length - 21; i >= 0; i--) {
             const start = recentCandles[i].low;
             const end = recentCandles[i + 8].high;
             const rise = (end - start) / start;
@@ -717,7 +718,8 @@ function detectPennant(candles, type = 'bull') {
             }
         }
     } else {
-        for (let i = 0; i < recentCandles.length - 20; i++) {
+        // Start from most recent
+        for (let i = recentCandles.length - 21; i >= 0; i--) {
             const start = recentCandles[i].high;
             const end = recentCandles[i + 8].low;
             const fall = (start - end) / start;
@@ -778,7 +780,8 @@ function detectTripleBottom(candles) {
     const troughs = findTroughs(candles, 3);
     if (troughs.length < 3) return null;
 
-    for (let i = 0; i < troughs.length - 2; i++) {
+    // Start from most recent troughs
+    for (let i = troughs.length - 3; i >= 0; i--) {
         const first = troughs[i];
         const second = troughs[i + 1];
         const third = troughs[i + 2];
