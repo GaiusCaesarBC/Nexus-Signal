@@ -180,9 +180,9 @@ const fetchTokenByContract = async (contractInfo, interval) => {
             timeframe = 'hour';
     }
 
-    // Fetch OHLCV data from the pool with pagination (up to 5000 candles)
+    // Fetch OHLCV data from the pool with pagination (up to 7000 candles for extended history)
     const poolAddress = poolData.pool.attributes?.address;
-    const TARGET_CANDLES = 5000;
+    const TARGET_CANDLES = 7000;
     const BATCH_SIZE = 1000;
     let allCandles = [];
     let beforeTimestamp = null;
@@ -452,8 +452,8 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
             timeframe = 'hour';
     }
 
-    // Fetch OHLCV data with pagination (up to 5000 candles)
-    const TARGET_CANDLES = 5000;
+    // Fetch OHLCV data with pagination (up to 7000 candles for extended history)
+    const TARGET_CANDLES = 7000;
     const BATCH_SIZE = 1000;
     let allCandles = [];
     let beforeTimestamp = null;
@@ -734,18 +734,40 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 }
 
                 const binanceSymbol = `${crypto}USDT`;
-                const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
+                const TARGET_BINANCE_CANDLES = 2000;
+                const BINANCE_BATCH = 1000;
 
                 try {
-                    const response = await axios.get(binanceUrl, {
-                        headers: {
-                            'User-Agent': 'NexusSignal/1.0',
-                            'Accept': 'application/json'
-                        },
-                        timeout: 10000
-                    });
+                    // Fetch with pagination for more candles
+                    let allCandles = [];
+                    let endTime = null;
 
-                    if (!response.data || response.data.length === 0) {
+                    while (allCandles.length < TARGET_BINANCE_CANDLES) {
+                        let binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${BINANCE_BATCH}`;
+                        if (endTime) {
+                            binanceUrl += `&endTime=${endTime}`;
+                        }
+
+                        const response = await axios.get(binanceUrl, {
+                            headers: {
+                                'User-Agent': 'NexusSignal/1.0',
+                                'Accept': 'application/json'
+                            },
+                            timeout: 10000
+                        });
+
+                        if (!response.data || response.data.length === 0) break;
+
+                        // Prepend older data
+                        allCandles = [...response.data, ...allCandles];
+
+                        // Get oldest timestamp for next batch
+                        endTime = response.data[0][0] - 1;
+
+                        if (response.data.length < BINANCE_BATCH) break;
+                    }
+
+                    if (allCandles.length === 0) {
                         console.log(`[Chart] ❌ No Binance data for ${binanceSymbol}`);
                         return res.status(404).json({
                             success: false,
@@ -753,7 +775,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                         });
                     }
 
-                    const chartData = response.data
+                    const chartData = allCandles
                         .map(kline => ({
                             time: Math.floor(kline[0] / 1000),
                             open: parseFloat(kline[1]),
@@ -762,7 +784,8 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                             close: parseFloat(kline[4]),
                             volume: parseFloat(kline[5]) || 0
                         }))
-                        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
+                        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+                        .sort((a, b) => a.time - b.time);
 
                     // Cache the data
                     chartDataCache.set(cacheKey, {
@@ -783,20 +806,36 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 } catch (binanceError) {
                     console.error(`[Chart] ❌ Binance Global error:`, binanceError.message);
 
-                    // Try Binance US as last resort
+                    // Try Binance US as last resort with pagination
                     try {
                         console.log(`[Chart] 🔄 Trying Binance US as final fallback...`);
-                        const binanceUsUrl = `https://api.binance.us/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=1000`;
-                        const usResponse = await axios.get(binanceUsUrl, {
-                            headers: {
-                                'User-Agent': 'NexusSignal/1.0',
-                                'Accept': 'application/json'
-                            },
-                            timeout: 10000
-                        });
+                        let usCandles = [];
+                        let usEndTime = null;
 
-                        if (usResponse.data && usResponse.data.length > 0) {
-                            const chartData = usResponse.data
+                        while (usCandles.length < TARGET_BINANCE_CANDLES) {
+                            let binanceUsUrl = `https://api.binance.us/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${BINANCE_BATCH}`;
+                            if (usEndTime) {
+                                binanceUsUrl += `&endTime=${usEndTime}`;
+                            }
+
+                            const usResponse = await axios.get(binanceUsUrl, {
+                                headers: {
+                                    'User-Agent': 'NexusSignal/1.0',
+                                    'Accept': 'application/json'
+                                },
+                                timeout: 10000
+                            });
+
+                            if (!usResponse.data || usResponse.data.length === 0) break;
+
+                            usCandles = [...usResponse.data, ...usCandles];
+                            usEndTime = usResponse.data[0][0] - 1;
+
+                            if (usResponse.data.length < BINANCE_BATCH) break;
+                        }
+
+                        if (usCandles.length > 0) {
+                            const chartData = usCandles
                                 .map(kline => ({
                                     time: Math.floor(kline[0] / 1000),
                                     open: parseFloat(kline[1]),
@@ -805,7 +844,8 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                                     close: parseFloat(kline[4]),
                                     volume: parseFloat(kline[5]) || 0
                                 }))
-                                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
+                                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+                                .sort((a, b) => a.time - b.time);
 
                             chartDataCache.set(cacheKey, {
                                 data: chartData,
@@ -1126,7 +1166,7 @@ entries.forEach(([time, values]) => {
 const chartData = Array.from(uniqueData.values())
     .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
-    .slice(-1000); // Take last 1000 candles for more history
+    .slice(-2000); // Take last 2000 candles for extended history
 
             // Cache the data
             chartDataCache.set(cacheKey, {
