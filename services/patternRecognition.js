@@ -1469,24 +1469,23 @@ function getTimeframeScale(interval, candleCount) {
     // Scale factor: 1.0 for daily, higher for lower timeframes
     const scale = Math.sqrt(cpd);
 
-    // Effective lookback: how many candles to analyze for patterns
-    // More candles available = larger lookback window
-    const effectiveLookback = Math.min(
-        Math.floor(candleCount * 0.8), // Use up to 80% of available data
-        Math.floor(100 * scale) // But cap based on timeframe
-    );
+    // MACRO PATTERNS: Use nearly ALL available data for pattern detection
+    // This ensures we find large patterns spanning the entire chart, not just recent micro-patterns
+    const effectiveLookback = Math.floor(candleCount * 0.95); // Use 95% of available data
 
-    // Window size for peak/trough detection
-    const peakWindow = Math.max(2, Math.min(10, Math.floor(3 * Math.sqrt(scale))));
+    // Window size for peak/trough detection - scale with data size for macro patterns
+    // Larger datasets need larger windows to find significant peaks/troughs
+    const baseWindow = Math.max(3, Math.floor(candleCount / 100)); // 1% of data as base
+    const peakWindow = Math.min(20, Math.max(3, baseWindow)); // Clamp between 3-20
 
     return {
         scale,
         effectiveLookback,
         peakWindow,
-        // Tolerance for price matching (lower timeframes need tighter tolerance)
-        priceTolerance: Math.min(0.08, 0.03 * scale),
-        // Minimum pattern duration in candles
-        minDuration: Math.floor(10 * scale),
+        // Tolerance for price matching - more lenient for macro patterns
+        priceTolerance: Math.min(0.12, 0.05 * Math.sqrt(scale)),
+        // Minimum pattern duration in candles - scale with data size
+        minDuration: Math.max(10, Math.floor(candleCount / 50)),
         interval
     };
 }
