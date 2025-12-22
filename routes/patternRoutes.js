@@ -58,12 +58,12 @@ router.get('/:symbol', auth, async (req, res) => {
 
         const candles = chartData.data;
 
-        // Run REAL AI pattern detection!
+        // Run REAL AI pattern detection with timeframe-aware analysis!
         let patterns;
-        
+
         if (scanForPatterns) {
-            patterns = scanForPatterns(candles);
-            console.log(`[Pattern Recognition] ✅ REAL detection: Found ${patterns.length} patterns`);
+            patterns = scanForPatterns(candles, interval);
+            console.log(`[Pattern Recognition] ✅ REAL detection (${interval}): Found ${patterns.length} patterns`);
         } else {
             // Fallback mock if service not available
             patterns = [];
@@ -117,8 +117,8 @@ router.post('/scan/watchlist', auth, async (req, res) => {
                 const chartData = await getChartData(symbol, interval);
                 
                 if (chartData.success && chartData.data && chartData.data.length >= 30 && scanForPatterns) {
-                    const patterns = scanForPatterns(chartData.data);
-                    
+                    const patterns = scanForPatterns(chartData.data, interval);
+
                     if (patterns.length > 0) {
                         results.push({
                             symbol,
@@ -227,7 +227,7 @@ router.post('/analyze/specific', auth, async (req, res) => {
         }
 
         const candles = chartData.data;
-        const allPatterns = scanForPatterns ? scanForPatterns(candles) : [];
+        const allPatterns = scanForPatterns ? scanForPatterns(candles, interval) : [];
         const specificPattern = allPatterns.find(p => p.pattern === patternType);
 
         res.json({

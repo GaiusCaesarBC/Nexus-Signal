@@ -1444,131 +1444,186 @@ function detectSupportResistance(candles) {
     return null;
 }
 
+// ============ TIMEFRAME SCALING ============
+
+/**
+ * Get scaling factor based on timeframe
+ * This adjusts pattern detection parameters for different timeframes
+ */
+function getTimeframeScale(interval, candleCount) {
+    // Map intervals to approximate candles per day
+    const candlesPerDay = {
+        '1m': 1440,
+        '5m': 288,
+        '15m': 96,
+        '30m': 48,
+        '1h': 24,
+        '4h': 6,
+        '1D': 1,
+        '1W': 0.14,
+        'LIVE': 288  // Assume 5m equivalent
+    };
+
+    const cpd = candlesPerDay[interval] || 24; // Default to 1h
+
+    // Scale factor: 1.0 for daily, higher for lower timeframes
+    const scale = Math.sqrt(cpd);
+
+    // Effective lookback: how many candles to analyze for patterns
+    // More candles available = larger lookback window
+    const effectiveLookback = Math.min(
+        Math.floor(candleCount * 0.8), // Use up to 80% of available data
+        Math.floor(100 * scale) // But cap based on timeframe
+    );
+
+    // Window size for peak/trough detection
+    const peakWindow = Math.max(2, Math.min(10, Math.floor(3 * Math.sqrt(scale))));
+
+    return {
+        scale,
+        effectiveLookback,
+        peakWindow,
+        // Tolerance for price matching (lower timeframes need tighter tolerance)
+        priceTolerance: Math.min(0.08, 0.03 * scale),
+        // Minimum pattern duration in candles
+        minDuration: Math.floor(10 * scale),
+        interval
+    };
+}
+
 // ============ MAIN PATTERN SCANNER ============
 
 /**
  * Scan for all patterns on given candle data
+ * @param {Array} candles - OHLCV candle data
+ * @param {string} interval - Timeframe interval (1m, 5m, 15m, 30m, 1h, 4h, 1D, 1W)
  */
-function scanForPatterns(candles) {
+function scanForPatterns(candles, interval = '1D') {
     const detectedPatterns = [];
 
-    console.log(`[Pattern Recognition] Scanning ${candles.length} candles...`);
+    // Get timeframe-adjusted parameters
+    const tf = getTimeframeScale(interval, candles.length);
 
-    // Find peaks and troughs first for debugging
-    const peaks = findPeaks(candles, 3);
-    const troughs = findTroughs(candles, 3);
-    console.log(`[Pattern Recognition] Found ${peaks.length} peaks, ${troughs.length} troughs`);
+    console.log(`[Pattern Recognition] Scanning ${candles.length} candles (${interval}, scale=${tf.scale.toFixed(2)}, lookback=${tf.effectiveLookback}, peakWindow=${tf.peakWindow})...`);
 
-    // Classic patterns (more strict)
-    const invHS = detectHeadShoulders(candles, 'bullish');
+    // Use timeframe-adjusted lookback for pattern analysis
+    const analysisCandles = candles.slice(-tf.effectiveLookback);
+
+    // Find peaks and troughs with timeframe-adjusted window
+    const peaks = findPeaks(analysisCandles, tf.peakWindow);
+    const troughs = findTroughs(analysisCandles, tf.peakWindow);
+    console.log(`[Pattern Recognition] Found ${peaks.length} peaks, ${troughs.length} troughs in ${analysisCandles.length} candles`);
+
+    // Classic patterns (more strict) - use analysisCandles for timeframe-appropriate detection
+    const invHS = detectHeadShoulders(analysisCandles, 'bullish');
     if (invHS) {
         console.log(`[Pattern Recognition] ✅ Found Inverse Head & Shoulders`);
         detectedPatterns.push(invHS);
     }
 
-    const doubleBottom = detectDoubleTopBottom(candles, 'bottom');
+    const doubleBottom = detectDoubleTopBottom(analysisCandles, 'bottom');
     if (doubleBottom) {
         console.log(`[Pattern Recognition] ✅ Found Double Bottom`);
         detectedPatterns.push(doubleBottom);
     }
 
-    const cupHandle = detectCupHandle(candles);
+    const cupHandle = detectCupHandle(analysisCandles);
     if (cupHandle) {
         console.log(`[Pattern Recognition] ✅ Found Cup and Handle`);
         detectedPatterns.push(cupHandle);
     }
 
-    const ascTriangle = detectTriangle(candles, 'ascending');
+    const ascTriangle = detectTriangle(analysisCandles, 'ascending');
     if (ascTriangle) {
         console.log(`[Pattern Recognition] ✅ Found Ascending Triangle`);
         detectedPatterns.push(ascTriangle);
     }
 
-    const bullFlag = detectFlag(candles, 'bull');
+    const bullFlag = detectFlag(analysisCandles, 'bull');
     if (bullFlag) {
         console.log(`[Pattern Recognition] ✅ Found Bull Flag`);
         detectedPatterns.push(bullFlag);
     }
 
     // Bearish patterns
-    const hs = detectHeadShoulders(candles, 'bearish');
+    const hs = detectHeadShoulders(analysisCandles, 'bearish');
     if (hs) {
         console.log(`[Pattern Recognition] ✅ Found Head & Shoulders`);
         detectedPatterns.push(hs);
     }
 
-    const doubleTop = detectDoubleTopBottom(candles, 'top');
+    const doubleTop = detectDoubleTopBottom(analysisCandles, 'top');
     if (doubleTop) {
         console.log(`[Pattern Recognition] ✅ Found Double Top`);
         detectedPatterns.push(doubleTop);
     }
 
-    const descTriangle = detectTriangle(candles, 'descending');
+    const descTriangle = detectTriangle(analysisCandles, 'descending');
     if (descTriangle) {
         console.log(`[Pattern Recognition] ✅ Found Descending Triangle`);
         detectedPatterns.push(descTriangle);
     }
 
-    const bearFlag = detectFlag(candles, 'bear');
+    const bearFlag = detectFlag(analysisCandles, 'bear');
     if (bearFlag) {
         console.log(`[Pattern Recognition] ✅ Found Bear Flag`);
         detectedPatterns.push(bearFlag);
     }
 
     // NEW PATTERNS - Wedges
-    const risingWedge = detectWedge(candles, 'rising');
+    const risingWedge = detectWedge(analysisCandles, 'rising');
     if (risingWedge) {
         console.log(`[Pattern Recognition] ✅ Found Rising Wedge`);
         detectedPatterns.push(risingWedge);
     }
 
-    const fallingWedge = detectWedge(candles, 'falling');
+    const fallingWedge = detectWedge(analysisCandles, 'falling');
     if (fallingWedge) {
         console.log(`[Pattern Recognition] ✅ Found Falling Wedge`);
         detectedPatterns.push(fallingWedge);
     }
 
     // NEW PATTERNS - Pennants
-    const bullPennant = detectPennant(candles, 'bull');
+    const bullPennant = detectPennant(analysisCandles, 'bull');
     if (bullPennant) {
         console.log(`[Pattern Recognition] ✅ Found Bull Pennant`);
         detectedPatterns.push(bullPennant);
     }
 
-    const bearPennant = detectPennant(candles, 'bear');
+    const bearPennant = detectPennant(analysisCandles, 'bear');
     if (bearPennant) {
         console.log(`[Pattern Recognition] ✅ Found Bear Pennant`);
         detectedPatterns.push(bearPennant);
     }
 
     // NEW PATTERNS - Triple Bottom
-    const tripleBottom = detectTripleBottom(candles);
+    const tripleBottom = detectTripleBottom(analysisCandles);
     if (tripleBottom) {
         console.log(`[Pattern Recognition] ✅ Found Triple Bottom`);
         detectedPatterns.push(tripleBottom);
     }
 
     // NEW PATTERNS - Rounding
-    const roundingBottom = detectRoundingPattern(candles, 'bottom');
+    const roundingBottom = detectRoundingPattern(analysisCandles, 'bottom');
     if (roundingBottom) {
         console.log(`[Pattern Recognition] ✅ Found Rounding Bottom`);
         detectedPatterns.push(roundingBottom);
     }
 
-    const roundingTop = detectRoundingPattern(candles, 'top');
+    const roundingTop = detectRoundingPattern(analysisCandles, 'top');
     if (roundingTop) {
         console.log(`[Pattern Recognition] ✅ Found Rounding Top`);
         detectedPatterns.push(roundingTop);
     }
 
     // NEW PATTERNS - Broadening
-    const broadening = detectBroadeningPattern(candles);
+    const broadening = detectBroadeningPattern(analysisCandles);
     if (broadening) {
         console.log(`[Pattern Recognition] ✅ Found ${broadening.pattern}`);
         detectedPatterns.push(broadening);
     }
 
-    // NEW PATTERNS - Candlestick patterns (always scan)
+    // NEW PATTERNS - Candlestick patterns (always scan recent candles)
     const candlestickPatterns = detectCandlestickPatterns(candles);
     if (candlestickPatterns.length > 0) {
         console.log(`[Pattern Recognition] ✅ Found ${candlestickPatterns.length} candlestick pattern(s)`);
@@ -1579,13 +1634,13 @@ function scanForPatterns(candles) {
     if (detectedPatterns.length === 0) {
         console.log(`[Pattern Recognition] No classic patterns, trying trend/S&R detection...`);
 
-        const trend = detectTrend(candles);
+        const trend = detectTrend(analysisCandles);
         if (trend) {
             console.log(`[Pattern Recognition] ✅ Found ${trend.pattern}`);
             detectedPatterns.push(trend);
         }
 
-        const sr = detectSupportResistance(candles);
+        const sr = detectSupportResistance(analysisCandles);
         if (sr) {
             console.log(`[Pattern Recognition] ✅ Found Support/Resistance levels`);
             detectedPatterns.push(sr);
