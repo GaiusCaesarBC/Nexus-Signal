@@ -1493,7 +1493,76 @@ function getTimeframeScale(interval, candleCount) {
 // ============ MAIN PATTERN SCANNER ============
 
 /**
- * Scan for all patterns on given candle data
+ * Scan a single window for patterns
+ * Returns patterns with indices relative to the window
+ */
+function scanWindowForPatterns(windowCandles, tf) {
+    const patterns = [];
+
+    // Classic bullish patterns
+    const invHS = detectHeadShoulders(windowCandles, 'bullish');
+    if (invHS) patterns.push(invHS);
+
+    const doubleBottom = detectDoubleTopBottom(windowCandles, 'bottom');
+    if (doubleBottom) patterns.push(doubleBottom);
+
+    const cupHandle = detectCupHandle(windowCandles);
+    if (cupHandle) patterns.push(cupHandle);
+
+    const ascTriangle = detectTriangle(windowCandles, 'ascending');
+    if (ascTriangle) patterns.push(ascTriangle);
+
+    const bullFlag = detectFlag(windowCandles, 'bull');
+    if (bullFlag) patterns.push(bullFlag);
+
+    // Classic bearish patterns
+    const hs = detectHeadShoulders(windowCandles, 'bearish');
+    if (hs) patterns.push(hs);
+
+    const doubleTop = detectDoubleTopBottom(windowCandles, 'top');
+    if (doubleTop) patterns.push(doubleTop);
+
+    const descTriangle = detectTriangle(windowCandles, 'descending');
+    if (descTriangle) patterns.push(descTriangle);
+
+    const bearFlag = detectFlag(windowCandles, 'bear');
+    if (bearFlag) patterns.push(bearFlag);
+
+    // Wedges
+    const risingWedge = detectWedge(windowCandles, 'rising');
+    if (risingWedge) patterns.push(risingWedge);
+
+    const fallingWedge = detectWedge(windowCandles, 'falling');
+    if (fallingWedge) patterns.push(fallingWedge);
+
+    // Pennants
+    const bullPennant = detectPennant(windowCandles, 'bull');
+    if (bullPennant) patterns.push(bullPennant);
+
+    const bearPennant = detectPennant(windowCandles, 'bear');
+    if (bearPennant) patterns.push(bearPennant);
+
+    // Triple patterns
+    const tripleBottom = detectTripleBottom(windowCandles);
+    if (tripleBottom) patterns.push(tripleBottom);
+
+    // Rounding patterns
+    const roundingBottom = detectRoundingPattern(windowCandles, 'bottom');
+    if (roundingBottom) patterns.push(roundingBottom);
+
+    const roundingTop = detectRoundingPattern(windowCandles, 'top');
+    if (roundingTop) patterns.push(roundingTop);
+
+    // Broadening
+    const broadening = detectBroadeningPattern(windowCandles);
+    if (broadening) patterns.push(broadening);
+
+    return patterns;
+}
+
+/**
+ * Scan for all patterns on given candle data using SLIDING WINDOW approach
+ * This finds patterns THROUGHOUT the entire chart, not just one of each type
  * @param {Array} candles - OHLCV candle data
  * @param {string} interval - Timeframe interval (1m, 5m, 15m, 30m, 1h, 4h, 1D, 1W)
  */
@@ -1503,212 +1572,174 @@ function scanForPatterns(candles, interval = '1D') {
     // Get timeframe-adjusted parameters
     const tf = getTimeframeScale(interval, candles.length);
 
-    console.log(`[Pattern Recognition] Scanning ${candles.length} candles (${interval}, scale=${tf.scale.toFixed(2)}, lookback=${tf.effectiveLookback}, peakWindow=${tf.peakWindow})...`);
+    // SLIDING WINDOW APPROACH: Scan multiple overlapping windows across the data
+    // This finds patterns THROUGHOUT the chart, not just at one location
 
-    // Use timeframe-adjusted lookback for pattern analysis
-    const analysisCandles = candles.slice(-tf.effectiveLookback);
+    // Window size: minimum needed for pattern detection (about 50-100 candles)
+    const minWindowSize = Math.max(50, Math.floor(candles.length / 20));
+    const windowSize = Math.min(minWindowSize, Math.floor(candles.length / 3));
 
-    // Find peaks and troughs with timeframe-adjusted window
-    const peaks = findPeaks(analysisCandles, tf.peakWindow);
-    const troughs = findTroughs(analysisCandles, tf.peakWindow);
-    console.log(`[Pattern Recognition] Found ${peaks.length} peaks, ${troughs.length} troughs in ${analysisCandles.length} candles`);
+    // Step size: how much to move the window (30% overlap)
+    const stepSize = Math.max(20, Math.floor(windowSize * 0.7));
 
-    // Classic patterns (more strict) - use analysisCandles for timeframe-appropriate detection
-    const invHS = detectHeadShoulders(analysisCandles, 'bullish');
-    if (invHS) {
-        console.log(`[Pattern Recognition] ✅ Found Inverse Head & Shoulders`);
-        detectedPatterns.push(invHS);
+    // Calculate number of windows
+    const numWindows = Math.max(1, Math.floor((candles.length - windowSize) / stepSize) + 1);
+
+    console.log(`[Pattern Recognition] SLIDING WINDOW SCAN: ${candles.length} candles, ${numWindows} windows (size=${windowSize}, step=${stepSize})`);
+
+    // Scan each window
+    for (let w = 0; w < numWindows; w++) {
+        const windowStart = w * stepSize;
+        const windowEnd = Math.min(windowStart + windowSize, candles.length);
+        const windowCandles = candles.slice(windowStart, windowEnd);
+
+        if (windowCandles.length < 30) continue; // Skip too-small windows
+
+        // Scan this window for patterns
+        const windowPatterns = scanWindowForPatterns(windowCandles, tf);
+
+        // Adjust indices to be relative to full candles array
+        windowPatterns.forEach(pattern => {
+            // Add window offset to all pattern point indices
+            if (pattern.points) {
+                pattern.points = adjustPatternPointIndices(pattern.points, windowStart);
+            }
+            pattern._windowIndex = w; // Track which window found it
+            detectedPatterns.push(pattern);
+        });
     }
 
-    const doubleBottom = detectDoubleTopBottom(analysisCandles, 'bottom');
-    if (doubleBottom) {
-        console.log(`[Pattern Recognition] ✅ Found Double Bottom`);
-        detectedPatterns.push(doubleBottom);
-    }
+    console.log(`[Pattern Recognition] Found ${detectedPatterns.length} patterns across ${numWindows} windows`);
 
-    const cupHandle = detectCupHandle(analysisCandles);
-    if (cupHandle) {
-        console.log(`[Pattern Recognition] ✅ Found Cup and Handle`);
-        detectedPatterns.push(cupHandle);
-    }
+    // Deduplicate overlapping patterns (same type within 10% of each other)
+    const deduped = deduplicatePatterns(detectedPatterns, candles.length);
+    console.log(`[Pattern Recognition] After deduplication: ${deduped.length} unique patterns`);
 
-    const ascTriangle = detectTriangle(analysisCandles, 'ascending');
-    if (ascTriangle) {
-        console.log(`[Pattern Recognition] ✅ Found Ascending Triangle`);
-        detectedPatterns.push(ascTriangle);
-    }
-
-    const bullFlag = detectFlag(analysisCandles, 'bull');
-    if (bullFlag) {
-        console.log(`[Pattern Recognition] ✅ Found Bull Flag`);
-        detectedPatterns.push(bullFlag);
-    }
-
-    // Bearish patterns
-    const hs = detectHeadShoulders(analysisCandles, 'bearish');
-    if (hs) {
-        console.log(`[Pattern Recognition] ✅ Found Head & Shoulders`);
-        detectedPatterns.push(hs);
-    }
-
-    const doubleTop = detectDoubleTopBottom(analysisCandles, 'top');
-    if (doubleTop) {
-        console.log(`[Pattern Recognition] ✅ Found Double Top`);
-        detectedPatterns.push(doubleTop);
-    }
-
-    const descTriangle = detectTriangle(analysisCandles, 'descending');
-    if (descTriangle) {
-        console.log(`[Pattern Recognition] ✅ Found Descending Triangle`);
-        detectedPatterns.push(descTriangle);
-    }
-
-    const bearFlag = detectFlag(analysisCandles, 'bear');
-    if (bearFlag) {
-        console.log(`[Pattern Recognition] ✅ Found Bear Flag`);
-        detectedPatterns.push(bearFlag);
-    }
-
-    // NEW PATTERNS - Wedges
-    const risingWedge = detectWedge(analysisCandles, 'rising');
-    if (risingWedge) {
-        console.log(`[Pattern Recognition] ✅ Found Rising Wedge`);
-        detectedPatterns.push(risingWedge);
-    }
-
-    const fallingWedge = detectWedge(analysisCandles, 'falling');
-    if (fallingWedge) {
-        console.log(`[Pattern Recognition] ✅ Found Falling Wedge`);
-        detectedPatterns.push(fallingWedge);
-    }
-
-    // NEW PATTERNS - Pennants
-    const bullPennant = detectPennant(analysisCandles, 'bull');
-    if (bullPennant) {
-        console.log(`[Pattern Recognition] ✅ Found Bull Pennant`);
-        detectedPatterns.push(bullPennant);
-    }
-
-    const bearPennant = detectPennant(analysisCandles, 'bear');
-    if (bearPennant) {
-        console.log(`[Pattern Recognition] ✅ Found Bear Pennant`);
-        detectedPatterns.push(bearPennant);
-    }
-
-    // NEW PATTERNS - Triple Bottom
-    const tripleBottom = detectTripleBottom(analysisCandles);
-    if (tripleBottom) {
-        console.log(`[Pattern Recognition] ✅ Found Triple Bottom`);
-        detectedPatterns.push(tripleBottom);
-    }
-
-    // NEW PATTERNS - Rounding
-    const roundingBottom = detectRoundingPattern(analysisCandles, 'bottom');
-    if (roundingBottom) {
-        console.log(`[Pattern Recognition] ✅ Found Rounding Bottom`);
-        detectedPatterns.push(roundingBottom);
-    }
-
-    const roundingTop = detectRoundingPattern(analysisCandles, 'top');
-    if (roundingTop) {
-        console.log(`[Pattern Recognition] ✅ Found Rounding Top`);
-        detectedPatterns.push(roundingTop);
-    }
-
-    // NEW PATTERNS - Broadening
-    const broadening = detectBroadeningPattern(analysisCandles);
-    if (broadening) {
-        console.log(`[Pattern Recognition] ✅ Found ${broadening.pattern}`);
-        detectedPatterns.push(broadening);
-    }
-
-    // NEW PATTERNS - Candlestick patterns (always scan recent candles)
+    // Also scan for candlestick patterns across the full data
     const candlestickPatterns = detectCandlestickPatterns(candles);
     if (candlestickPatterns.length > 0) {
         console.log(`[Pattern Recognition] ✅ Found ${candlestickPatterns.length} candlestick pattern(s)`);
-        detectedPatterns.push(...candlestickPatterns);
+        deduped.push(...candlestickPatterns);
     }
 
-    // If no classic patterns found, try simpler detection
-    if (detectedPatterns.length === 0) {
+    // If no patterns found, try simpler detection on full dataset
+    if (deduped.length === 0) {
         console.log(`[Pattern Recognition] No classic patterns, trying trend/S&R detection...`);
 
-        const trend = detectTrend(analysisCandles);
+        const trend = detectTrend(candles);
         if (trend) {
             console.log(`[Pattern Recognition] ✅ Found ${trend.pattern}`);
-            detectedPatterns.push(trend);
+            deduped.push(trend);
         }
 
-        const sr = detectSupportResistance(analysisCandles);
+        const sr = detectSupportResistance(candles);
         if (sr) {
             console.log(`[Pattern Recognition] ✅ Found Support/Resistance levels`);
-            detectedPatterns.push(sr);
+            deduped.push(sr);
         }
     }
 
-    console.log(`[Pattern Recognition] Total patterns found: ${detectedPatterns.length}`);
+    console.log(`[Pattern Recognition] Total patterns found: ${deduped.length}`);
 
-    // Calculate the index offset: pattern indices are relative to analysisCandles,
-    // but need to be relative to the full candles array for correct chart positioning
-    const indexOffset = candles.length - analysisCandles.length;
-    console.log(`[Pattern Recognition] Applying index offset: ${indexOffset} (full: ${candles.length}, analysis: ${analysisCandles.length})`);
+    // Enrich patterns with metadata
+    return deduped.map(pattern => ({
+        ...pattern,
+        ...(PATTERNS[pattern.pattern] || {}),
+        detectedAt: pattern.detectedAt || new Date().toISOString(),
+        risk: calculateRisk(pattern),
+        reward: calculateReward(pattern)
+    }));
+}
 
-    // Helper function to recursively adjust all index values in pattern points
-    const adjustPatternIndices = (points, offset) => {
-        if (!points || typeof points !== 'object') return points;
+/**
+ * Helper: Recursively adjust all index values in pattern points
+ */
+function adjustPatternPointIndices(points, offset) {
+    if (!points || typeof points !== 'object') return points;
 
-        const adjusted = {};
-        for (const [key, value] of Object.entries(points)) {
-            if (value === null || value === undefined) {
-                adjusted[key] = value;
-            } else if (Array.isArray(value)) {
-                // Handle arrays (like curvePoints)
-                adjusted[key] = value.map(item => {
-                    if (item && typeof item === 'object' && 'index' in item) {
-                        return { ...item, index: item.index + offset };
-                    }
-                    return item;
-                });
-            } else if (typeof value === 'object' && 'index' in value) {
-                // Handle point objects with index property
-                adjusted[key] = { ...value, index: value.index + offset };
-            } else if (typeof value === 'object') {
-                // Recursively handle nested objects
-                adjusted[key] = adjustPatternIndices(value, offset);
-            } else if (key === 'index') {
-                // Handle direct index property
-                adjusted[key] = value + offset;
-            } else {
-                adjusted[key] = value;
-            }
+    const adjusted = {};
+    for (const [key, value] of Object.entries(points)) {
+        if (value === null || value === undefined) {
+            adjusted[key] = value;
+        } else if (Array.isArray(value)) {
+            adjusted[key] = value.map(item => {
+                if (item && typeof item === 'object' && 'index' in item) {
+                    return { ...item, index: item.index + offset };
+                }
+                return item;
+            });
+        } else if (typeof value === 'object' && 'index' in value) {
+            adjusted[key] = { ...value, index: value.index + offset };
+        } else if (typeof value === 'object') {
+            adjusted[key] = adjustPatternPointIndices(value, offset);
+        } else if (key === 'index') {
+            adjusted[key] = value + offset;
+        } else {
+            adjusted[key] = value;
         }
-        return adjusted;
+    }
+    return adjusted;
+}
+
+/**
+ * Helper: Get the center index of a pattern (for deduplication)
+ */
+function getPatternCenterIndex(pattern) {
+    if (!pattern.points) return -1;
+
+    const indices = [];
+    const extractIndices = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) {
+            obj.forEach(item => extractIndices(item));
+        } else {
+            if ('index' in obj && typeof obj.index === 'number') {
+                indices.push(obj.index);
+            }
+            Object.values(obj).forEach(v => extractIndices(v));
+        }
     };
 
-    // Candlestick patterns use full candles array, so don't apply offset to them
-    const candlestickTypes = [
-        'DOJI', 'HAMMER', 'HANGING_MAN', 'INVERTED_HAMMER', 'SHOOTING_STAR', 'MARUBOZU',
-        'BULLISH_ENGULFING', 'BEARISH_ENGULFING', 'PIERCING_LINE', 'DARK_CLOUD_COVER',
-        'MORNING_STAR', 'EVENING_STAR', 'THREE_WHITE_SOLDIERS', 'THREE_BLACK_CROWS'
-    ];
+    extractIndices(pattern.points);
+    if (indices.length === 0) return -1;
+    return indices.reduce((a, b) => a + b, 0) / indices.length;
+}
 
-    // Enrich patterns with metadata and adjust indices for full chart coordinates
-    return detectedPatterns.map(pattern => {
-        // Only apply offset to non-candlestick patterns (they use analysisCandles)
-        const needsOffset = !candlestickTypes.includes(pattern.pattern);
-        const adjustedPoints = needsOffset
-            ? adjustPatternIndices(pattern.points, indexOffset)
-            : pattern.points;
+/**
+ * Helper: Deduplicate patterns that overlap (same type within threshold)
+ */
+function deduplicatePatterns(patterns, totalCandles) {
+    if (patterns.length <= 1) return patterns;
 
-        return {
-            ...pattern,
-            ...(PATTERNS[pattern.pattern] || {}),
-            points: adjustedPoints,
-            detectedAt: pattern.detectedAt || new Date().toISOString(),
-            risk: calculateRisk(pattern),
-            reward: calculateReward(pattern)
-        };
-    });
+    // Threshold: patterns within 5% of total candles are considered duplicates
+    const threshold = Math.max(10, Math.floor(totalCandles * 0.05));
+
+    const unique = [];
+    const seen = new Map(); // Map of pattern type -> array of center indices
+
+    for (const pattern of patterns) {
+        const type = pattern.pattern;
+        const center = getPatternCenterIndex(pattern);
+
+        if (center < 0) {
+            unique.push(pattern);
+            continue;
+        }
+
+        if (!seen.has(type)) {
+            seen.set(type, []);
+        }
+
+        const existingCenters = seen.get(type);
+        const isDuplicate = existingCenters.some(existing => Math.abs(existing - center) < threshold);
+
+        if (!isDuplicate) {
+            unique.push(pattern);
+            existingCenters.push(center);
+        }
+    }
+
+    return unique;
 }
 
 /**
