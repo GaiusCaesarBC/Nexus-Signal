@@ -222,15 +222,24 @@ const fetchTokenByContract = async (contractInfo, interval) => {
 
     const ohlcvList = allCandles;
     const chartData = ohlcvList
-        .map(candle => ({
-            time: candle[0],
-            open: parseFloat(candle[1]),
-            high: parseFloat(candle[2]),
-            low: parseFloat(candle[3]),
-            close: parseFloat(candle[4]),
-            volume: parseFloat(candle[5]) || 0
-        }))
-        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+        .map(candle => {
+            // Explicit null/undefined check on raw data before parsing
+            if (candle[0] == null || candle[1] == null || candle[2] == null ||
+                candle[3] == null || candle[4] == null) {
+                return null;
+            }
+            return {
+                time: candle[0],
+                open: parseFloat(candle[1]),
+                high: parseFloat(candle[2]),
+                low: parseFloat(candle[3]),
+                close: parseFloat(candle[4]),
+                volume: parseFloat(candle[5]) || 0
+            };
+        })
+        .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                     Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                     c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
         .sort((a, b) => a.time - b.time);
 
     // Debug logging
@@ -496,15 +505,24 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
     // Gecko Terminal format: [timestamp, open, high, low, close, volume]
     const ohlcvList = allCandles;
     const chartData = ohlcvList
-        .map(candle => ({
-            time: candle[0],
-            open: parseFloat(candle[1]),
-            high: parseFloat(candle[2]),
-            low: parseFloat(candle[3]),
-            close: parseFloat(candle[4]),
-            volume: parseFloat(candle[5]) || 0
-        }))
-        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+        .map(candle => {
+            // Explicit null/undefined check on raw data before parsing
+            if (candle[0] == null || candle[1] == null || candle[2] == null ||
+                candle[3] == null || candle[4] == null) {
+                return null;
+            }
+            return {
+                time: candle[0],
+                open: parseFloat(candle[1]),
+                high: parseFloat(candle[2]),
+                low: parseFloat(candle[3]),
+                close: parseFloat(candle[4]),
+                volume: parseFloat(candle[5]) || 0
+            };
+        })
+        .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                     Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                     c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
         .sort((a, b) => a.time - b.time); // Sort ascending by time
 
     // Debug: Log sample candles to verify OHLC variation
@@ -776,15 +794,24 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     }
 
                     const chartData = allCandles
-                        .map(kline => ({
-                            time: Math.floor(kline[0] / 1000),
-                            open: parseFloat(kline[1]),
-                            high: parseFloat(kline[2]),
-                            low: parseFloat(kline[3]),
-                            close: parseFloat(kline[4]),
-                            volume: parseFloat(kline[5]) || 0
-                        }))
-                        .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+                        .map(kline => {
+                            // Explicit null/undefined check on raw data before parsing
+                            if (kline[0] == null || kline[1] == null || kline[2] == null ||
+                                kline[3] == null || kline[4] == null) {
+                                return null;
+                            }
+                            return {
+                                time: Math.floor(kline[0] / 1000),
+                                open: parseFloat(kline[1]),
+                                high: parseFloat(kline[2]),
+                                low: parseFloat(kline[3]),
+                                close: parseFloat(kline[4]),
+                                volume: parseFloat(kline[5]) || 0
+                            };
+                        })
+                        .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                                     Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                                     c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
                         .sort((a, b) => a.time - b.time);
 
                     // Cache the data
@@ -836,15 +863,24 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
 
                         if (usCandles.length > 0) {
                             const chartData = usCandles
-                                .map(kline => ({
-                                    time: Math.floor(kline[0] / 1000),
-                                    open: parseFloat(kline[1]),
-                                    high: parseFloat(kline[2]),
-                                    low: parseFloat(kline[3]),
-                                    close: parseFloat(kline[4]),
-                                    volume: parseFloat(kline[5]) || 0
-                                }))
-                                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+                                .map(kline => {
+                                    // Explicit null/undefined check on raw data before parsing
+                                    if (kline[0] == null || kline[1] == null || kline[2] == null ||
+                                        kline[3] == null || kline[4] == null) {
+                                        return null;
+                                    }
+                                    return {
+                                        time: Math.floor(kline[0] / 1000),
+                                        open: parseFloat(kline[1]),
+                                        high: parseFloat(kline[2]),
+                                        low: parseFloat(kline[3]),
+                                        close: parseFloat(kline[4]),
+                                        volume: parseFloat(kline[5]) || 0
+                                    };
+                                })
+                                .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                                             Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                                             c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
                                 .sort((a, b) => a.time - b.time);
 
                             chartDataCache.set(cacheKey, {
@@ -1017,20 +1053,33 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 const dateObj = new Date(time);
                 const timestamp = Math.floor(dateObj.getTime() / 1000);
 
+                // Get raw values
+                const openVal = values[openKey] || values['1. open'];
+                const highVal = values[highKey] || values['2. high'];
+                const lowVal = values[lowKey] || values['3. low'];
+                const closeVal = values[closeKey] || values['4. close'];
+
+                // Skip if any OHLC value is null/undefined
+                if (openVal == null || highVal == null || lowVal == null || closeVal == null) {
+                    return;
+                }
+
                 if (!uniqueData.has(timestamp)) {
                     uniqueData.set(timestamp, {
                         time: timestamp,
-                        open: parseFloat(values[openKey] || values['1. open'] || 0),
-                        high: parseFloat(values[highKey] || values['2. high'] || 0),
-                        low: parseFloat(values[lowKey] || values['3. low'] || 0),
-                        close: parseFloat(values[closeKey] || values['4. close'] || 0),
+                        open: parseFloat(openVal),
+                        high: parseFloat(highVal),
+                        low: parseFloat(lowVal),
+                        close: parseFloat(closeVal),
                         volume: parseFloat(values[volumeKey] || 0)
                     });
                 }
             });
 
             const chartData = Array.from(uniqueData.values())
-                .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+                .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                             Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                             c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
                 .sort((a, b) => a.time - b.time)
                 .slice(-1000);
 
@@ -1148,15 +1197,26 @@ entries.forEach(([time, values]) => {
     // Convert to Unix timestamp (in seconds for TradingView charts)
     const dateObj = new Date(time);
     const timestamp = Math.floor(dateObj.getTime() / 1000);
-    
+
+    // Get raw values
+    const openVal = values['1. open'];
+    const highVal = values['2. high'];
+    const lowVal = values['3. low'];
+    const closeVal = values['4. close'];
+
+    // Skip if any OHLC value is null/undefined
+    if (openVal == null || highVal == null || lowVal == null || closeVal == null) {
+        return;
+    }
+
     // Only keep the first entry for each timestamp (in case of duplicates)
     if (!uniqueData.has(timestamp)) {
         uniqueData.set(timestamp, {
             time: timestamp,
-            open: parseFloat(values['1. open']),
-            high: parseFloat(values['2. high']),
-            low: parseFloat(values['3. low']),
-            close: parseFloat(values['4. close']),
+            open: parseFloat(openVal),
+            high: parseFloat(highVal),
+            low: parseFloat(lowVal),
+            close: parseFloat(closeVal),
             volume: parseInt(values['5. volume'] || 0)
         });
     }
@@ -1164,7 +1224,9 @@ entries.forEach(([time, values]) => {
 
 // Convert Map to array, filter invalid candles, sort by timestamp
 const chartData = Array.from(uniqueData.values())
-    .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+    .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                 Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                 c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
     .sort((a, b) => a.time - b.time) // Sort by Unix timestamp
     .slice(-2000); // Take last 2000 candles for extended history
 
