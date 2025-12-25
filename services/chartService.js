@@ -60,7 +60,7 @@ const parseCryptoSymbol = (symbol) => {
     if (symbol.includes(':')) {
         const [crypto, network] = symbol.split(':');
         return {
-            crypto: crypto.toUpperCase(),
+            crypto: crypto.toUpperCase().replace(/USDT$/, ''),
             market: 'USD',
             network: network.toLowerCase()
         };
@@ -69,7 +69,9 @@ const parseCryptoSymbol = (symbol) => {
         const [crypto, market] = symbol.split('-');
         return { crypto: crypto.toUpperCase(), market: market.toUpperCase(), network: null };
     }
-    return { crypto: symbol.toUpperCase(), market: 'USD', network: null };
+    // Strip USDT/USD suffix for Binance-style pairs (e.g., BTCUSDT -> BTC)
+    const crypto = symbol.toUpperCase().replace(/USDT$/, '').replace(/USD$/, '');
+    return { crypto, market: 'USD', network: null };
 };
 
 // Helper: Get CoinGecko ID for a symbol
@@ -117,6 +119,47 @@ const synthesizeOHLC = (prices, volumes, candleMinutes) => {
     return Array.from(candles.values())
         .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
         .sort((a, b) => a.time - b.time);
+};
+
+// Fetch from Binance
+const fetchBinanceOHLC = async (symbol, interval) => {
+    // Map interval to Binance format
+    let binanceInterval;
+    switch(interval) {
+        case '1m': binanceInterval = '1m'; break;
+        case '5m': binanceInterval = '5m'; break;
+        case '15m': binanceInterval = '15m'; break;
+        case '30m': binanceInterval = '30m'; break;
+        case '1h': binanceInterval = '1h'; break;
+        case '4h': binanceInterval = '4h'; break;
+        case '1D': binanceInterval = '1d'; break;
+        case '1W': binanceInterval = '1w'; break;
+        default: binanceInterval = '1d';
+    }
+
+    const binanceSymbol = `${symbol}USDT`;
+    const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=500`;
+    console.log(`[Chart Service] 📊 Binance: ${url}`);
+
+    const response = await axios.get(url, { timeout: 10000 });
+
+    if (!response.data || response.data.length === 0) {
+        throw new Error('No data from Binance');
+    }
+
+    const chartData = response.data.map(candle => ({
+        time: Math.floor(candle[0] / 1000),
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5])
+    }))
+    .filter(c => c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close))
+    .sort((a, b) => a.time - b.time);
+
+    console.log(`[Chart Service] 📊 Binance: ${chartData.length} candles for ${symbol}`);
+    return chartData;
 };
 
 // Fetch from CoinGecko market_chart
@@ -365,7 +408,23 @@ const getChartData = async (symbol, interval = '1D') => {
                 }
             }
 
-            // Try CoinGecko first for major cryptos
+            // Try Binance first for major cryptos (best data quality)
+            try {
+                const chartData = await fetchBinanceOHLC(crypto, interval);
+                chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+
+                return {
+                    success: true,
+                    data: chartData,
+                    symbol: `${crypto}-USD`,
+                    interval,
+                    source: 'binance'
+                };
+            } catch (binanceError) {
+                console.log(`[Chart Service] ⚠️ Binance failed: ${binanceError.message}`);
+            }
+
+            // Try CoinGecko as fallback
             try {
                 const chartData = await fetchCoinGeckoOHLC(crypto, interval);
                 chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
