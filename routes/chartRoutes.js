@@ -322,6 +322,91 @@ const synthesizeOHLC = (prices, volumes, candleMinutes) => {
         .sort((a, b) => a.time - b.time);
 };
 
+// Kraken symbol mapping for cryptos not on Binance US
+const KRAKEN_SYMBOL_MAP = {
+    'XRP': 'XXRPZUSD',
+    'BTC': 'XXBTZUSD',
+    'ETH': 'XETHZUSD',
+    'LTC': 'XLTCZUSD',
+    'XLM': 'XXLMZUSD',
+    'ADA': 'ADAUSD',
+    'DOT': 'DOTUSD',
+    'LINK': 'LINKUSD',
+    'SOL': 'SOLUSD',
+    'AVAX': 'AVAXUSD',
+    'ATOM': 'ATOMUSD',
+    'ALGO': 'ALGOUSD',
+    'MATIC': 'MATICUSD'
+};
+
+// Helper: Fetch OHLC from Kraken (good for XRP and others not on Binance US)
+const fetchKrakenOHLC = async (symbol, interval) => {
+    const krakenSymbol = KRAKEN_SYMBOL_MAP[symbol.toUpperCase()];
+    if (!krakenSymbol) {
+        throw new Error(`No Kraken mapping for ${symbol}`);
+    }
+
+    // Map interval to Kraken format (in minutes)
+    let krakenInterval;
+    switch(interval) {
+        case 'LIVE':
+        case '1m': krakenInterval = 1; break;
+        case '5m': krakenInterval = 5; break;
+        case '15m': krakenInterval = 15; break;
+        case '30m': krakenInterval = 30; break;
+        case '1h': krakenInterval = 60; break;
+        case '4h': krakenInterval = 240; break;
+        case '1D': krakenInterval = 1440; break;
+        case '1W': krakenInterval = 10080; break;
+        default: krakenInterval = 60;
+    }
+
+    // Calculate since timestamp for more data (720 candles ~ 30 days for 1h)
+    const since = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
+
+    const url = `https://api.kraken.com/0/public/OHLC?pair=${krakenSymbol}&interval=${krakenInterval}&since=${since}`;
+    console.log(`[Chart] 🦑 Kraken OHLC: ${url}`);
+
+    const response = await axios.get(url, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+
+    if (response.data.error && response.data.error.length > 0) {
+        throw new Error(`Kraken error: ${response.data.error.join(', ')}`);
+    }
+
+    // Get the result key (it varies by pair)
+    const resultKey = Object.keys(response.data.result).find(k => k !== 'last');
+    if (!resultKey || !response.data.result[resultKey]) {
+        throw new Error('No data from Kraken');
+    }
+
+    const ohlcData = response.data.result[resultKey];
+    console.log(`[Chart] 🦑 Kraken returned ${ohlcData.length} candles`);
+
+    // Kraken format: [time, open, high, low, close, vwap, volume, count]
+    const chartData = ohlcData
+        .map(candle => ({
+            time: parseInt(candle[0]),
+            open: parseFloat(candle[1]),
+            high: parseFloat(candle[2]),
+            low: parseFloat(candle[3]),
+            close: parseFloat(candle[4]),
+            volume: parseFloat(candle[6]) || 0
+        }))
+        .filter(c => c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                     Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                     c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
+        .sort((a, b) => a.time - b.time);
+
+    if (chartData.length > 0) {
+        console.log(`[Chart] 🦑 Kraken sample: O:${chartData[0].open} H:${chartData[0].high} L:${chartData[0].low} C:${chartData[0].close}`);
+    }
+
+    return chartData;
+};
+
 // Helper: Fetch price data from CoinGecko market_chart and synthesize OHLC
 const fetchCoinGeckoOHLC = async (symbol, interval) => {
     const cgId = getCoinGeckoId(symbol);
@@ -688,7 +773,34 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     }
                 }
 
-                // Try CoinGecko (best data quality for major tokens)
+                // Try Kraken first for supported cryptos (real OHLC data, works in US)
+                if (KRAKEN_SYMBOL_MAP[crypto]) {
+                    try {
+                        console.log(`[Chart] 🦑 Trying Kraken for ${crypto}...`);
+                        const chartData = await fetchKrakenOHLC(crypto, interval);
+
+                        if (chartData && chartData.length > 0) {
+                            chartDataCache.set(cacheKey, {
+                                data: chartData,
+                                timestamp: Date.now()
+                            });
+
+                            console.log(`[Chart] ✅ Kraken succeeded: ${chartData.length} candles for ${crypto}`);
+
+                            return res.json({
+                                success: true,
+                                data: chartData,
+                                symbol: `${crypto}-USD`,
+                                interval,
+                                source: 'kraken'
+                            });
+                        }
+                    } catch (krakenError) {
+                        console.log(`[Chart] ⚠️ Kraken failed: ${krakenError.message}`);
+                    }
+                }
+
+                // Try CoinGecko (synthesized OHLC from price data)
                 try {
                     console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto}...`);
                     const chartData = await fetchCoinGeckoOHLC(crypto, interval);
@@ -938,7 +1050,34 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 }
             }
 
-            // Try CoinGecko (better coverage for major tokens)
+            // Try Kraken first for supported cryptos (real OHLC data, works in US)
+            if (KRAKEN_SYMBOL_MAP[crypto]) {
+                try {
+                    console.log(`[Chart] 🦑 Trying Kraken for ${crypto} (${interval})...`);
+                    const chartData = await fetchKrakenOHLC(crypto, interval);
+
+                    if (chartData && chartData.length > 0) {
+                        chartDataCache.set(cacheKey, {
+                            data: chartData,
+                            timestamp: Date.now()
+                        });
+
+                        console.log(`[Chart] ✅ Kraken succeeded: ${chartData.length} candles for ${crypto} (${interval})`);
+
+                        return res.json({
+                            success: true,
+                            data: chartData,
+                            symbol: `${crypto}-USD`,
+                            interval,
+                            source: 'kraken'
+                        });
+                    }
+                } catch (krakenError) {
+                    console.log(`[Chart] ⚠️ Kraken failed: ${krakenError.message}`);
+                }
+            }
+
+            // Try CoinGecko (synthesized OHLC from price data)
             try {
                 console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto} (${interval})...`);
                 const chartData = await fetchCoinGeckoOHLC(crypto, interval);
