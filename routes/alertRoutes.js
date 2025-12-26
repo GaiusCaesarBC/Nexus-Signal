@@ -2,9 +2,18 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/authMiddleware');
 const Alert = require('../models/Alert');
 const GamificationService = require('../services/gamificationService');
+
+// Rate limiter for alert creation (prevent spam/abuse)
+const alertCreationLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 50, // 50 alerts per hour per user
+    message: { error: 'Too many alerts created. Please try again later.' },
+    keyGenerator: (req) => req.user?.id || req.ip // Rate limit by user ID
+});
 
 // Technical alert types
 const TECHNICAL_ALERT_TYPES = [
@@ -67,7 +76,7 @@ router.get('/pattern-types', (req, res) => {
 // @route   POST /api/alerts/pattern
 // @desc    Create a pattern recognition alert
 // @access  Private
-router.post('/pattern', auth, async (req, res) => {
+router.post('/pattern', auth, alertCreationLimiter, async (req, res) => {
     try {
         const {
             symbol,
@@ -137,7 +146,7 @@ router.post('/pattern', auth, async (req, res) => {
 // @route   POST /api/alerts/technical
 // @desc    Create a technical indicator alert
 // @access  Private
-router.post('/technical', auth, async (req, res) => {
+router.post('/technical', auth, alertCreationLimiter, async (req, res) => {
     try {
         const {
             symbol,
@@ -220,7 +229,7 @@ router.post('/technical', auth, async (req, res) => {
 // @route   POST /api/alerts/price
 // @desc    Create a price alert
 // @access  Private
-router.post('/price', auth, async (req, res) => {
+router.post('/price', auth, alertCreationLimiter, async (req, res) => {
     try {
         const {
             symbol,
@@ -280,7 +289,7 @@ router.post('/price', auth, async (req, res) => {
 // @route   POST /api/alerts/percent-change
 // @desc    Create a percent change alert
 // @access  Private
-router.post('/percent-change', auth, async (req, res) => {
+router.post('/percent-change', auth, alertCreationLimiter, async (req, res) => {
     try {
         const {
             symbol,
@@ -339,7 +348,7 @@ router.post('/percent-change', auth, async (req, res) => {
 // @route   POST /api/alerts
 // @desc    Create a new alert
 // @access  Private
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, alertCreationLimiter, async (req, res) => {
     try {
         const {
             type,

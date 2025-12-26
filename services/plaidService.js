@@ -1,8 +1,89 @@
 // server/services/plaidService.js - Plaid Integration for US Brokerages
 const { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } = require('plaid');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
 
 // Plaid client configuration
 let plaidClient = null;
+
+// JWKS client for webhook verification (cached)
+let jwksClientInstance = null;
+
+/**
+ * Get JWKS client for Plaid webhook verification
+ */
+function getJwksClient() {
+    if (jwksClientInstance) return jwksClientInstance;
+
+    const env = process.env.PLAID_ENV || 'sandbox';
+    const jwksUri = env === 'production'
+        ? 'https://production.plaid.com/.well-known/jwks.json'
+        : 'https://sandbox.plaid.com/.well-known/jwks.json';
+
+    jwksClientInstance = jwksClient({
+        jwksUri,
+        cache: true,
+        cacheMaxEntries: 5,
+        cacheMaxAge: 600000 // 10 minutes
+    });
+
+    return jwksClientInstance;
+}
+
+/**
+ * Verify Plaid webhook signature
+ * @param {string} body - Raw request body as string
+ * @param {string} plaidVerificationHeader - Plaid-Verification header value
+ * @returns {Promise<boolean>} True if valid, throws error if invalid
+ */
+async function verifyWebhookSignature(body, plaidVerificationHeader) {
+    if (!plaidVerificationHeader) {
+        throw new Error('Missing Plaid-Verification header');
+    }
+
+    try {
+        // Decode the JWT header to get the key ID
+        const decodedHeader = jwt.decode(plaidVerificationHeader, { complete: true });
+        if (!decodedHeader || !decodedHeader.header || !decodedHeader.header.kid) {
+            throw new Error('Invalid JWT structure');
+        }
+
+        const kid = decodedHeader.header.kid;
+        const client = getJwksClient();
+
+        // Get the signing key
+        const key = await client.getSigningKey(kid);
+        const signingKey = key.getPublicKey();
+
+        // Verify the JWT
+        const decoded = jwt.verify(plaidVerificationHeader, signingKey, {
+            algorithms: ['ES256']
+        });
+
+        // Verify the body hash matches
+        const bodyHash = crypto
+            .createHash('sha256')
+            .update(body)
+            .digest('hex');
+
+        if (decoded.request_body_sha256 !== bodyHash) {
+            throw new Error('Body hash mismatch - webhook may have been tampered with');
+        }
+
+        // Check timestamp isn't too old (5 minutes)
+        const issuedAt = decoded.iat * 1000; // Convert to ms
+        const now = Date.now();
+        if (now - issuedAt > 5 * 60 * 1000) {
+            throw new Error('Webhook is too old - possible replay attack');
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[Plaid Webhook] Verification failed:', error.message);
+        throw error;
+    }
+}
 
 /**
  * Initialize Plaid client
@@ -382,5 +463,6 @@ module.exports = {
     getItemInfo,
     removeItem,
     searchInstitutions,
-    createSandboxPublicToken
+    createSandboxPublicToken,
+    verifyWebhookSignature
 };

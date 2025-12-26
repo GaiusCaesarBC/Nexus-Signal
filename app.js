@@ -182,6 +182,122 @@ app.post('/api/stripe/webhook',
     }
 );
 
+// ============================================
+// PLAID WEBHOOK - MUST BE BEFORE ANY BODY PARSING MIDDLEWARE
+// Signature verification requires raw body access
+// ============================================
+const BrokerageConnection = require('./models/BrokerageConnection');
+const plaidService = require('./services/plaidService');
+
+app.post('/api/brokerage/plaid/webhook',
+    webhookLimiter,
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+        console.log(`[Plaid Webhook] Received webhook request`);
+
+        const plaidVerification = req.headers['plaid-verification'];
+        const rawBody = req.body.toString('utf8');
+
+        // Verify webhook signature (skip in development/sandbox if header not present)
+        if (plaidVerification) {
+            try {
+                await plaidService.verifyWebhookSignature(rawBody, plaidVerification);
+                console.log(`[Plaid Webhook] ✅ Signature verified!`);
+            } catch (verifyError) {
+                console.error(`[Plaid Webhook] ❌ Signature verification failed:`, verifyError.message);
+                return res.status(401).json({ error: 'Webhook signature verification failed' });
+            }
+        } else if (process.env.PLAID_ENV === 'production') {
+            // In production, require signature verification
+            console.error(`[Plaid Webhook] ❌ Missing Plaid-Verification header in production`);
+            return res.status(401).json({ error: 'Missing webhook signature' });
+        } else {
+            console.log(`[Plaid Webhook] ⚠️ Skipping signature verification (sandbox mode)`);
+        }
+
+        // Parse the body
+        let body;
+        try {
+            body = JSON.parse(rawBody);
+        } catch (parseError) {
+            console.error(`[Plaid Webhook] Failed to parse body:`, parseError.message);
+            return res.status(400).json({ error: 'Invalid JSON body' });
+        }
+
+        const { webhook_type, webhook_code, item_id, error } = body;
+        console.log(`[Plaid Webhook] Type: ${webhook_type}, Code: ${webhook_code}, Item: ${item_id}`);
+
+        try {
+            // Find the connection by Plaid item ID
+            const connection = await BrokerageConnection.findOne({ 'plaid.itemId': item_id });
+
+            if (!connection) {
+                console.log(`[Plaid Webhook] No connection found for item: ${item_id}`);
+                return res.json({ received: true });
+            }
+
+            switch (webhook_type) {
+                case 'HOLDINGS':
+                    if (webhook_code === 'DEFAULT_UPDATE') {
+                        console.log(`[Plaid Webhook] Holdings updated for ${connection.name}`);
+                        try {
+                            const accessToken = connection.getPlaidAccessToken();
+                            const holdings = await plaidService.getHoldings(accessToken);
+                            const portfolioData = {
+                                holdings: holdings.holdings.map(h => ({
+                                    symbol: h.symbol,
+                                    name: h.name,
+                                    quantity: h.quantity,
+                                    price: h.price,
+                                    value: h.value,
+                                    costBasis: h.costBasis,
+                                    type: h.type
+                                })),
+                                totalValue: holdings.accounts.reduce((sum, acc) => sum + acc.totalValue, 0)
+                            };
+                            await connection.updateCache(portfolioData);
+                            console.log(`[Plaid Webhook] Holdings synced for ${connection.name}`);
+                        } catch (syncErr) {
+                            console.error(`[Plaid Webhook] Error syncing holdings:`, syncErr.message);
+                        }
+                    }
+                    break;
+
+                case 'INVESTMENTS_TRANSACTIONS':
+                    if (webhook_code === 'DEFAULT_UPDATE') {
+                        console.log(`[Plaid Webhook] New transactions for ${connection.name}`);
+                    }
+                    break;
+
+                case 'ITEM':
+                    if (webhook_code === 'ERROR') {
+                        console.error(`[Plaid Webhook] Item error for ${connection.name}:`, error);
+                        await connection.setError(error?.error_message || 'Connection error');
+                    } else if (webhook_code === 'PENDING_EXPIRATION') {
+                        console.log(`[Plaid Webhook] Connection expiring soon for ${connection.name}`);
+                        await connection.setError('Connection will expire soon - please re-authenticate');
+                    } else if (webhook_code === 'USER_PERMISSION_REVOKED') {
+                        console.log(`[Plaid Webhook] User revoked access for ${connection.name}`);
+                        connection.status = 'disconnected';
+                        connection.lastError = 'Access was revoked';
+                        await connection.save();
+                    }
+                    break;
+
+                default:
+                    console.log(`[Plaid Webhook] Unhandled webhook type: ${webhook_type}`);
+            }
+
+            res.json({ received: true });
+
+        } catch (handlerError) {
+            console.error('[Plaid Webhook] Error processing webhook:', handlerError);
+            // Still return 200 to prevent Plaid from retrying
+            res.json({ received: true, error: handlerError.message });
+        }
+    }
+);
+
 // --- Database Connection Setup ---
 const connectDB = async () => {
     try {

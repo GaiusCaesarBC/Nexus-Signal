@@ -757,36 +757,46 @@ router.get('/dex/losers', async (req, res) => {
 
 // Legacy route - redirect to /dex
 router.get('/pancakeswap', async (req, res) => {
-    const { q } = req.query;
-    if (!q) return res.json({ results: [], query: '', source: 'geckoterminal' });
+    try {
+        const { q } = req.query;
+        if (!q) return res.json({ results: [], query: '', source: 'geckoterminal' });
 
-    const results = await searchGeckoTerminal(q.trim(), 'bsc');
-    res.json({
-        results,
-        query: q.trim(),
-        source: 'geckoterminal',
-        count: results.length,
-        timestamp: Date.now()
-    });
+        const results = await searchGeckoTerminal(q.trim(), 'bsc');
+        res.json({
+            results,
+            query: q.trim(),
+            source: 'geckoterminal',
+            count: results.length,
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        console.error('[Search] PancakeSwap search error:', error.message);
+        res.status(500).json({ error: 'Failed to search PancakeSwap', results: [] });
+    }
 });
 
 // Legacy route - redirect to /dex/trending
 router.get('/pancakeswap/top', async (req, res) => {
-    const tokens = await geckoTerminalService.getTrendingPools('bsc', 50);
-    res.json({
-        tokens: tokens.map(t => ({
-            symbol: t.symbol,
-            name: t.name,
-            type: 'crypto',
+    try {
+        const tokens = await geckoTerminalService.getTrendingPools('bsc', 50);
+        res.json({
+            tokens: tokens.map(t => ({
+                symbol: t.symbol,
+                name: t.name,
+                type: 'crypto',
+                source: 'geckoterminal',
+                tokenAddress: t.contractAddress,
+                price: t.price,
+                tvl: t.tvl
+            })),
+            count: tokens.length,
             source: 'geckoterminal',
-            tokenAddress: t.contractAddress,
-            price: t.price,
-            tvl: t.tvl
-        })),
-        count: tokens.length,
-        source: 'geckoterminal',
-        timestamp: Date.now()
-    });
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        console.error('[Search] PancakeSwap top error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch top tokens', tokens: [] });
+    }
 });
 
 // Preload coin list on startup
