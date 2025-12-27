@@ -68,6 +68,77 @@ function getOutputSize(range) {
     return 'full';
 }
 
+// Map range to Yahoo Finance interval and range parameters
+function getYahooParams(range) {
+    switch (range) {
+        case '1D':
+            return { interval: '5m', range: '1d' };
+        case '5D':
+            return { interval: '15m', range: '5d' };
+        case '1M':
+            return { interval: '1d', range: '1mo' };
+        case '3M':
+            return { interval: '1d', range: '3mo' };
+        case '6M':
+            return { interval: '1d', range: '6mo' };
+        case '1Y':
+            return { interval: '1d', range: '1y' };
+        case '5Y':
+            return { interval: '1wk', range: '5y' };
+        case 'MAX':
+            return { interval: '1wk', range: 'max' };
+        default:
+            return { interval: '1d', range: '6mo' };
+    }
+}
+
+// Fetch historical data from Yahoo Finance (primary source - no strict rate limits)
+async function fetchYahooHistoricalData(symbol, range) {
+    const params = getYahooParams(range);
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${params.interval}&range=${params.range}`;
+
+    console.log(`[Yahoo Finance] Fetching historical data for ${symbol}, range: ${range}`);
+
+    const response = await axios.get(yahooUrl, { timeout: 15000 });
+    const result = response.data?.chart?.result?.[0];
+
+    if (!result || !result.timestamp || result.timestamp.length === 0) {
+        throw new Error(`No historical data from Yahoo Finance for ${symbol}`);
+    }
+
+    const timestamps = result.timestamp;
+    const quotes = result.indicators?.quote?.[0];
+
+    if (!quotes) {
+        throw new Error(`No quote data from Yahoo Finance for ${symbol}`);
+    }
+
+    const historicalData = timestamps.map((ts, i) => {
+        const date = new Date(ts * 1000);
+        const dateStr = date.toISOString().split('T')[0];
+
+        return {
+            date: dateStr,
+            time: ts * 1000,
+            open: quotes.open?.[i] || null,
+            high: quotes.high?.[i] || null,
+            low: quotes.low?.[i] || null,
+            close: quotes.close?.[i] || null,
+            volume: quotes.volume?.[i] || 0,
+        };
+    }).filter(d =>
+        d.open !== null &&
+        d.high !== null &&
+        d.low !== null &&
+        d.close !== null &&
+        !isNaN(d.open) &&
+        !isNaN(d.close)
+    ).sort((a, b) => a.time - b.time);
+
+    console.log(`[Yahoo Finance] Got ${historicalData.length} data points for ${symbol}`);
+    return historicalData;
+}
+
 async function fetchAlphaVantageData(symbol, range) {
     const func = getAlphaVantageFunction(range);
     const interval = getAlphaVantageInterval(range);
@@ -153,6 +224,19 @@ async function fetchAlphaVantageData(symbol, range) {
     }
 
     return historicalData.filter(d => d.time >= cutoffTime);
+}
+
+// Unified historical data fetcher - tries Yahoo first, falls back to Alpha Vantage
+async function fetchHistoricalData(symbol, range) {
+    // Try Yahoo Finance first (no strict rate limits)
+    try {
+        return await fetchYahooHistoricalData(symbol, range);
+    } catch (yahooError) {
+        console.log(`[Yahoo Finance] Failed for ${symbol}: ${yahooError.message}, trying Alpha Vantage...`);
+    }
+
+    // Fallback to Alpha Vantage
+    return await fetchAlphaVantageData(symbol, range);
 }
 
 // ============================================
@@ -601,11 +685,11 @@ router.get('/:symbol/historical', async (req, res) => {
 
         console.log(`Fetching historical data for ${symbol} - Range: ${range}`);
 
-        const historicalData = await fetchAlphaVantageData(symbol, range);
+        const historicalData = await fetchHistoricalData(symbol, range);
 
         if (historicalData.length === 0) {
-            return res.status(404).json({ 
-                msg: `No historical data found for ${symbol}` 
+            return res.status(404).json({
+                msg: `No historical data found for ${symbol}`
             });
         }
 
@@ -623,9 +707,9 @@ router.get('/:symbol/historical', async (req, res) => {
 
     } catch (error) {
         console.error('Error fetching historical stock data:', error.message);
-        res.status(500).json({ 
-            msg: 'Failed to fetch historical data', 
-            error: error.message 
+        res.status(500).json({
+            msg: 'Failed to fetch historical data',
+            error: error.message
         });
     }
 });
@@ -654,7 +738,7 @@ router.get('/historical/:symbol', async (req, res) => {
 
         console.log(`Fetching historical data for ${symbol} - Range: ${range}`);
 
-        const historicalData = await fetchAlphaVantageData(symbol, range);
+        const historicalData = await fetchHistoricalData(symbol, range);
 
         if (historicalData.length === 0) {
             return res.status(404).json({ 
@@ -710,20 +794,20 @@ router.get('/:symbol/prediction', async (req, res) => {
 
         console.log(`Getting prediction for ${symbol} - Range: ${range}`);
 
-        const historicalData = await fetchAlphaVantageData(symbol, range);
+        const historicalData = await fetchHistoricalData(symbol, range);
 
         if (historicalData.length === 0) {
-            return res.status(404).json({ 
-                msg: `No data available for ${symbol}` 
+            return res.status(404).json({
+                msg: `No data available for ${symbol}`
             });
         }
 
         const lastClosePrice = historicalData[historicalData.length - 1].close;
-        
+
         console.log(`[Sentiment] Analyzing news for ${symbol}...`);
         const sentimentData = await getSentimentSignal(symbol);
         console.log(`[Sentiment] Result: ${sentimentData.label} (${sentimentData.signal.toFixed(2)})`);
-        
+
         const prediction = calculateStockPrediction(historicalData, lastClosePrice, sentimentData);
 
         const responseData = {
@@ -748,9 +832,9 @@ router.get('/:symbol/prediction', async (req, res) => {
 
     } catch (error) {
         console.error('Error generating prediction:', error.message);
-        res.status(500).json({ 
-            msg: 'Failed to generate prediction', 
-            error: error.message 
+        res.status(500).json({
+            msg: 'Failed to generate prediction',
+            error: error.message
         });
     }
 });
@@ -779,7 +863,7 @@ router.get('/prediction/:symbol', async (req, res) => {
 
         console.log(`Getting prediction for ${symbol} - Range: ${range}`);
 
-        const historicalData = await fetchAlphaVantageData(symbol, range);
+        const historicalData = await fetchHistoricalData(symbol, range);
 
         if (historicalData.length === 0) {
             return res.status(404).json({ 
