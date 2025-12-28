@@ -211,6 +211,31 @@ const fetchCoinGeckoOHLC = async (symbol, interval) => {
     return synthesizeOHLC(response.data.prices, response.data.total_volumes, candleMinutes);
 };
 
+// Map interval to GeckoTerminal OHLCV parameters (shared helper)
+const getGeckoTerminalParamsForSymbol = (interval) => {
+    // GeckoTerminal supports: minute (1,5,15), hour (1,4), day (1)
+    switch(interval) {
+        case '1m':
+            return { timeframe: 'minute', aggregate: 1 };
+        case '5m':
+            return { timeframe: 'minute', aggregate: 5 };
+        case '15m':
+            return { timeframe: 'minute', aggregate: 15 };
+        case '30m':
+            return { timeframe: 'minute', aggregate: 15 }; // No 30m, use 15m
+        case '1h':
+            return { timeframe: 'hour', aggregate: 1 };
+        case '4h':
+            return { timeframe: 'hour', aggregate: 4 };
+        case '1D':
+            return { timeframe: 'day', aggregate: 1 };
+        case '1W':
+            return { timeframe: 'day', aggregate: 1 }; // Use daily candles
+        default:
+            return { timeframe: 'day', aggregate: 1 };
+    }
+};
+
 // Fetch from Gecko Terminal (for DEX tokens)
 const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
     let searchUrl;
@@ -240,28 +265,11 @@ const fetchGeckoTerminalOHLC = async (symbol, interval, network = null) => {
 
     console.log(`[Chart Service] 🦎 Found pool: ${poolAddress} on ${poolNetwork}`);
 
-    let timeframe;
-    switch(interval) {
-        case '1m':
-        case '5m':
-        case '15m':
-            timeframe = 'minute';
-            break;
-        case '30m':
-        case '1h':
-        case '4h':
-            timeframe = 'hour';
-            break;
-        case '1D':
-        case '1W':
-            timeframe = 'day';
-            break;
-        default:
-            timeframe = 'day';
-    }
+    // Use the same timeframe mapping for consistency
+    const gtParams = getGeckoTerminalParamsForSymbol(interval);
 
-    // Fetch OHLCV data
-    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
+    // Fetch OHLCV data with proper aggregate parameter
+    const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${poolNetwork}/pools/${poolAddress}/ohlcv/${gtParams.timeframe}?aggregate=${gtParams.aggregate}&limit=1000`;
     console.log(`[Chart Service] 🦎 Gecko Terminal OHLCV: ${ohlcvUrl}`);
 
     const ohlcvResponse = await axios.get(ohlcvUrl, {
@@ -296,7 +304,7 @@ const fetchTokenByContract = async (contractInfo, interval) => {
     const evmNetworks = ['eth', 'bsc', 'base', 'arbitrum', 'polygon_pos', 'avalanche', 'optimism'];
     const networksToSearch = type === 'solana' ? ['solana'] : evmNetworks;
 
-    console.log(`[Chart Service] 🔍 Looking up contract ${address}`);
+    console.log(`[Chart Service] 🔍 Looking up contract ${address}, interval: ${interval}`);
 
     for (const network of networksToSearch) {
         try {
@@ -310,11 +318,11 @@ const fetchTokenByContract = async (contractInfo, interval) => {
                 const pool = poolsResponse.data.data[0];
                 const poolAddress = pool.attributes?.address;
 
-                let timeframe = 'day';
-                if (['1m', '5m', '15m'].includes(interval)) timeframe = 'minute';
-                else if (['30m', '1h', '4h'].includes(interval)) timeframe = 'hour';
+                // Use shared helper for consistent timeframe mapping
+                const gtParams = getGeckoTerminalParamsForSymbol(interval);
+                const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress}/ohlcv/${gtParams.timeframe}?aggregate=${gtParams.aggregate}&limit=1000`;
 
-                const ohlcvUrl = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress}/ohlcv/${timeframe}?limit=1000`;
+                console.log(`[Chart Service] 🦎 GeckoTerminal OHLCV: ${ohlcvUrl}`);
                 const ohlcvResponse = await axios.get(ohlcvUrl, {
                     headers: { 'Accept': 'application/json' },
                     timeout: 10000
