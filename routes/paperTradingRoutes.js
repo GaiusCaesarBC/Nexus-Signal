@@ -1682,10 +1682,11 @@ router.get('/refill-tiers', auth, async (req, res) => {
         const account = await PaperTradingAccount.findOne({ user: req.user.id });
         const currentBalance = account ? safeNumber(account.cashBalance, 0) : 0;
         const roomToFill = Math.max(0, MAX_BALANCE - currentBalance);
-        
-        const Gamification = require('../models/Gamification');
-        const gamification = await Gamification.findOne({ user: req.user.id });
-        const nexusCoins = gamification ? safeNumber(gamification.nexusCoins, 0) : 0;
+
+        // ✅ FIX: Use User.gamification.nexusCoins, not the separate Gamification model
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id);
+        const nexusCoins = user?.gamification?.nexusCoins ?? 0;
         
         const tiersWithInfo = REFILL_TIERS.map((tier, index) => ({
             ...tier,
@@ -1717,53 +1718,70 @@ router.get('/refill-tiers', auth, async (req, res) => {
 router.post('/refill', auth, async (req, res) => {
     try {
         const { tier, tierIndex } = req.body;
-        
+
         let selectedTier;
         const tierValue = tierIndex !== undefined ? tierIndex : tier;
-        
+
         if (typeof tierValue === 'number' && tierValue >= 0 && tierValue < REFILL_TIERS.length) {
             selectedTier = REFILL_TIERS[tierValue];
         } else {
             selectedTier = REFILL_TIERS.find(t => t.coins === tierValue);
         }
-        
+
         if (!selectedTier) {
             return res.status(400).json({ error: 'Invalid refill tier' });
         }
-        
-        const Gamification = require('../models/Gamification');
-        const gamification = await Gamification.findOne({ user: req.user.id });
-        
-        if (!gamification) {
-            return res.status(400).json({ error: 'Gamification data not found' });
+
+        // ✅ FIX: Use User.gamification.nexusCoins, not the separate Gamification model
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(400).json({ error: 'User not found' });
         }
-        
-        const currentCoins = safeNumber(gamification.nexusCoins, 0);
-        
+
+        // Initialize gamification if needed
+        if (!user.gamification) {
+            user.gamification = {
+                xp: 0,
+                level: 1,
+                title: 'Rookie Trader',
+                nextLevelXp: 100,
+                totalXpEarned: 0,
+                nexusCoins: 1000,
+                totalCoinsEarned: 1000,
+                achievements: [],
+                badges: []
+            };
+        }
+
+        const currentCoins = safeNumber(user.gamification.nexusCoins, 0);
+
         if (currentCoins < selectedTier.coins) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: `Insufficient Nexus Coins. Need ${selectedTier.coins}, have ${currentCoins}.`
             });
         }
-        
+
         let account = await PaperTradingAccount.findOne({ user: req.user.id });
         if (!account) {
             account = new PaperTradingAccount({ user: req.user.id, cashBalance: 0 });
         }
-        
+
         const currentBalance = safeNumber(account.cashBalance, 0);
-        
+
         if (currentBalance >= MAX_BALANCE) {
             return res.status(400).json({ error: `Balance already at maximum $${MAX_BALANCE.toLocaleString()}` });
         }
-        
+
         const roomToFill = MAX_BALANCE - currentBalance;
         const isFullRefill = selectedTier.coins === 1000;
-        
+
         let amountToAdd = isFullRefill ? roomToFill : Math.min(selectedTier.amount, roomToFill);
-        
-        gamification.nexusCoins = currentCoins - selectedTier.coins;
-        await gamification.save();
+
+        // Deduct coins from User.gamification
+        user.gamification.nexusCoins = currentCoins - selectedTier.coins;
+        await user.save();
         
         account.cashBalance = currentBalance + amountToAdd;
         account.refillCount = (account.refillCount || 0) + 1;
@@ -1774,16 +1792,23 @@ router.post('/refill', auth, async (req, res) => {
         calculatePortfolioStats(account);
         await account.save();
         
-        console.log(`[Paper Trading] Refill: +$${amountToAdd} | New Balance: $${account.cashBalance}`);
-        
-        res.json({ 
-            success: true, 
+        console.log(`[Paper Trading] Refill: +$${amountToAdd} | New Balance: $${account.cashBalance} | Coins left: ${user.gamification.nexusCoins}`);
+
+        res.json({
+            success: true,
             message: `Added $${amountToAdd.toLocaleString()} to your account`,
             account,
             refillDetails: {
                 coinsUsed: selectedTier.coins,
                 amountAdded: amountToAdd,
                 newBalance: account.cashBalance
+            },
+            // Include gamification data for client UI update
+            gamification: {
+                nexusCoins: user.gamification.nexusCoins,
+                level: user.gamification.level,
+                xp: user.gamification.xp,
+                title: user.gamification.title
             }
         });
     } catch (error) {
