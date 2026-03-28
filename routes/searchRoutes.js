@@ -321,17 +321,17 @@ router.get('/', async (req, res) => {
                 } else if (queryNetwork) {
                     networksToSearch = [queryNetwork.toLowerCase()];
                 } else {
-                    // Search all EVM networks (including newer L2s) + Solana
-                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax', 'abstract', 'optimism', 'linea', 'zksync', 'scroll', 'blast', 'mantle', 'manta-pacific', 'monad', 'solana'];
+                    // Search top EVM networks sequentially (avoids GeckoTerminal 429)
+                    networksToSearch = ['eth', 'bsc', 'base', 'arbitrum', 'polygon_pos', 'solana', 'avax', 'optimism'];
                 }
 
-                // Search for token by contract address across networks
-                const searchPromises = networksToSearch.map(async (network) => {
+                // Search networks sequentially — stop on first match
+                const validResults = [];
+                for (const network of networksToSearch) {
                     try {
-                        // First try to get token info directly
                         const tokenInfo = await geckoTerminalService.getTokenPrice(network, query.toLowerCase());
                         if (tokenInfo && tokenInfo.price > 0) {
-                            return {
+                            validResults.push({
                                 symbol: tokenInfo.symbol,
                                 name: tokenInfo.name || tokenInfo.symbol,
                                 type: 'crypto',
@@ -341,39 +341,14 @@ router.get('/', async (req, res) => {
                                 tokenAddress: query.toLowerCase(),
                                 price: tokenInfo.price,
                                 priceChange24h: tokenInfo.priceChange24h
-                            };
+                            });
+                            console.log(`[Search] Found token on ${network}: ${tokenInfo.symbol} $${tokenInfo.price}`);
+                            break;
                         }
-
-                        // Fallback: search using the address as query
-                        const searchResults = await geckoTerminalService.search(query, network, false);
-                        if (searchResults && searchResults.length > 0) {
-                            const match = searchResults.find(r =>
-                                r.contractAddress?.toLowerCase() === query.toLowerCase()
-                            ) || searchResults[0];
-
-                            if (match && match.price > 0) {
-                                return {
-                                    symbol: match.symbol,
-                                    name: match.name || match.symbol,
-                                    type: 'crypto',
-                                    source: 'geckoterminal',
-                                    chain: match.chain || network.toUpperCase(),
-                                    network: network,
-                                    tokenAddress: match.contractAddress || query.toLowerCase(),
-                                    poolAddress: match.poolAddress,
-                                    price: match.price,
-                                    priceChange24h: match.changePercent
-                                };
-                            }
-                        }
-                        return null;
                     } catch (err) {
-                        return null;
+                        console.log(`[Search] Contract search failed on ${network}:`, err.message);
                     }
-                });
-
-                const addressResults = await Promise.all(searchPromises);
-                const validResults = addressResults.filter(r => r !== null);
+                }
 
                 if (validResults.length > 0) {
                     console.log(`[Search] Found ${validResults.length} tokens by contract address`);
