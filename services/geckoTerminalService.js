@@ -9,6 +9,10 @@ class GeckoTerminalService {
         this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
         this.BASE_URL = 'https://api.geckoterminal.com/api/v2';
 
+        // Rate limiting: max 25 requests per 60 seconds (free tier = 30/min)
+        this.requestTimes = [];
+        this.MAX_REQUESTS_PER_MINUTE = 25;
+
         // Supported networks (allowlist for SSRF prevention)
         this.NETWORKS = {
             bsc: 'bsc',
@@ -72,6 +76,29 @@ class GeckoTerminalService {
         throw new Error('Invalid address format');
     }
 
+    // Check if we can make another request (rate limiting)
+    async waitForRateLimit() {
+        const now = Date.now();
+        // Remove requests older than 60 seconds
+        this.requestTimes = this.requestTimes.filter(t => now - t < 60000);
+
+        if (this.requestTimes.length >= this.MAX_REQUESTS_PER_MINUTE) {
+            // Wait until the oldest request expires
+            const waitTime = 60000 - (now - this.requestTimes[0]) + 100;
+            console.log(`[GeckoTerminal] Rate limit reached, waiting ${Math.round(waitTime / 1000)}s`);
+            await new Promise(r => setTimeout(r, waitTime));
+            this.requestTimes = this.requestTimes.filter(t => Date.now() - t < 60000);
+        }
+
+        this.requestTimes.push(Date.now());
+    }
+
+    // Rate-limited GET request
+    async rateLimitedGet(url, options = {}) {
+        await this.waitForRateLimit();
+        return axios.get(url, { timeout: 10000, headers: { 'Accept': 'application/json' }, ...options });
+    }
+
     getCached(key) {
         const cached = this.cache.get(key);
         if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
@@ -103,7 +130,7 @@ class GeckoTerminalService {
                 ? `${this.BASE_URL}/search/pools?query=${encodeURIComponent(query)}&network=${network}`
                 : `${this.BASE_URL}/search/pools?query=${encodeURIComponent(query)}`;
 
-            const response = await axios.get(url, {
+            const response = await this.rateLimitedGet(url, {
                 timeout: 10000,
                 headers: { 'Accept': 'application/json' }
             });
@@ -137,7 +164,7 @@ class GeckoTerminalService {
         if (cached) return cached;
 
         try {
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${validNetwork}/trending_pools`,
                 {
                     timeout: 15000,
@@ -171,7 +198,7 @@ class GeckoTerminalService {
         if (cached) return cached;
 
         try {
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${network}/pools?page=1&sort=${sortBy}`,
                 {
                     timeout: 15000,
@@ -205,7 +232,7 @@ class GeckoTerminalService {
         if (cached) return cached;
 
         try {
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${network}/new_pools`,
                 {
                     timeout: 15000,
@@ -245,7 +272,7 @@ class GeckoTerminalService {
         if (cached) return cached;
 
         try {
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${validNetwork}/tokens/${validAddress}`,
                 {
                     timeout: 10000,
@@ -293,7 +320,7 @@ class GeckoTerminalService {
         if (cached) return cached;
 
         try {
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${validNetwork}/pools/${validAddress}`,
                 {
                     timeout: 10000,
@@ -336,7 +363,7 @@ class GeckoTerminalService {
 
         try {
             // GeckoTerminal timeframes: minute, hour, day
-            const response = await axios.get(
+            const response = await this.rateLimitedGet(
                 `${this.BASE_URL}/networks/${validNetwork}/pools/${validAddress}/ohlcv/${validTimeframe}?aggregate=${validAggregate}&limit=${validLimit}`,
                 {
                     timeout: 15000,
