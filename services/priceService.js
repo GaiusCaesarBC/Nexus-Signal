@@ -596,8 +596,10 @@ async function getBatchPrices(symbols) {
             console.log(`[PriceService] Batch CoinGecko failed:`, error.message);
         }
 
-        // Fallback: CryptoCompare for any crypto symbols still missing
-        const missingCrypto = cryptoSymbols.filter(s => !results.has(s));
+        // Fallback chain for any crypto still missing
+        let missingCrypto = cryptoSymbols.filter(s => !results.has(s));
+
+        // Fallback 1: CryptoCompare batch
         if (missingCrypto.length > 0) {
             try {
                 const fsyms = missingCrypto.join(',');
@@ -606,14 +608,61 @@ async function getBatchPrices(symbols) {
                     { timeout: 8000 }
                 );
                 for (const sym of missingCrypto) {
-                    if (ccRes.data[sym]?.USD) {
+                    if (ccRes.data?.[sym]?.USD) {
                         results.set(sym, ccRes.data[sym].USD);
                         setCache(`price_${sym}`, ccRes.data[sym].USD, 'cryptocompare');
                     }
                 }
-                if (missingCrypto.length > 0) console.log(`[PriceService] CryptoCompare fallback filled ${missingCrypto.filter(s=>results.has(s)).length}/${missingCrypto.length}`);
+                console.log(`[PriceService] CryptoCompare filled ${missingCrypto.filter(s=>results.has(s)).length}/${missingCrypto.length}`);
             } catch (err) {
                 console.log(`[PriceService] CryptoCompare batch failed:`, err.message);
+            }
+        }
+
+        // Fallback 2: Binance US (no geo-restrictions on .us domain)
+        missingCrypto = cryptoSymbols.filter(s => !results.has(s));
+        if (missingCrypto.length > 0) {
+            for (const sym of missingCrypto) {
+                try {
+                    const bRes = await axios.get(`https://api.binance.us/api/v3/ticker/price?symbol=${sym}USDT`, { timeout: 5000 });
+                    if (bRes.data?.price) {
+                        const price = parseFloat(bRes.data.price);
+                        results.set(sym, price);
+                        setCache(`price_${sym}`, price, 'binance-us');
+                        console.log(`[PriceService] Binance US: ${sym} = $${price}`);
+                    }
+                } catch (e) {
+                    // Try USD pair
+                    try {
+                        const bRes2 = await axios.get(`https://api.binance.us/api/v3/ticker/price?symbol=${sym}USD`, { timeout: 5000 });
+                        if (bRes2.data?.price) {
+                            const price = parseFloat(bRes2.data.price);
+                            results.set(sym, price);
+                            setCache(`price_${sym}`, price, 'binance-us');
+                            console.log(`[PriceService] Binance US: ${sym} = $${price}`);
+                        }
+                    } catch (e2) { /* next */ }
+                }
+                await new Promise(r => setTimeout(r, 150));
+            }
+        }
+
+        // Fallback 3: CoinCap (no rate limits, no key)
+        missingCrypto = cryptoSymbols.filter(s => !results.has(s));
+        if (missingCrypto.length > 0) {
+            const coinCapIds = { BTC:'bitcoin', ETH:'ethereum', SOL:'solana', XRP:'xrp', ADA:'cardano', DOGE:'dogecoin', AVAX:'avalanche', DOT:'polkadot', MATIC:'polygon', LINK:'chainlink', ATOM:'cosmos', UNI:'uniswap', LTC:'litecoin', BNB:'binance-coin' };
+            for (const sym of missingCrypto) {
+                try {
+                    const id = coinCapIds[sym] || sym.toLowerCase();
+                    const capRes = await axios.get(`https://api.coincap.io/v2/assets/${id}`, { timeout: 5000 });
+                    if (capRes.data?.data?.priceUsd) {
+                        const price = parseFloat(capRes.data.data.priceUsd);
+                        results.set(sym, price);
+                        setCache(`price_${sym}`, price, 'coincap');
+                        console.log(`[PriceService] CoinCap: ${sym} = $${price}`);
+                    }
+                } catch (e) { /* next */ }
+                await new Promise(r => setTimeout(r, 200));
             }
         }
     }
