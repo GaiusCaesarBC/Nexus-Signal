@@ -268,7 +268,11 @@ const UserSchema = new mongoose.Schema({
         stripePriceId: { type: String, default: null },
         currentPeriodStart: { type: Date, default: null },
         currentPeriodEnd: { type: Date, default: null },
-        cancelAtPeriodEnd: { type: Boolean, default: false }
+        cancelAtPeriodEnd: { type: Boolean, default: false },
+        // Free trial
+        trialUsed: { type: Boolean, default: false },
+        trialStartedAt: { type: Date, default: null },
+        trialEndsAt: { type: Date, default: null }
     },
 
     // ============ TWO-FACTOR AUTHENTICATION ============

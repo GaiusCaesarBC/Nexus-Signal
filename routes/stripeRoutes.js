@@ -5,7 +5,7 @@ const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const User = require('../models/User');
-const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
+const { PLAN_LIMITS, getEffectivePlan } = require('../middleware/subscriptionMiddleware');
 
 // Price mapping - Use a function to get fresh env vars
 const getPlanFromPriceId = (priceId) => {
@@ -120,10 +120,65 @@ router.post('/create-checkout-session', auth, async (req, res) => {
 router.get('/subscription', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('subscription');
-        res.json(user.subscription || { status: 'free' });
+        const { plan: effectivePlan, trial } = getEffectivePlan(user);
+        const sub = user.subscription || {};
+        res.json({
+            ...sub.toObject ? sub.toObject() : sub,
+            effectivePlan,
+            trial: {
+                active: trial,
+                used: sub.trialUsed || false,
+                endsAt: sub.trialEndsAt || null
+            }
+        });
     } catch (error) {
         console.error('Get subscription error:', error);
         res.status(500).json({ error: 'Failed to get subscription' });
+    }
+});
+
+// @route   POST /api/stripe/start-trial
+// @desc    Start 7-day free trial (premium access, once per user)
+// @access  Private
+router.post('/start-trial', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        if (user.subscription?.trialUsed) {
+            return res.status(400).json({ success: false, error: 'Free trial already used' });
+        }
+
+        // Don't allow trial if user already has a paid plan
+        if (user.subscription?.status && user.subscription.status !== 'free') {
+            return res.status(400).json({ success: false, error: 'You already have an active subscription' });
+        }
+
+        const now = new Date();
+        const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+        user.subscription = user.subscription || {};
+        user.subscription.trialUsed = true;
+        user.subscription.trialStartedAt = now;
+        user.subscription.trialEndsAt = trialEnd;
+        await user.save();
+
+        console.log(`[Trial] User ${user._id} (${user.username}) started 7-day premium trial, ends ${trialEnd.toISOString()}`);
+
+        res.json({
+            success: true,
+            message: 'Premium trial activated! Enjoy 7 days of full access.',
+            trial: {
+                startedAt: now,
+                endsAt: trialEnd,
+                plan: 'premium'
+            }
+        });
+    } catch (error) {
+        console.error('Start trial error:', error);
+        res.status(500).json({ success: false, error: 'Failed to start trial' });
     }
 });
 
@@ -133,61 +188,60 @@ router.get('/subscription', auth, async (req, res) => {
 router.get('/plan-limits', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        const userPlan = user?.subscription?.status || 'free';
-        const limits = PLAN_LIMITS[userPlan];
+        const { plan: effectivePlan, expired, trial } = getEffectivePlan(user);
 
-        // Check if subscription is expired
-        let isExpired = false;
-        if (userPlan !== 'free' && user.subscription?.currentPeriodEnd) {
-            isExpired = new Date() > user.subscription.currentPeriodEnd;
-            if (isExpired) {
-                user.subscription.status = 'free';
-                await user.save();
-            }
+        if (expired) {
+            user.subscription.status = 'free';
+            await user.save();
         }
+
+        const limits = PLAN_LIMITS[effectivePlan];
 
         // Get current usage
         const usage = {};
-        
+
         try {
             const Watchlist = require('../models/Watchlist');
             usage.watchlists = await Watchlist.countDocuments({ user: user._id });
         } catch (error) {
-            // Model doesn't exist yet
             usage.watchlists = 0;
         }
-        
+
         try {
             const Prediction = require('../models/Prediction');
             const startOfMonth = new Date();
             startOfMonth.setDate(1);
             startOfMonth.setHours(0, 0, 0, 0);
-            usage.predictionsThisMonth = await Prediction.countDocuments({ 
+            usage.predictionsThisMonth = await Prediction.countDocuments({
                 user: user._id,
                 createdAt: { $gte: startOfMonth }
             });
         } catch (error) {
-            // Model doesn't exist yet
             usage.predictionsThisMonth = 0;
         }
 
         res.json({
             success: true,
             data: {
-                plan: isExpired ? 'free' : userPlan,
+                plan: effectivePlan,
                 limits,
                 usage,
                 subscription: {
                     currentPeriodEnd: user.subscription?.currentPeriodEnd,
                     cancelAtPeriodEnd: user.subscription?.cancelAtPeriodEnd
+                },
+                trial: {
+                    active: trial,
+                    used: user.subscription?.trialUsed || false,
+                    endsAt: user.subscription?.trialEndsAt || null
                 }
             }
         });
     } catch (error) {
         console.error('Get plan limits error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Failed to get plan limits' 
+            error: 'Failed to get plan limits'
         });
     }
 });

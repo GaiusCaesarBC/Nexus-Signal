@@ -101,35 +101,55 @@ const PLAN_LIMITS = {
 };
 
 // Middleware to check if user has an active subscription
+/**
+ * Check if user has an active free trial
+ */
+function getEffectivePlan(user) {
+    let plan = user.subscription?.status || 'free';
+
+    // Check if paid subscription expired
+    if (plan !== 'free' && user.subscription?.currentPeriodEnd) {
+        if (new Date() > user.subscription.currentPeriodEnd) {
+            return { plan: 'free', expired: true, trial: false };
+        }
+    }
+
+    // Check active free trial (grants premium access)
+    if (plan === 'free' && user.subscription?.trialEndsAt) {
+        if (new Date() < user.subscription.trialEndsAt) {
+            return { plan: 'premium', expired: false, trial: true };
+        }
+    }
+
+    return { plan, expired: false, trial: false };
+}
+
 const requireSubscription = (minPlan = 'starter') => {
     return async (req, res, next) => {
         try {
             const user = await User.findById(req.user.id);
-            
+
             if (!user) {
-                return res.status(404).json({ 
+                return res.status(404).json({
                     success: false,
-                    error: 'User not found' 
+                    error: 'User not found'
                 });
             }
 
-            const userPlan = user.subscription?.status || 'free';
-            
-            // Check if subscription is active
-            if (userPlan !== 'free' && user.subscription?.currentPeriodEnd) {
-                if (new Date() > user.subscription.currentPeriodEnd) {
-                    // Subscription expired
-                    user.subscription.status = 'free';
-                    await user.save();
-                    
-                    return res.status(403).json({
-                        success: false,
-                        error: 'Subscription expired',
-                        requiresUpgrade: true,
-                        currentPlan: 'free',
-                        requiredPlan: minPlan
-                    });
-                }
+            const { plan: userPlan, expired, trial } = getEffectivePlan(user);
+
+            // Handle expired paid subscription
+            if (expired) {
+                user.subscription.status = 'free';
+                await user.save();
+
+                return res.status(403).json({
+                    success: false,
+                    error: 'Subscription expired',
+                    requiresUpgrade: true,
+                    currentPlan: 'free',
+                    requiredPlan: minPlan
+                });
             }
 
             // Plan hierarchy: free < starter < pro < premium < elite
@@ -150,13 +170,14 @@ const requireSubscription = (minPlan = 'starter') => {
             // Attach plan info to request
             req.userPlan = userPlan;
             req.planLimits = PLAN_LIMITS[userPlan];
-            
+            req.isTrialUser = trial;
+
             next();
         } catch (error) {
             console.error('Subscription check error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 success: false,
-                error: 'Failed to verify subscription' 
+                error: 'Failed to verify subscription'
             });
         }
     };
@@ -167,7 +188,7 @@ const requireFeature = (featureName) => {
     return async (req, res, next) => {
         try {
             const user = await User.findById(req.user.id);
-            const userPlan = user.subscription?.status || 'free';
+            const { plan: userPlan } = getEffectivePlan(user);
             const limits = PLAN_LIMITS[userPlan];
 
             if (!limits[featureName]) {
@@ -185,9 +206,9 @@ const requireFeature = (featureName) => {
             next();
         } catch (error) {
             console.error('Feature check error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 success: false,
-                error: 'Failed to verify feature access' 
+                error: 'Failed to verify feature access'
             });
         }
     };
@@ -198,9 +219,9 @@ const checkUsageLimit = (limitType, modelName = null) => {
     return async (req, res, next) => {
         try {
             const user = await User.findById(req.user.id);
-            const userPlan = user.subscription?.status || 'free';
+            const { plan: userPlan } = getEffectivePlan(user);
             const limits = PLAN_LIMITS[userPlan];
-            
+
             const limit = limits[limitType];
 
             // -1 means unlimited
@@ -303,5 +324,6 @@ module.exports = {
     checkUsageLimit,
     getPlanLimits,
     hasFeature,
+    getEffectivePlan,
     PLAN_LIMITS
 };
