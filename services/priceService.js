@@ -268,72 +268,44 @@ function setCache(key, price, source) {
  * @param {string} coinGeckoId - Optional: The exact CoinGecko ID if known
  */
 async function fetchCryptoPrice(symbol, coinGeckoId = null) {
-    // Use provided coinGeckoId if available, otherwise derive from symbol
-    const coinId = coinGeckoId || getCoinGeckoId(symbol);
+    // PRIMARY: CryptoCompare (no monthly limit issues)
+    try {
+        const ccRes = await axios.get(
+            `https://min-api.cryptocompare.com/data/price?fsym=${symbol}&tsyms=USD`,
+            { timeout: 5000 }
+        );
+        if (ccRes.data?.USD > 0) {
+            return { price: ccRes.data.USD, source: 'cryptocompare' };
+        }
+    } catch (e) { /* next */ }
 
+    // FALLBACK 1: Binance US
+    try {
+        const bRes = await axios.get(
+            `https://api.binance.us/api/v3/ticker/price?symbol=${symbol}USDT`,
+            { timeout: 5000 }
+        );
+        if (bRes.data?.price) {
+            return { price: parseFloat(bRes.data.price), source: 'binance-us' };
+        }
+    } catch (e) { /* next */ }
+
+    // FALLBACK 2: CoinGecko (only if monthly limit not exhausted)
+    const coinId = coinGeckoId || getCoinGeckoId(symbol);
     try {
         const headers = {};
-        const usingPro = Boolean(COINGECKO_API_KEY);
-
-        if (usingPro) {
-            headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
-        }
-
-        const baseUrl = usingPro
-            ? 'https://pro-api.coingecko.com/api/v3'
-            : 'https://api.coingecko.com/api/v3';
+        if (COINGECKO_API_KEY) headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
+        const baseUrl = COINGECKO_API_KEY ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3';
 
         const response = await axios.get(
             `${baseUrl}/simple/price?ids=${coinId}&vs_currencies=usd`,
             { headers, timeout: 10000 }
         );
-
-        if (response.data && response.data[coinId] && response.data[coinId].usd) {
-            return {
-                price: response.data[coinId].usd,
-                source: 'coingecko',
-                coinGeckoId: coinId
-            };
-        }
-
-        // If the provided/derived ID failed and we have a coinGeckoId, try symbol-based lookup as fallback
-        if (coinGeckoId && coinId !== getCoinGeckoId(symbol)) {
-            const fallbackId = getCoinGeckoId(symbol);
-            const fallbackResponse = await axios.get(
-                `${baseUrl}/simple/price?ids=${fallbackId}&vs_currencies=usd`,
-                { headers, timeout: 10000 }
-            );
-
-            if (fallbackResponse.data && fallbackResponse.data[fallbackId] && fallbackResponse.data[fallbackId].usd) {
-                return {
-                    price: fallbackResponse.data[fallbackId].usd,
-                    source: 'coingecko',
-                    coinGeckoId: fallbackId
-                };
-            }
+        if (response.data?.[coinId]?.usd) {
+            return { price: response.data[coinId].usd, source: 'coingecko', coinGeckoId: coinId };
         }
     } catch (error) {
-        if (error.response && error.response.status === 401 && COINGECKO_API_KEY) {
-            // Fallback to public CoinGecko endpoint if pro API key is invalid/expired
-            console.log(`[PriceService] CoinGecko Pro key unauthorized (401) for ${symbol}. Falling back to public API.`);
-            try {
-                const fallbackResponse = await axios.get(
-                    `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
-                    { timeout: 10000 }
-                );
-                if (fallbackResponse.data && fallbackResponse.data[coinId] && fallbackResponse.data[coinId].usd) {
-                    return {
-                        price: fallbackResponse.data[coinId].usd,
-                        source: 'coingecko-public',
-                        coinGeckoId: coinId
-                    };
-                }
-            } catch (fallbackError) {
-                console.log(`[PriceService] Fallback public CoinGecko failed for ${symbol}:`, fallbackError.message);
-            }
-        } else {
-            console.log(`[PriceService] CoinGecko failed for ${symbol} (${coinId}):`, error.message);
-        }
+        console.log(`[PriceService] CoinGecko failed for ${symbol}:`, error.message);
     }
 
     return { price: null, source: null };
@@ -565,59 +537,28 @@ async function getBatchPrices(symbols) {
         }
     }
     
-    // Batch fetch crypto prices from CoinGecko
+    // Batch fetch crypto prices — CryptoCompare FIRST (CoinGecko monthly limit exhausted)
     if (cryptoSymbols.length > 0) {
+        // PRIMARY: CryptoCompare batch (no monthly limit, 100K calls/month free)
         try {
-            const coinIds = cryptoSymbols.map(s => getCoinGeckoId(s)).join(',');
-
-            const headers = {};
-            if (COINGECKO_API_KEY) {
-                headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
-            }
-
-            const baseUrl = COINGECKO_API_KEY
-                ? 'https://pro-api.coingecko.com/api/v3'
-                : 'https://api.coingecko.com/api/v3';
-
-            const response = await axios.get(
-                `${baseUrl}/simple/price?ids=${coinIds}&vs_currencies=usd`,
-                { headers, timeout: 15000 }
+            const fsyms = cryptoSymbols.join(',');
+            const ccRes = await axios.get(
+                `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`,
+                { timeout: 8000 }
             );
-
-            for (const symbol of cryptoSymbols) {
-                const coinId = getCoinGeckoId(symbol);
-                if (response.data[coinId]?.usd) {
-                    const price = response.data[coinId].usd;
-                    results.set(symbol, price);
-                    setCache(`price_${symbol}`, price, 'coingecko');
+            for (const sym of cryptoSymbols) {
+                if (ccRes.data?.[sym]?.USD) {
+                    results.set(sym, ccRes.data[sym].USD);
+                    setCache(`price_${sym}`, ccRes.data[sym].USD, 'cryptocompare');
                 }
             }
-        } catch (error) {
-            console.log(`[PriceService] Batch CoinGecko failed:`, error.message);
+            console.log(`[PriceService] CryptoCompare: ${cryptoSymbols.filter(s=>results.has(s)).length}/${cryptoSymbols.length} prices`);
+        } catch (err) {
+            console.log(`[PriceService] CryptoCompare batch failed:`, err.message);
         }
 
-        // Fallback chain for any crypto still missing
+        // FALLBACK 1: Binance US for any still missing
         let missingCrypto = cryptoSymbols.filter(s => !results.has(s));
-
-        // Fallback 1: CryptoCompare batch
-        if (missingCrypto.length > 0) {
-            try {
-                const fsyms = missingCrypto.join(',');
-                const ccRes = await axios.get(
-                    `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`,
-                    { timeout: 8000 }
-                );
-                for (const sym of missingCrypto) {
-                    if (ccRes.data?.[sym]?.USD) {
-                        results.set(sym, ccRes.data[sym].USD);
-                        setCache(`price_${sym}`, ccRes.data[sym].USD, 'cryptocompare');
-                    }
-                }
-                console.log(`[PriceService] CryptoCompare filled ${missingCrypto.filter(s=>results.has(s)).length}/${missingCrypto.length}`);
-            } catch (err) {
-                console.log(`[PriceService] CryptoCompare batch failed:`, err.message);
-            }
-        }
 
         // Fallback 2: Binance US (no geo-restrictions on .us domain)
         missingCrypto = cryptoSymbols.filter(s => !results.has(s));
