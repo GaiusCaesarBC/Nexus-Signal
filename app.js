@@ -586,13 +586,16 @@ app.use(errorLogger);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
-    // Error already logged by errorLogger middleware
+    // Log error details prominently for debugging
+    console.error(`[ERROR] ${req.method} ${req.path} - ${err.message}`);
+    if (err.stack) console.error(err.stack);
+
     res.status(err.statusCode || 500).json({
         success: false,
         error: process.env.NODE_ENV === 'production'
             ? 'Server Error'
             : err.message || 'Server Error',
-        requestId: req.requestId // Include request ID for debugging
+        requestId: req.requestId
     });
 });
 
