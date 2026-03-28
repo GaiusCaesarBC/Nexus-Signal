@@ -72,8 +72,8 @@ router.get('/symbols/search', async (req, res) => {
                 } else if (queryNetwork) {
                     networksToSearch = [queryNetwork.toLowerCase()];
                 } else {
-                    // Search all EVM networks (including newer L2s) + Solana
-                    networksToSearch = ['bsc', 'eth', 'base', 'arbitrum', 'polygon_pos', 'avax', 'abstract', 'optimism', 'linea', 'zksync', 'scroll', 'blast', 'mantle', 'manta-pacific', 'monad', 'solana'];
+                    // Search top EVM networks first (most tokens live here)
+                    networksToSearch = ['eth', 'bsc', 'base', 'arbitrum', 'polygon_pos', 'solana', 'avax', 'optimism'];
                 }
 
                 // Search for token by contract address across networks
@@ -116,6 +116,7 @@ router.get('/symbols/search', async (req, res) => {
                         }
                         return null;
                     } catch (err) {
+                        console.log(`[Predictions] Contract search failed on ${network}:`, err.message);
                         return null;
                     }
                 });

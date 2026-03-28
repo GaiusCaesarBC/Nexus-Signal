@@ -13,11 +13,22 @@ class GeckoTerminalService {
         this.NETWORKS = {
             bsc: 'bsc',
             ethereum: 'eth',
+            eth: 'eth',
             solana: 'solana',
             polygon: 'polygon_pos',
+            polygon_pos: 'polygon_pos',
             arbitrum: 'arbitrum',
             base: 'base',
-            avalanche: 'avax'
+            avalanche: 'avax',
+            avax: 'avax',
+            optimism: 'optimism',
+            linea: 'linea',
+            zksync: 'zksync',
+            scroll: 'scroll',
+            blast: 'blast',
+            mantle: 'mantle',
+            'manta-pacific': 'manta-pacific',
+            abstract: 'abstract'
         };
 
         // Valid network values (for validation)
