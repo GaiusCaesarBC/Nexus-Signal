@@ -1322,27 +1322,25 @@ router.get('/recent', predictionLimiter, async (req, res) => {
         } catch (e) { /* No valid token */ }
         
         let predictions;
+        const systemQuery = { user: null, isPublic: true };
+        const fields = 'symbol direction targetPrice currentPrice confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent';
+
         if (userId) {
             // Authenticated: show user's predictions + system-generated signals
             predictions = await Prediction.find({
-                $or: [
-                    { user: userId },
-                    { user: null, isPublic: true }
-                ]
-            })
-                .sort({ createdAt: -1 })
-                .limit(parseInt(limit));
-        } else {
-            // Public: show recent public predictions (including system signals)
-            predictions = await Prediction.find({
-                $or: [
-                    { status: 'pending' },
-                    { user: null, isPublic: true }
-                ]
+                $or: [ { user: userId }, systemQuery ]
             })
                 .sort({ createdAt: -1 })
                 .limit(parseInt(limit))
-                .select('symbol direction targetPrice confidence createdAt expiresAt status')
+                .lean();
+        } else {
+            // Public: show system signals + pending user predictions
+            predictions = await Prediction.find({
+                $or: [ { status: 'pending' }, systemQuery ]
+            })
+                .sort({ createdAt: -1 })
+                .limit(parseInt(limit))
+                .select(fields)
                 .lean();
         }
         
