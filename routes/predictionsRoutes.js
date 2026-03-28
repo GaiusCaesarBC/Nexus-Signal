@@ -1298,16 +1298,26 @@ router.get('/recent', predictionLimiter, async (req, res) => {
         
         let predictions;
         if (userId) {
-            // Authenticated: show user's predictions
-            predictions = await Prediction.find({ user: userId })
+            // Authenticated: show user's predictions + system-generated signals
+            predictions = await Prediction.find({
+                $or: [
+                    { user: userId },
+                    { user: null, isPublic: true }
+                ]
+            })
                 .sort({ createdAt: -1 })
                 .limit(parseInt(limit));
         } else {
-            // Public: show recent public predictions
-            predictions = await Prediction.find({ status: 'pending' })
+            // Public: show recent public predictions (including system signals)
+            predictions = await Prediction.find({
+                $or: [
+                    { status: 'pending' },
+                    { user: null, isPublic: true }
+                ]
+            })
                 .sort({ createdAt: -1 })
                 .limit(parseInt(limit))
-                .select('symbol direction targetPrice confidence createdAt expiresAt')
+                .select('symbol direction targetPrice confidence createdAt expiresAt status')
                 .lean();
         }
         

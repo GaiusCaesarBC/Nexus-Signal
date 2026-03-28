@@ -312,6 +312,10 @@ const connectDB = async () => {
         const { startPredictionChecker } = require('./services/predictionChecker');
         startPredictionChecker();
 
+        // ✅ START AUTOMATED SIGNAL GENERATOR (hourly scans of top stocks + crypto)
+        const { startSignalGenerator } = require('./services/signalGenerator');
+        startSignalGenerator();
+
         // TELEGRAM BOT - Disabled (invalid token causes polling spam)
         // To re-enable: set a valid TELEGRAM_BOT_TOKEN env var and uncomment below
         // const { initializeBot } = require('./services/telegramService');
