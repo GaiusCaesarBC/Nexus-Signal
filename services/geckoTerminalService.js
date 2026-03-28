@@ -6,7 +6,7 @@ const axios = require('axios');
 class GeckoTerminalService {
     constructor() {
         this.cache = new Map();
-        this.CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+        this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
         this.BASE_URL = 'https://api.geckoterminal.com/api/v2';
 
         // Supported networks (allowlist for SSRF prevention)
