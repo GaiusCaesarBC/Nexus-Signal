@@ -76,13 +76,14 @@ router.get('/symbols/search', async (req, res) => {
                     networksToSearch = ['eth', 'bsc', 'base', 'arbitrum', 'polygon_pos', 'solana', 'avax', 'optimism'];
                 }
 
-                // Search for token by contract address across networks
-                const searchPromises = networksToSearch.map(async (network) => {
+                // Search networks sequentially (avoids GeckoTerminal 429 rate limits)
+                // Stop as soon as we find a match
+                const validResults = [];
+                for (const network of networksToSearch) {
                     try {
-                        // First try to get token info directly
                         const tokenInfo = await geckoTerminalService.getTokenPrice(network, query.toLowerCase());
                         if (tokenInfo && tokenInfo.price > 0) {
-                            return {
+                            validResults.push({
                                 symbol: `${tokenInfo.symbol}:${network}`,
                                 name: tokenInfo.name || tokenInfo.symbol,
                                 type: 'dex',
@@ -91,38 +92,14 @@ router.get('/symbols/search', async (req, res) => {
                                 contractAddress: query.toLowerCase(),
                                 network: network,
                                 priceChange24h: tokenInfo.priceChange24h
-                            };
+                            });
+                            console.log(`[Predictions] ✅ Found token on ${network}: ${tokenInfo.symbol} $${tokenInfo.price}`);
+                            break; // Found it, stop searching
                         }
-
-                        // Fallback: search using the address as query
-                        const searchResults = await geckoTerminalService.search(query, network, false);
-                        if (searchResults && searchResults.length > 0) {
-                            const match = searchResults.find(r =>
-                                r.contractAddress?.toLowerCase() === query.toLowerCase()
-                            ) || searchResults[0];
-
-                            if (match && match.price > 0) {
-                                return {
-                                    symbol: `${match.symbol}:${network}`,
-                                    name: match.name || match.symbol,
-                                    type: 'dex',
-                                    chain: match.chain || network.toUpperCase(),
-                                    price: match.price,
-                                    contractAddress: match.contractAddress || query.toLowerCase(),
-                                    poolAddress: match.poolAddress,
-                                    network: network
-                                };
-                            }
-                        }
-                        return null;
                     } catch (err) {
                         console.log(`[Predictions] Contract search failed on ${network}:`, err.message);
-                        return null;
                     }
-                });
-
-                const addressResults = await Promise.all(searchPromises);
-                const validResults = addressResults.filter(r => r !== null);
+                }
 
                 if (validResults.length > 0) {
                     results.push(...validResults);
@@ -706,6 +683,11 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
 
         const originalSymbol = validationResult.sanitized;
 
+        // If validateSymbol detected a contract address, auto-set as DEX
+        if (validationResult.isContract && !assetType) {
+            assetType = 'dex';
+        }
+
         // Detect DEX tokens (format: SYMBOL:network like DYOR:bsc)
         let dexInfo = null;
         if (originalSymbol.includes(':')) {
@@ -721,16 +703,27 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
             dexInfo = { network: network || 'bsc', poolAddress, contractAddress };
             console.log(`[Predictions] DEX token (explicit): ${symbol} on ${dexInfo.network}`);
         } else {
-            // Normalize symbol for stocks/crypto (handles BTC-USD, BTCUSD -> BTC for crypto)
-            symbol = priceService.normalizeSymbol(originalSymbol);
-            if (originalSymbol !== symbol) {
-                console.log(`[Predictions] Symbol normalized: ${originalSymbol} -> ${symbol}`);
-            }
+            // Detect contract addresses (EVM: 0x..., Solana: base58)
+            const isContractAddress = /^0x[a-fA-F0-9]{40}$/i.test(originalSymbol) ||
+                (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(originalSymbol) && !originalSymbol.startsWith('0x'));
 
-            // Auto-detect asset type
-            if (!assetType) {
-                assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
-                console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
+            if (isContractAddress) {
+                assetType = 'dex';
+                symbol = originalSymbol.toLowerCase();
+                dexInfo = { network: network || 'eth', poolAddress, contractAddress: symbol };
+                console.log(`[Predictions] Contract address detected in predict: ${symbol.slice(0, 10)}... on ${dexInfo.network}`);
+            } else {
+                // Normalize symbol for stocks/crypto (handles BTC-USD, BTCUSD -> BTC for crypto)
+                symbol = priceService.normalizeSymbol(originalSymbol);
+                if (originalSymbol !== symbol) {
+                    console.log(`[Predictions] Symbol normalized: ${originalSymbol} -> ${symbol}`);
+                }
+
+                // Auto-detect asset type
+                if (!assetType) {
+                    assetType = priceService.isCryptoSymbol(symbol) ? 'crypto' : 'stock';
+                    console.log(`[Predictions] Auto-detected ${symbol} as ${assetType}`);
+                }
             }
         }
 
