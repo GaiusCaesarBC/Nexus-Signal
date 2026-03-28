@@ -312,14 +312,12 @@ const connectDB = async () => {
         const { startPredictionChecker } = require('./services/predictionChecker');
         startPredictionChecker();
 
-        // ✅ INITIALIZE TELEGRAM BOT
-        const { initializeBot } = require('./services/telegramService');
-        initializeBot();
-
-        // ✅ INITIALIZE TELEGRAM NOTIFICATION SCHEDULERS
-        const { initializeSchedulers } = require('./services/telegramScheduler');
-        // Delay scheduler start to ensure bot is fully initialized
-        setTimeout(() => initializeSchedulers(), 5000);
+        // TELEGRAM BOT - Disabled (invalid token causes polling spam)
+        // To re-enable: set a valid TELEGRAM_BOT_TOKEN env var and uncomment below
+        // const { initializeBot } = require('./services/telegramService');
+        // initializeBot();
+        // const { initializeSchedulers } = require('./services/telegramScheduler');
+        // setTimeout(() => initializeSchedulers(), 5000);
 
         // ✅ INITIALIZE DISCORD BOT
         const { initializeBot: initializeDiscordBot } = require('./services/discordService');
