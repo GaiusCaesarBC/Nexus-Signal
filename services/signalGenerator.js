@@ -34,18 +34,34 @@ let stats = { totalGenerated: 0, totalSkipped: 0, lastCycleGenerated: 0, errors:
  * Fetch current price for a symbol
  */
 async function getPrice(symbol, assetType) {
-    try {
-        if (assetType === 'crypto') {
-            // Try Binance first (fast, no key needed)
+    if (assetType === 'crypto') {
+        // Try CoinGecko first
+        try {
+            const coinIds = { BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', XRP: 'ripple', ADA: 'cardano', DOGE: 'dogecoin', AVAX: 'avalanche-2', DOT: 'polkadot', MATIC: 'matic-network', LINK: 'chainlink', ATOM: 'cosmos', UNI: 'uniswap', LTC: 'litecoin', NEAR: 'near', APT: 'aptos' };
+            const coinId = coinIds[symbol] || symbol.toLowerCase();
+            const res = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, { timeout: 5000 });
+            if (res.data[coinId]?.usd) return res.data[coinId].usd;
+        } catch (e) { /* try next */ }
+
+        // Try CryptoCompare
+        try {
+            const res = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${symbol}&tsyms=USD`, { timeout: 5000 });
+            if (res.data?.USD) return res.data.USD;
+        } catch (e) { /* try next */ }
+
+        // Try Binance last (may be geo-blocked)
+        try {
             const res = await axios.get(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`, { timeout: 5000 });
-            return parseFloat(res.data.price);
-        } else {
-            // Yahoo Finance for stocks
+            if (res.data?.price) return parseFloat(res.data.price);
+        } catch (e) { /* all failed */ }
+
+        return null;
+    } else {
+        // Yahoo Finance for stocks
+        try {
             const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&range=1d`, { timeout: 8000 });
             return res.data?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
-        }
-    } catch (err) {
-        return null;
+        } catch (e) { return null; }
     }
 }
 

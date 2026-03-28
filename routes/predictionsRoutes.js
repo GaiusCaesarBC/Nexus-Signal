@@ -404,7 +404,7 @@ async function getFreshPrice(symbol, assetType, dexInfo = null) {
                     `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`,
                     { timeout: 5000 }
                 );
-                
+
                 if (response.data?.price) {
                     const price = parseFloat(response.data.price);
                     console.log(`[Price] ✅ Fresh ${upperSymbol} from Binance: $${price}`);
@@ -412,6 +412,37 @@ async function getFreshPrice(symbol, assetType, dexInfo = null) {
                 }
             } catch (binanceError) {
                 console.log(`[Price] Binance failed for ${upperSymbol}:`, binanceError.message);
+            }
+
+            // Fallback to CoinCap (no key, no geo-restrictions)
+            try {
+                const coinCapId = coinId; // CoinCap uses similar IDs to CoinGecko
+                const response = await axios.get(
+                    `https://api.coincap.io/v2/assets/${coinCapId}`,
+                    { timeout: 5000 }
+                );
+                if (response.data?.data?.priceUsd) {
+                    const price = parseFloat(response.data.data.priceUsd);
+                    console.log(`[Price] ✅ Fresh ${upperSymbol} from CoinCap: $${price}`);
+                    return { price, source: 'coincap' };
+                }
+            } catch (ccError) {
+                console.log(`[Price] CoinCap failed for ${upperSymbol}:`, ccError.message);
+            }
+
+            // Fallback to CryptoCompare (no key needed for basic)
+            try {
+                const response = await axios.get(
+                    `https://min-api.cryptocompare.com/data/price?fsym=${upperSymbol}&tsyms=USD`,
+                    { timeout: 5000 }
+                );
+                if (response.data?.USD) {
+                    const price = response.data.USD;
+                    console.log(`[Price] ✅ Fresh ${upperSymbol} from CryptoCompare: $${price}`);
+                    return { price, source: 'cryptocompare' };
+                }
+            } catch (ccmpError) {
+                console.log(`[Price] CryptoCompare failed for ${upperSymbol}:`, ccmpError.message);
             }
         }
         
