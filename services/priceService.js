@@ -273,11 +273,13 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
 
     try {
         const headers = {};
-        if (COINGECKO_API_KEY) {
+        const usingPro = Boolean(COINGECKO_API_KEY);
+
+        if (usingPro) {
             headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
         }
 
-        const baseUrl = COINGECKO_API_KEY
+        const baseUrl = usingPro
             ? 'https://pro-api.coingecko.com/api/v3'
             : 'https://api.coingecko.com/api/v3';
 
@@ -311,7 +313,27 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
             }
         }
     } catch (error) {
-        console.log(`[PriceService] CoinGecko failed for ${symbol} (${coinId}):`, error.message);
+        if (error.response && error.response.status === 401 && COINGECKO_API_KEY) {
+            // Fallback to public CoinGecko endpoint if pro API key is invalid/expired
+            console.log(`[PriceService] CoinGecko Pro key unauthorized (401) for ${symbol}. Falling back to public API.`);
+            try {
+                const fallbackResponse = await axios.get(
+                    `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
+                    { timeout: 10000 }
+                );
+                if (fallbackResponse.data && fallbackResponse.data[coinId] && fallbackResponse.data[coinId].usd) {
+                    return {
+                        price: fallbackResponse.data[coinId].usd,
+                        source: 'coingecko-public',
+                        coinGeckoId: coinId
+                    };
+                }
+            } catch (fallbackError) {
+                console.log(`[PriceService] Fallback public CoinGecko failed for ${symbol}:`, fallbackError.message);
+            }
+        } else {
+            console.log(`[PriceService] CoinGecko failed for ${symbol} (${coinId}):`, error.message);
+        }
     }
 
     return { price: null, source: null };

@@ -224,6 +224,137 @@ router.post('/plaid/link-token', async (req, res) => {
 });
 
 /**
+ * POST /api/brokerage/test-schwab
+ * Test Charles Schwab connection without saving to database
+ * Use this to debug connection issues
+ * 
+ * Body: { publicToken }
+ * 
+ * STEP-BY-STEP:
+ * 1. Hit POST /api/brokerage/plaid/link-token
+ * 2. User completes Plaid Link flow and selects Charles Schwab
+ * 3. After selecting Schwab, Plaid returns publicToken
+ * 4. Send publicToken here to test the connection
+ */
+router.post('/test-schwab', async (req, res) => {
+    try {
+        const { publicToken } = req.body;
+
+        if (!publicToken) {
+            return res.status(400).json({
+                success: false,
+                error: 'publicToken is required',
+                instructions: {
+                    step_1: 'POST /api/brokerage/plaid/link-token to get link token',
+                    step_2: 'Open frontend Plaid Link component and user selects Charles Schwab',
+                    step_3: 'After selecting Schwab, Plaid returns publicToken to your app',
+                    step_4: 'Call this endpoint with that publicToken to test connection'
+                }
+            });
+        }
+
+        console.log('\n🧪 TESTING CHARLES SCHWAB CONNECTION...\n');
+
+        // Step 1: Exchange token
+        console.log('STEP 1: Exchanging Plaid public token...');
+        let accessToken, itemId;
+        try {
+            const result = await plaidService.exchangePublicToken(publicToken);
+            accessToken = result.accessToken;
+            itemId = result.itemId;
+            console.log('✅ Token exchanged successfully');
+            console.log('   Item ID:', itemId);
+        } catch (tokenErr) {
+            console.error('❌ Token exchange failed');
+            console.error('   Error:', tokenErr.message);
+            return res.status(400).json({
+                success: false,
+                step: 1,
+                stepName: 'Token Exchange',
+                error: tokenErr.message,
+                details: tokenErr.response?.data || {}
+            });
+        }
+
+        // Step 2: Get item info
+        console.log('\nSTEP 2: Getting Plaid item info (institution details)...');
+        let itemInfo;
+        try {
+            itemInfo = await plaidService.getItemInfo(accessToken);
+            console.log('✅ Item info retrieved');
+            console.log('   Institution:', itemInfo.institution?.name);
+        } catch (infoErr) {
+            console.error('❌ Failed to get item info');
+            console.error('   Error:', infoErr.message);
+            return res.status(400).json({
+                success: false,
+                step: 2,
+                stepName: 'Get Item Info',
+                error: infoErr.message,
+                details: infoErr.response?.data || {}
+            });
+        }
+
+        // Step 3: Get holdings - THIS IS WHERE IT USUALLY FAILS FOR SCHWAB
+        console.log('\nSTEP 3: Fetching investment holdings from Schwab...');
+        let holdings;
+        try {
+            holdings = await plaidService.getHoldings(accessToken);
+            console.log('✅ Holdings retrieved successfully');
+            console.log('   Accounts:', holdings.accounts?.length || 0);
+            console.log('   Holdings items:', holdings.holdings?.length || 0);
+        } catch (holdingsErr) {
+            console.error('❌ Failed to get holdings - THIS IS THE ACTUAL ERROR');
+            console.error('   Error message:', holdingsErr.message);
+            
+            if (holdingsErr.response?.data) {
+                console.error('   Plaid error details:', JSON.stringify(holdingsErr.response.data, null, 2));
+            }
+            
+            return res.status(400).json({
+                success: false,
+                step: 3,
+                stepName: 'Get Holdings',
+                error: holdingsErr.message,
+                plaidErrorDetails: holdingsErr.response?.data || {},
+                troubleshooting: [
+                    'Charles Schwab might not support "Investments" product in your Plaid plan',
+                    'You may need to contact Plaid support to enable Schwab access',
+                    'Try connecting a different brokerage to verify your Plaid setup works',
+                    'Check your Plaid Dashboard to see if Investments product is enabled'
+                ]
+            });
+        }
+
+        // Success!
+        console.log('\n✅ ALL STEPS PASSED - CHARLES SCHWAB CONNECTION WORKS!\n');
+
+        res.json({
+            success: true,
+            message: 'Charles Schwab connection test passed',
+            institution: itemInfo.institution,
+            accounts: holdings.accounts.map(acc => ({
+                id: acc.id,
+                name: acc.name,
+                type: acc.type,
+                subtype: acc.subtype,
+                balances: acc.balances,
+                totalValue: acc.totalValue
+            })),
+            totalHoldings: holdings.holdings.length
+        });
+
+    } catch (error) {
+        console.error('❌ UNEXPECTED ERROR:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Unexpected error during test',
+            message: error.message
+        });
+    }
+});
+
+/**
  * POST /api/brokerage/plaid/exchange
  * Exchange Plaid public token and create connection
  */
@@ -301,8 +432,47 @@ router.post('/plaid/exchange', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error exchanging Plaid token:', error);
-        res.status(500).json({ success: false, error: error.message });
+        console.error('❌ ERROR EXCHANGING PLAID TOKEN:');
+        console.error('   Message:', error.message);
+        console.error('   Stack:', error.stack);
+        
+        // If Plaid error, show details
+        if (error.response?.data) {
+            console.error('   Plaid Error Details:', JSON.stringify(error.response.data, null, 2));
+        }
+        
+        // Provide detailed error to frontend
+        let errorMessage = error.message;
+        let errorCode = 'UNKNOWN_ERROR';
+        
+        if (error.response?.data?.error_code) {
+            errorCode = error.response.data.error_code;
+            errorMessage = error.response.data.error_message || error.message;
+        }
+        
+        // Map specific errors to user-friendly messages
+        const errorMap = {
+            'INVALID_REQUEST': 'Invalid request to Plaid - check that all fields are correct',
+            'INVALID_BODY': 'The account connection data format is invalid',
+            'INSTITUTION_ERROR': 'Charles Schwab connection is not available or requires additional setup',
+            'RATE_LIMIT_EXCEEDED': 'Too many connection attempts - please wait and try again',
+            'INVALID_CREDENTIALS': 'Charles Schwab credentials are invalid',
+            'MISSING_FIELDS': 'Missing required fields from Plaid',
+            'SOCKET_TIMEOUT': 'Connection to Charles Schwab timed out - please try again',
+            'INVALID_ACCOUNT': 'The Charles Schwab account could not be verified',
+        };
+        
+        const friendlyMessage = errorMap[errorCode] || errorMessage;
+        
+        console.error('   Error code:', errorCode);
+        console.error('   User message:', friendlyMessage);
+        
+        res.status(400).json({ 
+            success: false, 
+            error: friendlyMessage,
+            errorCode: errorCode,
+            details: error.response?.data || { message: error.message }
+        });
     }
 });
 
