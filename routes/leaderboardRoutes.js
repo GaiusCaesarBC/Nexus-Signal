@@ -48,12 +48,14 @@ router.get('/', leaderboardLimiter, async (req, res) => {
             const userId = user._id.toString();
             const portfolio = portfolioMap[userId] || {};
             
-            // Calculate stats - starting balance is 10000 per your model
-            const startingBalance = 10000;
-            const totalValue = portfolio.totalValue || portfolio.cashBalance || startingBalance;
-            const totalReturn = totalValue - startingBalance;
-            const totalReturnPercent = portfolio.totalChangePercent || 
-                ((totalValue - startingBalance) / startingBalance * 100);
+            const cashBalance = portfolio.cashBalance || 100000;
+            const totalValue = portfolio.totalValue || 0;
+            let totalReturnPercent = portfolio.totalChangePercent || 0;
+            // Skip users who haven't traded
+            if (totalValue === 0 || (totalValue === cashBalance && totalReturnPercent === 0)) {
+                totalReturnPercent = 0;
+            }
+            const totalReturn = totalValue > 0 ? totalValue - cashBalance : 0;
             const holdingsCount = portfolio.holdings?.length || 0;
 
             return {
@@ -125,13 +127,19 @@ router.get('/top', leaderboardLimiter, async (req, res) => {
             if (userId) portfolioMap[userId] = p;
         });
 
-        const startingBalance = 10000;
-        
         const topTraders = users.map(user => {
             const portfolio = portfolioMap[user._id.toString()] || {};
-            const totalValue = portfolio.totalValue || portfolio.cashBalance || startingBalance;
-            const totalReturnPercent = portfolio.totalChangePercent || 
-                ((totalValue - startingBalance) / startingBalance * 100);
+            const cashBalance = portfolio.cashBalance || 100000;
+            const totalValue = portfolio.totalValue || 0;
+
+            // Use the portfolio's own calculated percent if available
+            // Otherwise compute from cash balance as starting point
+            let totalReturnPercent = portfolio.totalChangePercent || 0;
+
+            // Skip users who haven't traded (totalValue is 0 or equals starting cash)
+            if (totalValue === 0 || (totalValue === cashBalance && totalReturnPercent === 0)) {
+                totalReturnPercent = 0;
+            }
 
             return {
                 _id: user._id,
