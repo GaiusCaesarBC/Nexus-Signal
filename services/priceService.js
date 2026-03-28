@@ -569,21 +569,21 @@ async function getBatchPrices(symbols) {
     if (cryptoSymbols.length > 0) {
         try {
             const coinIds = cryptoSymbols.map(s => getCoinGeckoId(s)).join(',');
-            
+
             const headers = {};
             if (COINGECKO_API_KEY) {
                 headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
             }
-            
-            const baseUrl = COINGECKO_API_KEY 
+
+            const baseUrl = COINGECKO_API_KEY
                 ? 'https://pro-api.coingecko.com/api/v3'
                 : 'https://api.coingecko.com/api/v3';
-            
+
             const response = await axios.get(
                 `${baseUrl}/simple/price?ids=${coinIds}&vs_currencies=usd`,
                 { headers, timeout: 15000 }
             );
-            
+
             for (const symbol of cryptoSymbols) {
                 const coinId = getCoinGeckoId(symbol);
                 if (response.data[coinId]?.usd) {
@@ -593,18 +593,55 @@ async function getBatchPrices(symbols) {
                 }
             }
         } catch (error) {
-            console.log(`[PriceService] Batch crypto fetch failed:`, error.message);
+            console.log(`[PriceService] Batch CoinGecko failed:`, error.message);
+        }
+
+        // Fallback: CryptoCompare for any crypto symbols still missing
+        const missingCrypto = cryptoSymbols.filter(s => !results.has(s));
+        if (missingCrypto.length > 0) {
+            try {
+                const fsyms = missingCrypto.join(',');
+                const ccRes = await axios.get(
+                    `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`,
+                    { timeout: 8000 }
+                );
+                for (const sym of missingCrypto) {
+                    if (ccRes.data[sym]?.USD) {
+                        results.set(sym, ccRes.data[sym].USD);
+                        setCache(`price_${sym}`, ccRes.data[sym].USD, 'cryptocompare');
+                    }
+                }
+                if (missingCrypto.length > 0) console.log(`[PriceService] CryptoCompare fallback filled ${missingCrypto.filter(s=>results.has(s)).length}/${missingCrypto.length}`);
+            } catch (err) {
+                console.log(`[PriceService] CryptoCompare batch failed:`, err.message);
+            }
         }
     }
     
-    // Fetch stock prices individually (Yahoo doesn't have good batch API)
+    // Fetch stock prices — Finnhub first (fast, have key), then fallback
+    const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
     for (const symbol of stockSymbols) {
-        const result = await getCurrentPrice(symbol, 'stock');
-        if (result.price) {
-            results.set(symbol, result.price);
+        // Try Finnhub (fast, 60 req/min with key)
+        if (FINNHUB_KEY && !results.has(symbol)) {
+            try {
+                const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`, { timeout: 5000 });
+                if (fRes.data?.c > 0) {
+                    results.set(symbol, fRes.data.c);
+                    setCache(`price_${symbol}`, fRes.data.c, 'finnhub');
+                }
+            } catch (e) { /* fallback below */ }
         }
+
+        // Fallback to full getCurrentPrice chain (Yahoo → Alpha Vantage → Finnhub)
+        if (!results.has(symbol)) {
+            const result = await getCurrentPrice(symbol, 'stock');
+            if (result.price) {
+                results.set(symbol, result.price);
+            }
+        }
+
         // Small delay between requests
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 150));
     }
     
     console.log(`[PriceService] Batch fetched ${results.size}/${symbols.length} prices`);
