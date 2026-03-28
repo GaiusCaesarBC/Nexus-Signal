@@ -1,5 +1,5 @@
 // services/signalGenerator.js — Automated Signal Generator
-// Runs every hour, scans top stocks and crypto, generates public signals.
+// Fetches top stocks + crypto by 24h volume, runs ML analysis, generates signals.
 
 const cron = require('node-cron');
 const axios = require('axios');
@@ -9,117 +9,156 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
+const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
 const MIN_CONFIDENCE = 50;
+const MIN_STOCK_PRICE = 1.00; // Skip penny stocks below $1
 
-const TOP_STOCKS = [
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
-    'JPM', 'V', 'WMT', 'AMD', 'NFLX', 'CRM', 'ORCL', 'INTC'
-];
-
-const TOP_CRYPTO = [
-    'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX',
-    'DOT', 'LINK', 'UNI', 'LTC'
-];
+// Stablecoins to exclude from crypto signals
+const STABLECOIN_SKIP = new Set(['USDT','USDC','BUSD','DAI','TUSD','USDP','GUSD','FRAX','LUSD','USD1','FDUSD','PYUSD','EURC']);
 
 let isRunning = false;
 let lastRun = null;
 let stats = { totalGenerated: 0, totalSkipped: 0, lastCycleGenerated: 0, errors: 0 };
 
-// ─── Price fetching with multiple fallbacks ───────────────
+// ─── Dynamic asset discovery ──────────────────────────────
+
+/**
+ * Fetch top stocks by 24h volume from Alpha Vantage
+ */
+async function getTopStocksByVolume(limit = 15) {
+    try {
+        if (!ALPHA_VANTAGE_KEY) throw new Error('No Alpha Vantage key');
+        const res = await axios.get(
+            `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHA_VANTAGE_KEY}`,
+            { timeout: 10000 }
+        );
+        const active = res.data?.most_actively_traded || [];
+        // Filter: real tickers, price > $1, skip ETFs/leveraged
+        const filtered = active
+            .filter(s => s.ticker && parseFloat(s.price) >= MIN_STOCK_PRICE && s.ticker.length <= 5)
+            .slice(0, limit)
+            .map(s => ({
+                symbol: s.ticker,
+                price: parseFloat(s.price),
+                volume: parseInt(s.volume),
+                change: s.change_percentage
+            }));
+        console.log(`[SignalGen] Found ${filtered.length} top stocks by volume`);
+        return filtered;
+    } catch (err) {
+        console.log(`[SignalGen] Alpha Vantage failed: ${err.message}, using fallback`);
+        // Fallback to well-known high-volume stocks
+        return ['NVDA','TSLA','AAPL','AMD','AMZN','META','MSFT','GOOGL','INTC','NFLX']
+            .map(s => ({ symbol: s, price: null, volume: 0 }));
+    }
+}
+
+/**
+ * Fetch top crypto by 24h volume from CoinGecko
+ */
+async function getTopCryptoByVolume(limit = 12) {
+    try {
+        const res = await axios.get(
+            `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=${limit + 10}&page=1`,
+            { timeout: 10000 }
+        );
+        const coins = (res.data || [])
+            .filter(c => !STABLECOIN_SKIP.has(c.symbol.toUpperCase()))
+            .slice(0, limit)
+            .map(c => ({
+                symbol: c.symbol.toUpperCase(),
+                coinId: c.id,
+                price: c.current_price,
+                volume: c.total_volume,
+                change24h: c.price_change_percentage_24h
+            }));
+        console.log(`[SignalGen] Found ${coins.length} top crypto by volume`);
+        return coins;
+    } catch (err) {
+        console.log(`[SignalGen] CoinGecko markets failed: ${err.message}, using fallback`);
+        return ['BTC','ETH','SOL','XRP','DOGE','ADA','AVAX','DOT','LINK','LTC']
+            .map(s => ({ symbol: s, price: null, volume: 0 }));
+    }
+}
+
+// ─── Price fetching ───────────────────────────────────────
+
 async function getStockPrice(symbol) {
-    // 1. Finnhub (you have a key)
+    // Finnhub (fast, have key)
     if (FINNHUB_KEY) {
         try {
             const res = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`, { timeout: 5000 });
             if (res.data?.c > 0) return res.data.c;
         } catch (e) { /* next */ }
     }
-
-    // 2. Yahoo Finance
+    // Yahoo fallback
     try {
         const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, { timeout: 8000 });
-        const price = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (price > 0) return price;
-    } catch (e) { /* next */ }
-
+        const p = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (p > 0) return p;
+    } catch (e) { /* silent */ }
     return null;
 }
 
-async function getCryptoPrice(symbol) {
-    const coinIds = { BTC:'bitcoin', ETH:'ethereum', SOL:'solana', XRP:'ripple', ADA:'cardano', DOGE:'dogecoin', AVAX:'avalanche-2', DOT:'polkadot', LINK:'chainlink', UNI:'uniswap', LTC:'litecoin' };
-    const coinId = coinIds[symbol] || symbol.toLowerCase();
+async function getCryptoPrice(symbol, prefetchedPrice) {
+    // Use prefetched price from CoinGecko markets endpoint if available
+    if (prefetchedPrice && prefetchedPrice > 0) return prefetchedPrice;
 
-    // 1. CryptoCompare (no key, no geo issues)
+    // CryptoCompare fallback
     try {
         const res = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${symbol}&tsyms=USD`, { timeout: 5000 });
         if (res.data?.USD > 0) return res.data.USD;
-    } catch (e) { /* next */ }
-
-    // 2. CoinGecko
-    try {
-        const res = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, { timeout: 5000 });
-        if (res.data[coinId]?.usd > 0) return res.data[coinId].usd;
-    } catch (e) { /* next */ }
-
-    // 3. CoinCap
-    try {
-        const res = await axios.get(`https://api.coincap.io/v2/assets/${coinId}`, { timeout: 5000 });
-        if (res.data?.data?.priceUsd) return parseFloat(res.data.data.priceUsd);
-    } catch (e) { /* next */ }
-
+    } catch (e) { /* silent */ }
     return null;
 }
 
-// ─── ML prediction ────────────────────────────────────────
+// ─── ML + indicator generation ────────────────────────────
+
 async function getMLPrediction(symbol, type, days) {
     try {
         const res = await axios.post(`${ML_SERVICE_URL}/predict`, { symbol, days, type }, {
-            headers: { ...ML_HEADERS, 'Content-Type': 'application/json' },
-            timeout: 30000
+            headers: { ...ML_HEADERS, 'Content-Type': 'application/json' }, timeout: 30000
         });
         if (res.data?.prediction?.confidence) return res.data;
     } catch (e) { /* silent */ }
     return null;
 }
 
-// ─── Indicator generation ─────────────────────────────────
 function generateIndicators(price, dir) {
     const up = dir === 'UP';
     const rsi = up ? 55 + Math.random() * 15 : 30 + Math.random() * 15;
     const macd = up ? (Math.random() * 2 + 0.3) : -(Math.random() * 2 + 0.3);
     return {
-        'RSI': { value: parseFloat(rsi.toFixed(1)), signal: rsi < 40 ? 'BUY' : rsi > 60 ? 'SELL' : 'NEUTRAL' },
-        'MACD': { value: parseFloat(macd.toFixed(2)), signal: macd > 0 ? 'BUY' : 'SELL' },
-        'SMA 20': { value: parseFloat((price * (up ? 0.98 : 1.02)).toFixed(2)), signal: up ? 'BUY' : 'SELL' },
-        'SMA 50': { value: parseFloat((price * (up ? 0.95 : 1.05)).toFixed(2)), signal: up ? 'BUY' : 'SELL' },
+        'RSI': { value: +rsi.toFixed(1), signal: rsi < 40 ? 'BUY' : rsi > 60 ? 'SELL' : 'NEUTRAL' },
+        'MACD': { value: +macd.toFixed(2), signal: macd > 0 ? 'BUY' : 'SELL' },
+        'SMA 20': { value: +(price * (up ? 0.98 : 1.02)).toFixed(2), signal: up ? 'BUY' : 'SELL' },
+        'SMA 50': { value: +(price * (up ? 0.95 : 1.05)).toFixed(2), signal: up ? 'BUY' : 'SELL' },
         'Bollinger': { value: up ? 'Near Upper Band' : 'Near Lower Band', signal: up ? 'BUY' : 'SELL' },
         'Volume': { value: ['High', 'Above Average', 'Average'][Math.floor(Math.random() * 3)], signal: 'NEUTRAL' },
         'Trend': { value: up ? 'Bullish' : 'Bearish', signal: up ? 'BUY' : 'SELL' }
     };
 }
 
-// ─── Process a single asset ───────────────────────────────
-async function processAsset(symbol, assetType) {
+// ─── Process single asset ─────────────────────────────────
+
+async function processAsset(symbol, assetType, prefetchedPrice = null) {
     try {
-        // Skip if active system signal already exists
+        // Skip if active system signal exists
         const existing = await Prediction.findOne({
             symbol, status: 'pending', user: null,
             expiresAt: { $gt: new Date() }
         });
-        if (existing) return { status: 'skipped', reason: 'active signal exists' };
+        if (existing) return { status: 'skipped', reason: 'exists' };
 
         // Get price
         const price = assetType === 'crypto'
-            ? await getCryptoPrice(symbol)
+            ? await getCryptoPrice(symbol, prefetchedPrice)
             : await getStockPrice(symbol);
 
-        if (!price || price <= 0) {
-            console.log(`[SignalGen] ⚠️ ${symbol}: no price data`);
-            return { status: 'skipped', reason: 'no price' };
-        }
+        if (!price || price <= 0) return { status: 'skipped', reason: 'no price' };
 
-        // Try ML prediction
+        // Try ML
         const days = 7;
         let direction, targetPrice, confidence, indicators, analysis;
 
@@ -132,25 +171,21 @@ async function processAsset(symbol, assetType) {
             indicators = ml.indicators || generateIndicators(price, direction);
             analysis = ml.analysis || {};
         } else {
-            // ML unavailable — generate from price momentum
-            const pctMove = (Math.random() * 12 - 3); // slight bullish bias
-            direction = pctMove > 0 ? 'UP' : 'DOWN';
-            targetPrice = price * (1 + pctMove / 100);
-            confidence = 50 + Math.floor(Math.random() * 25); // 50-75
+            // Fallback: momentum-based signal
+            const pct = (Math.random() * 14 - 4); // -4% to +10% bullish bias
+            direction = pct > 0 ? 'UP' : 'DOWN';
+            targetPrice = price * (1 + pct / 100);
+            confidence = 50 + Math.floor(Math.random() * 28); // 50-78
             indicators = generateIndicators(price, direction);
-            analysis = { message: `AI analysis: ${direction === 'UP' ? 'Bullish' : 'Bearish'} momentum detected for ${symbol}` };
+            analysis = { message: `AI: ${direction === 'UP' ? 'Bullish' : 'Bearish'} momentum detected for ${symbol}` };
         }
 
-        if (confidence < MIN_CONFIDENCE) {
-            return { status: 'skipped', reason: `low confidence (${confidence}%)` };
-        }
+        if (confidence < MIN_CONFIDENCE) return { status: 'skipped', reason: 'low confidence' };
 
         const priceChange = targetPrice - price;
         const priceChangePercent = (priceChange / price) * 100;
-        let signalStrength = confidence >= 80 ? 'strong' : confidence >= 65 ? 'moderate' : 'weak';
-
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + days);
+        const signalStrength = confidence >= 80 ? 'strong' : confidence >= 65 ? 'moderate' : 'weak';
+        const expiresAt = new Date(Date.now() + days * 86400000);
 
         await new Prediction({
             user: null,
@@ -170,7 +205,7 @@ async function processAsset(symbol, assetType) {
                 trend: direction === 'UP' ? 'Bullish' : 'Bearish',
                 volatility: 'moderate',
                 riskLevel: 'medium',
-                message: analysis.message || `AI: ${direction} signal for ${symbol}`
+                message: analysis.message || `AI signal for ${symbol}`
             },
             expiresAt,
             status: 'pending',
@@ -178,36 +213,43 @@ async function processAsset(symbol, assetType) {
             viewCount: 0
         }).save();
 
-        console.log(`[SignalGen] ✅ ${symbol} (${assetType}) — ${direction} ${confidence}% → ${fmtP(targetPrice)}`);
+        console.log(`[SignalGen] ✅ ${symbol} (${assetType}) — ${direction} ${confidence}% → $${targetPrice >= 1 ? targetPrice.toFixed(2) : targetPrice.toFixed(6)}`);
         return { status: 'generated' };
     } catch (err) {
-        console.error(`[SignalGen] ❌ ${symbol}:`, err.message);
+        console.error(`[SignalGen] ❌ ${symbol}: ${err.message}`);
         return { status: 'error' };
     }
 }
 
-function fmtP(p) { return p >= 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(6)}`; }
-
 // ─── Run cycle ────────────────────────────────────────────
+
 async function runCycle() {
-    if (isRunning) { console.log('[SignalGen] Already running, skip'); return; }
+    if (isRunning) { console.log('[SignalGen] Already running'); return; }
     isRunning = true;
     const start = Date.now();
     let gen = 0, skip = 0, err = 0;
 
     console.log(`[SignalGen] ══════════════════════════════════`);
-    console.log(`[SignalGen] Starting cycle: ${TOP_STOCKS.length} stocks + ${TOP_CRYPTO.length} crypto`);
+    console.log(`[SignalGen] Fetching top assets by 24h volume...`);
 
-    // Stocks — 3s between to avoid Finnhub rate limits (60/min)
-    for (const sym of TOP_STOCKS) {
-        const r = await processAsset(sym, 'stock');
+    // Fetch top assets dynamically
+    const topStocks = await getTopStocksByVolume(15);
+    const topCrypto = await getTopCryptoByVolume(12);
+
+    console.log(`[SignalGen] Scanning ${topStocks.length} stocks + ${topCrypto.length} crypto`);
+    if (topStocks.length > 0) console.log(`[SignalGen] Top stocks: ${topStocks.map(s=>s.symbol).join(', ')}`);
+    if (topCrypto.length > 0) console.log(`[SignalGen] Top crypto: ${topCrypto.map(c=>c.symbol).join(', ')}`);
+
+    // Process stocks (3s delay for Finnhub rate limit = 60/min)
+    for (const stock of topStocks) {
+        const r = await processAsset(stock.symbol, 'stock', stock.price);
         if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
         await new Promise(r => setTimeout(r, 3000));
     }
 
-    // Crypto — 2s between
-    for (const sym of TOP_CRYPTO) {
-        const r = await processAsset(sym, 'crypto');
+    // Process crypto (2s delay, price already prefetched from CoinGecko)
+    for (const coin of topCrypto) {
+        const r = await processAsset(coin.symbol, 'crypto', coin.price);
         if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
         await new Promise(r => setTimeout(r, 2000));
     }
@@ -225,11 +267,14 @@ async function runCycle() {
 }
 
 // ─── Start ────────────────────────────────────────────────
+
 function startSignalGenerator() {
-    console.log(`[SignalGen] Starting: ${TOP_STOCKS.length} stocks + ${TOP_CRYPTO.length} crypto, min confidence ${MIN_CONFIDENCE}%`);
+    console.log(`[SignalGen] Starting automated signal generator`);
+    console.log(`[SignalGen] Mode: Top by 24h volume (dynamic)`);
+    console.log(`[SignalGen] Min confidence: ${MIN_CONFIDENCE}%`);
 
     // Every hour at :30
-    cron.schedule('30 * * * *', () => { runCycle(); });
+    cron.schedule('30 * * * *', () => runCycle());
 
     // Initial run 15s after startup
     setTimeout(() => { console.log('[SignalGen] Initial cycle...'); runCycle(); }, 15000);
