@@ -1426,11 +1426,34 @@ router.post('/refresh-prices', auth, async (req, res) => {
         const triggeredPositions = [];
         const positionsToRemove = [];
         
-        // Fetch all prices using the correct method name
+        // Fetch all prices — batch first, then individual fallback for any missing
         const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
         const batchPrices = await priceService.getBatchPrices(allSymbols);
 
-        console.log(`[Paper Trading] Fetched prices for ${batchPrices.size} symbols:`, Object.fromEntries(batchPrices));
+        // Individual fallback for any symbols the batch missed
+        for (const sym of allSymbols) {
+            if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
+                try {
+                    const isCrypto = priceService.isCryptoSymbol(sym);
+                    if (isCrypto) {
+                        // CryptoCompare individual fallback
+                        const axios = require('axios');
+                        const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
+                        if (ccRes.data?.USD > 0) batchPrices.set(sym, ccRes.data.USD);
+                    } else {
+                        // Finnhub individual fallback
+                        const FKEY = process.env.FINNHUB_API_KEY;
+                        if (FKEY) {
+                            const axios = require('axios');
+                            const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
+                            if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
+                        }
+                    }
+                } catch (e) { /* tried our best */ }
+            }
+        }
+
+        console.log(`[Paper Trading] Fetched prices for ${batchPrices.size}/${allSymbols.length} symbols:`, Object.fromEntries(batchPrices));
 
         // Update prices and check triggers
         for (const position of account.positions) {
