@@ -249,19 +249,20 @@ const PLAN_LIMITS = {
         hasInstitutionalActivity: true,
         hasCongressionalTrades: true,
         hasWhaleAlerts: true,
-        // Elite features
+        // Elite features (live)
         hasAPIAccess: true,
         hasBacktesting: true,
-        hasUltraLowLatency: true,
-        hasInstitutionalAnalytics: true,
         hasMultiAccount: true,
-        hasCustomResearch: true,
-        hasMentorship: true,
-        hasWhiteLabel: true,
-        hasDedicatedManager: true,
-        hasVIPCommunity: true,
-        hasWhaleWebhooks: true,
-        hasEarlyAccess: true,
+        // Elite features (coming soon — flags ready, implementation pending)
+        hasUltraLowLatency: false,   // Coming soon
+        hasInstitutionalAnalytics: false, // Coming soon
+        hasCustomResearch: false,    // Coming soon
+        hasMentorship: false,        // Coming soon
+        hasWhiteLabel: false,        // Coming soon
+        hasDedicatedManager: false,  // Coming soon
+        hasVIPCommunity: false,      // Coming soon
+        hasWhaleWebhooks: false,     // Coming soon
+        hasEarlyAccess: true,        // Can enable manually
     }
 };
 
