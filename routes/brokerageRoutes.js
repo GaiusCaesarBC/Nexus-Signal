@@ -451,17 +451,23 @@ router.post('/plaid/exchange', async (req, res) => {
         }
         
         // Map specific errors to user-friendly messages
+        const isSchwab = (institutionName || '').toLowerCase().includes('schwab');
+        const schwabHint = isSchwab ? ' Charles Schwab may require additional Plaid configuration — try Robinhood, Webull, or E*TRADE as an alternative.' : '';
+
         const errorMap = {
             'INVALID_REQUEST': 'Invalid request to Plaid - check that all fields are correct',
             'INVALID_BODY': 'The account connection data format is invalid',
-            'INSTITUTION_ERROR': 'Charles Schwab connection is not available or requires additional setup',
+            'INSTITUTION_ERROR': `This institution's connection is not available or requires additional setup.${schwabHint}`,
             'RATE_LIMIT_EXCEEDED': 'Too many connection attempts - please wait and try again',
-            'INVALID_CREDENTIALS': 'Charles Schwab credentials are invalid',
+            'INVALID_CREDENTIALS': 'The provided credentials are invalid',
             'MISSING_FIELDS': 'Missing required fields from Plaid',
-            'SOCKET_TIMEOUT': 'Connection to Charles Schwab timed out - please try again',
-            'INVALID_ACCOUNT': 'The Charles Schwab account could not be verified',
+            'SOCKET_TIMEOUT': `Connection timed out - please try again.${schwabHint}`,
+            'INVALID_ACCOUNT': 'The account could not be verified',
+            'INSTITUTION_NOT_FOUND': `This institution is not currently supported.${schwabHint}`,
+            'INSTITUTION_DOWN': `This institution is temporarily unavailable. Please try again later.${schwabHint}`,
+            'PRODUCT_NOT_READY': `Investment data is not yet available for this institution.${schwabHint}`,
         };
-        
+
         const friendlyMessage = errorMap[errorCode] || errorMessage;
         
         console.error('   Error code:', errorCode);

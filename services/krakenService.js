@@ -8,6 +8,10 @@ const KRAKEN_API_URL = 'https://api.kraken.com';
 const balanceCache = new Map();
 const CACHE_TTL = 60 * 1000;
 
+// Cache for forex rates (5 minute TTL)
+const forexCache = { rates: null, timestamp: 0 };
+const FOREX_CACHE_TTL = 5 * 60 * 1000;
+
 /**
  * Create signature for Kraken API
  * @param {string} path - API path
@@ -313,6 +317,53 @@ function getKrakenTickerPair(asset) {
 }
 
 /**
+ * Get USD conversion rates for non-USD fiat currencies via Kraken's public API
+ * @returns {Promise<object>} Map of currency to USD rate (e.g., { EUR: 1.08, GBP: 1.27 })
+ */
+async function getForexRates() {
+    if (forexCache.rates && Date.now() - forexCache.timestamp < FOREX_CACHE_TTL) {
+        return forexCache.rates;
+    }
+
+    const forexPairs = {
+        'EUR': 'EURUSD',
+        'GBP': 'GBPUSD',
+        'CAD': 'USDCAD',  // Inverted — USD per CAD
+        'JPY': 'USDJPY',  // Inverted — USD per JPY
+        'AUD': 'AUDUSD',
+        'CHF': 'USDCHF'   // Inverted — USD per CHF
+    };
+
+    const invertedPairs = ['CAD', 'JPY', 'CHF'];
+    const rates = { USD: 1 };
+
+    try {
+        const pairString = Object.values(forexPairs).join(',');
+        const tickers = await krakenPublicRequest('Ticker', { pair: pairString });
+
+        for (const [currency, pair] of Object.entries(forexPairs)) {
+            const tickerKey = Object.keys(tickers).find(k => k.includes(pair) || k.includes(pair.replace('USD', '')));
+            if (tickerKey && tickers[tickerKey]) {
+                const price = parseFloat(tickers[tickerKey].c[0]);
+                rates[currency] = invertedPairs.includes(currency) ? (1 / price) : price;
+            }
+        }
+
+        console.log('[Kraken] Forex rates:', rates);
+        forexCache.rates = rates;
+        forexCache.timestamp = Date.now();
+    } catch (error) {
+        console.error('[Kraken] Error fetching forex rates:', error.message);
+        // Fallback: treat non-USD fiat at face value (better than 0)
+        for (const currency of Object.keys(forexPairs)) {
+            if (!rates[currency]) rates[currency] = 1;
+        }
+    }
+
+    return rates;
+}
+
+/**
  * Get portfolio with USD values
  * @param {string} apiKey - User's API key
  * @param {string} apiSecret - User's API secret
@@ -329,20 +380,24 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
     const holdings = [];
     let totalValue = 0;
 
-    // Add fiat balances directly
-    for (const fiat of ['USD', 'EUR', 'GBP', 'CAD']) {
+    // Fetch forex rates for non-USD fiat conversion
+    const forexRates = await getForexRates();
+
+    // Add fiat balances converted to USD
+    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'AUD', 'CHF'];
+    for (const fiat of fiatCurrencies) {
         if (balances[fiat]) {
-            // For non-USD fiat, we'd need conversion rates
-            const value = fiat === 'USD' ? balances[fiat] : balances[fiat]; // TODO: Convert other fiats
+            const rate = forexRates[fiat] || 1;
+            const valueInUsd = balances[fiat] * rate;
             holdings.push({
                 symbol: fiat,
                 name: fiat,
                 quantity: balances[fiat],
-                price: 1,
-                value: value,
+                price: rate,
+                value: valueInUsd,
                 type: 'fiat'
             });
-            if (fiat === 'USD') totalValue += value;
+            totalValue += valueInUsd;
         }
     }
 
