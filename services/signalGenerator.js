@@ -1,86 +1,20 @@
 // services/signalGenerator.js — Automated Signal Generator
-// Fetches top stocks + crypto by 24h volume, runs ML analysis, generates signals.
+// Uses smart asset discovery pipeline, then runs ML/indicator analysis.
 
 const cron = require('node-cron');
 const axios = require('axios');
 const Prediction = require('../models/Prediction');
+const { discoverAssets } = require('./assetDiscovery');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
-const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
-const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
 const MIN_CONFIDENCE = 50;
-const MIN_STOCK_PRICE = 1.00; // Skip penny stocks below $1
-
-// Stablecoins to exclude from crypto signals
-const STABLECOIN_SKIP = new Set(['USDT','USDC','BUSD','DAI','TUSD','USDP','GUSD','FRAX','LUSD','USD1','FDUSD','PYUSD','EURC']);
 
 let isRunning = false;
 let lastRun = null;
 let stats = { totalGenerated: 0, totalSkipped: 0, lastCycleGenerated: 0, errors: 0 };
-
-// ─── Dynamic asset discovery ──────────────────────────────
-
-/**
- * Fetch top stocks by 24h volume from Alpha Vantage
- */
-async function getTopStocksByVolume(limit = 15) {
-    try {
-        if (!ALPHA_VANTAGE_KEY) throw new Error('No Alpha Vantage key');
-        const res = await axios.get(
-            `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHA_VANTAGE_KEY}`,
-            { timeout: 10000 }
-        );
-        const active = res.data?.most_actively_traded || [];
-        // Filter: real tickers, price > $1, skip ETFs/leveraged
-        const filtered = active
-            .filter(s => s.ticker && parseFloat(s.price) >= MIN_STOCK_PRICE && s.ticker.length <= 5)
-            .slice(0, limit)
-            .map(s => ({
-                symbol: s.ticker,
-                price: parseFloat(s.price),
-                volume: parseInt(s.volume),
-                change: s.change_percentage
-            }));
-        console.log(`[SignalGen] Found ${filtered.length} top stocks by volume`);
-        return filtered;
-    } catch (err) {
-        console.log(`[SignalGen] Alpha Vantage failed: ${err.message}, using fallback`);
-        // Fallback to well-known high-volume stocks
-        return ['NVDA','TSLA','AAPL','AMD','AMZN','META','MSFT','GOOGL','INTC','NFLX']
-            .map(s => ({ symbol: s, price: null, volume: 0 }));
-    }
-}
-
-/**
- * Fetch top crypto by 24h volume from CoinGecko
- */
-async function getTopCryptoByVolume(limit = 12) {
-    try {
-        const res = await axios.get(
-            `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=${limit + 10}&page=1`,
-            { timeout: 10000 }
-        );
-        const coins = (res.data || [])
-            .filter(c => !STABLECOIN_SKIP.has(c.symbol.toUpperCase()))
-            .slice(0, limit)
-            .map(c => ({
-                symbol: c.symbol.toUpperCase(),
-                coinId: c.id,
-                price: c.current_price,
-                volume: c.total_volume,
-                change24h: c.price_change_percentage_24h
-            }));
-        console.log(`[SignalGen] Found ${coins.length} top crypto by volume`);
-        return coins;
-    } catch (err) {
-        console.log(`[SignalGen] CoinGecko markets failed: ${err.message}, using fallback`);
-        return ['BTC','ETH','SOL','XRP','DOGE','ADA','AVAX','DOT','LINK','LTC']
-            .map(s => ({ symbol: s, price: null, volume: 0 }));
-    }
-}
 
 // ─── Price fetching ───────────────────────────────────────
 
@@ -230,26 +164,24 @@ async function runCycle() {
     let gen = 0, skip = 0, err = 0;
 
     console.log(`[SignalGen] ══════════════════════════════════`);
-    console.log(`[SignalGen] Fetching top assets by 24h volume...`);
 
-    // Fetch top assets dynamically
-    const topStocks = await getTopStocksByVolume(15);
-    const topCrypto = await getTopCryptoByVolume(12);
+    // Smart asset discovery pipeline
+    const { stocks, crypto } = await discoverAssets();
 
-    console.log(`[SignalGen] Scanning ${topStocks.length} stocks + ${topCrypto.length} crypto`);
-    if (topStocks.length > 0) console.log(`[SignalGen] Top stocks: ${topStocks.map(s=>s.symbol).join(', ')}`);
-    if (topCrypto.length > 0) console.log(`[SignalGen] Top crypto: ${topCrypto.map(c=>c.symbol).join(', ')}`);
+    console.log(`[SignalGen] Processing ${stocks.length} stocks + ${crypto.length} crypto`);
 
-    // Process stocks (3s delay for Finnhub rate limit = 60/min)
-    for (const stock of topStocks) {
-        const r = await processAsset(stock.symbol, 'stock', stock.price);
+    // Process stocks (3s delay for ML rate limit)
+    for (const candidate of stocks) {
+        console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
+        const r = await processAsset(candidate.symbol, 'stock', candidate.price);
         if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
         await new Promise(r => setTimeout(r, 3000));
     }
 
-    // Process crypto (2s delay, price already prefetched from CoinGecko)
-    for (const coin of topCrypto) {
-        const r = await processAsset(coin.symbol, 'crypto', coin.price);
+    // Process crypto (2s delay, price already prefetched)
+    for (const candidate of crypto) {
+        console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
+        const r = await processAsset(candidate.symbol, 'crypto', candidate.price);
         if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
         await new Promise(r => setTimeout(r, 2000));
     }
@@ -270,7 +202,7 @@ async function runCycle() {
 
 function startSignalGenerator() {
     console.log(`[SignalGen] Starting automated signal generator`);
-    console.log(`[SignalGen] Mode: Top by 24h volume (dynamic)`);
+    console.log(`[SignalGen] Mode: Smart discovery pipeline (liquidity → movement → scoring)`);
     console.log(`[SignalGen] Min confidence: ${MIN_CONFIDENCE}%`);
 
     // Every hour at :30
