@@ -316,12 +316,9 @@ const connectDB = async () => {
         const { startSignalGenerator } = require('./services/signalGenerator');
         startSignalGenerator();
 
-        // TELEGRAM BOT - Disabled (invalid token causes polling spam)
-        // To re-enable: set a valid TELEGRAM_BOT_TOKEN env var and uncomment below
-        // const { initializeBot } = require('./services/telegramService');
-        // initializeBot();
-        // const { initializeSchedulers } = require('./services/telegramScheduler');
-        // setTimeout(() => initializeSchedulers(), 5000);
+        // TELEGRAM BOT — Conversion funnel (teases signals, posts results, drives to website)
+        const { initializeTelegramBot } = require('./services/telegramBot');
+        initializeTelegramBot();
 
         // ✅ INITIALIZE DISCORD BOT
         const { initializeBot: initializeDiscordBot } = require('./services/discordService');

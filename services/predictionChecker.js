@@ -7,6 +7,7 @@ const Prediction = require('../models/Prediction');
 const User = require('../models/User');
 const GamificationService = require('./gamificationService');
 const NotificationService = require('./notificationService');
+const { postResult } = require('./telegramBot');
 
 // ============ INLINE PRICE CACHE ============
 const priceCache = new Map();
@@ -208,6 +209,11 @@ async function checkPrediction(prediction) {
         } else {
             checkerStats.incorrectPredictions++;
             console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (predicted ${prediction.direction}, actual change: ${prediction.outcome.actualChangePercent.toFixed(2)}%)`);
+        }
+
+        // Post result to Telegram (system signals only)
+        if (!prediction.user) {
+            try { postResult(prediction, prediction.status === 'correct', prediction.outcome?.actualChangePercent || 0); } catch (e) { /* non-blocking */ }
         }
 
         return { success: true, prediction };
