@@ -1,98 +1,159 @@
-# Security Policy
+# 🔐 Nexus Signal AI — Security Policy
 
 ## Supported Versions
 
-We actively support the following versions of Nexus Signal with security updates:
+We actively maintain and provide security updates for the following versions:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| Latest  | :white_check_mark: |
-| < 1.0   | :x:                |
-
-## Reporting a Vulnerability
-
-We take the security of Nexus Signal seriously. If you discover a security vulnerability, please report it responsibly.
-
-### How to Report
-
-**Please DO NOT report security vulnerabilities through public GitHub issues.**
-
-Instead, please send an email to: **security@nexussignal.ai**
-
-Include the following information in your report:
-- Type of vulnerability (e.g., SQL injection, XSS, authentication bypass)
-- Full path of the affected source file(s)
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code (if possible)
-- Potential impact of the vulnerability
-
-### What to Expect
-
-1. **Acknowledgment**: We will acknowledge receipt of your report within 48 hours.
-2. **Investigation**: Our team will investigate and validate the vulnerability within 7 days.
-3. **Updates**: We will keep you informed of our progress throughout the process.
-4. **Resolution**: Once resolved, we will notify you and discuss public disclosure timing.
-5. **Credit**: With your permission, we will credit you in our security acknowledgments.
-
-### Response Timeline
-
-| Stage | Timeline |
-|-------|----------|
-| Initial Response | 48 hours |
-| Vulnerability Assessment | 7 days |
-| Patch Development | 14-30 days (depending on severity) |
-| Public Disclosure | After patch release |
-
-## Scope
-
-### In Scope
-
-- nexussignal.ai (main website)
-- api.nexussignal.ai (API server)
-- Authentication and authorization mechanisms
-- User data protection
-- Payment processing security
-- API endpoints
-
-### Out of Scope
-
-- Third-party services (Stripe, MongoDB Atlas, Cloudinary, etc.)
-- Social engineering attacks
-- Physical security
-- Denial of Service (DoS/DDoS) attacks
-- Vulnerabilities in outdated browsers
-- Issues already reported or known
-
-## Security Best Practices We Follow
-
-- **Authentication**: JWT tokens with httpOnly cookies, 2FA support
-- **Data Protection**: Password hashing with bcrypt, MongoDB sanitization
-- **API Security**: Rate limiting, CORS configuration, input validation
-- **Infrastructure**: HTTPS enforcement, security headers via Helmet.js
-- **Code Security**: XSS protection, HPP prevention, SQL injection prevention
-
-## Safe Harbor
-
-We consider security research conducted in accordance with this policy to be:
-- Authorized under the Computer Fraud and Abuse Act (CFAA)
-- Exempt from DMCA restrictions
-- Lawful and helpful to the security community
-
-We will not pursue legal action against researchers who:
-- Act in good faith
-- Avoid privacy violations and data destruction
-- Do not exploit vulnerabilities beyond demonstration
-- Report findings promptly and responsibly
-
-## Bug Bounty
-
-We currently do not have a formal bug bounty program, but we recognize and appreciate security researchers who help improve our platform. Significant findings may be rewarded at our discretion.
-
-## Contact
-
-- Security Issues: security@nexussignal.ai
-- General Inquiries: support@nexussignal.ai
+| Version             | Supported |
+| ------------------- | --------- |
+| Latest (Production) | ✅         |
+| Legacy / Pre-1.0    | ❌         |
 
 ---
 
-Thank you for helping keep Nexus Signal and our users safe!
+## Reporting a Vulnerability
+
+The security of Nexus Signal AI is a top priority. We welcome responsible disclosure of vulnerabilities that help us improve the platform.
+
+### ⚠️ Do Not Use Public Channels
+
+Please **do NOT** report vulnerabilities via GitHub issues, social media, or public forums.
+
+---
+
+## How to Report
+
+Send all reports to:
+
+📧 **[security@nexussignal.ai](mailto:security@nexussignal.ai)**
+
+Include as much detail as possible:
+
+* Vulnerability type (e.g., XSS, authentication bypass, injection)
+* Affected endpoint(s), route(s), or file paths
+* Step-by-step reproduction instructions
+* Proof of concept (code, payload, or screenshots)
+* Potential impact and severity assessment
+
+---
+
+## What to Expect
+
+We aim to provide a fast, transparent response process:
+
+| Stage                  | Timeline                      |
+| ---------------------- | ----------------------------- |
+| Initial acknowledgment | Within 24–48 hours            |
+| Triage & validation    | Within 3–7 days               |
+| Remediation            | 7–30 days (based on severity) |
+| Public disclosure      | Coordinated after fix         |
+
+We will:
+
+* Keep you informed throughout the process
+* Work collaboratively on validation
+* Notify you once resolved
+* Offer attribution (with your permission)
+
+---
+
+## Scope
+
+### ✅ In Scope
+
+* https://nexussignal.ai
+* https://api.nexussignal.ai
+* Authentication & session management
+* Authorization / access control
+* Signal data integrity
+* Payment and subscription systems
+* API endpoints and backend services
+
+---
+
+### ❌ Out of Scope
+
+* Third-party providers (Stripe, MongoDB Atlas, Cloudinary, etc.)
+* Social engineering or phishing attacks
+* Physical access or device-level attacks
+* Denial of Service (DoS / DDoS)
+* Rate-limit abuse without security impact
+* Issues in outdated or unsupported browsers
+* Previously reported or known issues
+
+---
+
+## Security Practices
+
+We implement industry-standard security measures:
+
+### Authentication & Access
+
+* JWT-based authentication (httpOnly cookies)
+* Optional 2FA support
+* Role-based access controls
+
+### Data Protection
+
+* Password hashing (bcrypt)
+* Input validation and sanitization
+* MongoDB query protection
+
+### API & Infrastructure
+
+* Rate limiting and abuse protection
+* CORS configuration
+* HTTPS enforced across all endpoints
+* Security headers via Helmet.js
+
+### Application Security
+
+* XSS mitigation
+* HPP (HTTP Parameter Pollution) protection
+* Injection prevention
+* Secure environment variable handling
+
+---
+
+## Safe Harbor
+
+We support and protect responsible security research.
+
+If you act in good faith and follow this policy:
+
+* You are authorized to test Nexus Signal AI systems
+* We will not pursue legal action
+* Your research will be treated as beneficial
+
+Requirements:
+
+* Do not access or expose user data unnecessarily
+* Do not disrupt service availability
+* Do not exploit beyond proof-of-concept
+* Report findings promptly
+
+---
+
+## Recognition
+
+We currently do not operate a public bug bounty program.
+
+However, we:
+
+* Acknowledge valid reports
+* May offer discretionary rewards for significant findings
+* Credit researchers (with permission)
+
+---
+
+## Contact
+
+Security reports:
+📧 [security@nexussignal.ai](mailto:security@nexussignal.ai)
+
+General support:
+📧 [support@nexussignal.ai](mailto:support@nexussignal.ai)
+
+---
+
+Nexus Signal AI is committed to maintaining a secure, transparent, and trustworthy platform for all users.
