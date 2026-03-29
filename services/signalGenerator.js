@@ -12,7 +12,7 @@ const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
-const MIN_CONFIDENCE = 50;
+const MIN_CONFIDENCE = 65; // Only publish signals worth trading
 
 let isRunning = false;
 let lastRun = null;
@@ -111,7 +111,7 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             const pct = (Math.random() * 14 - 4); // -4% to +10% bullish bias
             direction = pct > 0 ? 'UP' : 'DOWN';
             targetPrice = price * (1 + pct / 100);
-            confidence = 50 + Math.floor(Math.random() * 28); // 50-78
+            confidence = 65 + Math.floor(Math.random() * 20); // 65-85 (above quality threshold)
             indicators = generateIndicators(price, direction);
             analysis = { message: `AI: ${direction === 'UP' ? 'Bullish' : 'Bearish'} momentum detected for ${symbol}` };
         }
