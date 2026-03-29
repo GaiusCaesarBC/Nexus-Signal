@@ -470,7 +470,6 @@ class NotificationService {
             return 0;
         }
     }
-}
 
     // ============ NEW SIGNAL NOTIFICATION (BROADCAST) ============
     static async createSignalNotification(signal) {
