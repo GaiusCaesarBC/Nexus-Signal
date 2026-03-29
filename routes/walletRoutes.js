@@ -14,7 +14,7 @@ const CHAIN_EXPLORERS = {
         apiUrl: 'https://api.etherscan.io/api',
         apiKey: process.env.ETHERSCAN_API_KEY || ''
     },
-    56: { // BSC
+    56: { // BSC (BNB Chain)
         name: 'BscScan',
         apiUrl: 'https://api.bscscan.com/api',
         apiKey: process.env.BSCSCAN_API_KEY || ''
@@ -23,6 +23,32 @@ const CHAIN_EXPLORERS = {
         name: 'PolygonScan',
         apiUrl: 'https://api.polygonscan.com/api',
         apiKey: process.env.POLYGONSCAN_API_KEY || ''
+    },
+    42161: { // Arbitrum
+        name: 'Arbiscan',
+        apiUrl: 'https://api.arbiscan.io/api',
+        apiKey: process.env.ARBISCAN_API_KEY || ''
+    },
+    10: { // Optimism
+        name: 'Optimistic Etherscan',
+        apiUrl: 'https://api-optimistic.etherscan.io/api',
+        apiKey: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || ''
+    },
+    43114: { // Avalanche C-Chain
+        name: 'Snowtrace',
+        apiUrl: 'https://api.snowtrace.io/api',
+        apiKey: process.env.SNOWTRACE_API_KEY || ''
+    },
+    8453: { // Base
+        name: 'BaseScan',
+        apiUrl: 'https://api.basescan.org/api',
+        apiKey: process.env.BASESCAN_API_KEY || ''
+    },
+    // Solana is non-EVM — handled separately via Solscan API
+    'solana': {
+        name: 'Solscan',
+        apiUrl: 'https://api.solscan.io',
+        apiKey: process.env.SOLSCAN_API_KEY || ''
     }
 };
 
@@ -393,6 +419,11 @@ router.get('/balance', authMiddleware, async (req, res) => {
  * Fetch wallet transactions from blockchain explorer
  */
 async function fetchWalletTrades(address, chainId = 1) {
+    // Solana: use Solscan API (non-EVM)
+    if (chainId === 'solana' || String(chainId) === 'solana') {
+        return fetchSolanaTrades(address);
+    }
+
     const explorer = CHAIN_EXPLORERS[chainId];
 
     if (!explorer || !explorer.apiKey) {
@@ -436,6 +467,11 @@ async function fetchWalletTrades(address, chainId = 1) {
  * Fetch wallet token balances
  */
 async function fetchWalletBalances(address, chainId = 1) {
+    // Solana: use separate handler
+    if (chainId === 'solana' || String(chainId) === 'solana') {
+        return fetchSolanaBalances(address);
+    }
+
     const explorer = CHAIN_EXPLORERS[chainId];
 
     if (!explorer || !explorer.apiKey) {
@@ -770,6 +806,66 @@ function getExplorerLink(chainId, hash) {
         8453: 'https://basescan.org/tx/'
     };
     return (explorers[chainId] || explorers[1]) + hash;
+}
+
+/**
+ * Fetch Solana wallet transactions via Solscan API
+ */
+async function fetchSolanaTrades(address) {
+    try {
+        const res = await axios.get(
+            `https://api.solscan.io/account/transactions?address=${address}&limit=50`,
+            { timeout: 10000, headers: { 'Accept': 'application/json' } }
+        );
+
+        if (!res.data || !Array.isArray(res.data)) return [];
+
+        return res.data.slice(0, 50).map(tx => ({
+            type: 'transfer',
+            hash: tx.txHash || tx.signature,
+            from: tx.signer?.[0] || address,
+            to: tx.signer?.[1] || '',
+            value: tx.lamport?.toString() || '0',
+            tokenSymbol: 'SOL',
+            tokenName: 'Solana',
+            tokenDecimal: 9,
+            timestamp: new Date((tx.blockTime || 0) * 1000),
+            fee: tx.fee || 0,
+            status: tx.status === 'Success' ? 'success' : 'failed'
+        }));
+    } catch (error) {
+        console.error('[Wallet] Solana trades fetch error:', error.message);
+        return [];
+    }
+}
+
+/**
+ * Fetch Solana token balances
+ */
+async function fetchSolanaBalances(address) {
+    try {
+        const res = await axios.get(
+            `https://api.solscan.io/account/tokens?address=${address}`,
+            { timeout: 10000, headers: { 'Accept': 'application/json' } }
+        );
+
+        if (!res.data || !Array.isArray(res.data)) return [];
+
+        return res.data
+            .filter(t => t.tokenAmount?.uiAmount > 0)
+            .map(t => ({
+                symbol: t.tokenSymbol || 'Unknown',
+                name: t.tokenName || t.tokenSymbol || 'Unknown Token',
+                balance: t.tokenAmount?.uiAmount || 0,
+                decimals: t.tokenAmount?.decimals || 9,
+                contractAddress: t.tokenAddress,
+                chain: 'Solana',
+                chainId: 'solana'
+            }));
+    } catch (error) {
+        console.error('[Wallet] Solana balances fetch error:', error.message);
+        return [];
+    }
 }
 
 module.exports = router;
