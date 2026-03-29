@@ -286,8 +286,18 @@ function initializeTelegramBot() {
     try {
         bot = new TelegramBot(token, { polling: true });
 
+        let authFailCount = 0;
         bot.on('polling_error', (error) => {
-            // Only log non-409 errors (409 = conflict, means another instance is running)
+            if (error.message?.includes('401')) {
+                authFailCount++;
+                if (authFailCount === 1) console.error('[TGBot] ❌ Token is invalid (401 Unauthorized). Stopping bot.');
+                if (authFailCount >= 3) {
+                    bot.stopPolling();
+                    bot = null;
+                    console.log('[TGBot] Polling stopped — set a valid TELEGRAM_BOT_TOKEN to enable');
+                }
+                return;
+            }
             if (error.code !== 'ETELEGRAM' || !error.message?.includes('409')) {
                 console.error('[TGBot] Polling error:', error.message);
             }

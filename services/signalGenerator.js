@@ -10,6 +10,7 @@ const { postSignalTeaser } = require('./telegramBot');
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
 const MIN_CONFIDENCE = 50;
 
