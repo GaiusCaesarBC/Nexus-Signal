@@ -314,6 +314,16 @@ router.post(
                 console.log('[Auth Route /login] Login streak check:', loginResult);
 
                 if (loginResult.isNewDay) {
+                    // Award daily login XP
+                    if (loginResult.bonusXp > 0) {
+                        try {
+                            await user.addXp(loginResult.bonusXp, 'daily_login');
+                            console.log(`[Auth Route /login] Awarded ${loginResult.bonusXp} XP for daily login (streak: ${loginResult.streak})`);
+                        } catch (xpErr) {
+                            console.error('[Auth Route /login] Error awarding XP:', xpErr.message);
+                        }
+                    }
+
                     dailyBonus = {
                         isNewDay: true,
                         streak: loginResult.streak,
