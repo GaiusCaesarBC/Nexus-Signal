@@ -1,244 +1,261 @@
-// services/xPosterService.js — X (Twitter) Auto-Posting Service
-// Consumes the same /api/predictions/signals endpoint as website + Telegram.
-// Never generates signals. Only distributes.
+// services/xPosterService.js — X Posting with Telegram Approval
+// Flow: Generate text → Save pending → DM admin → Approve/Reject → Post to X
 
 const { TwitterApi } = require('twitter-api-v2');
 const cron = require('node-cron');
 const Prediction = require('../models/Prediction');
+const PendingXPost = require('../models/PendingXPost');
 
 const SITE = 'https://www.nexussignal.ai';
 const MIN_CONFIDENCE = 65;
-const ENABLED = process.env.X_AUTO_POST_ENABLED !== 'false'; // Default: enabled
-const DRY_RUN = process.env.X_DRY_RUN === 'true'; // Log but don't post
+const ENABLED = process.env.X_AUTO_POST_ENABLED !== 'false';
+const REQUIRE_APPROVAL = process.env.X_REQUIRE_TELEGRAM_APPROVAL !== 'false'; // Default: true
+const ADMIN_USER_ID = process.env.TELEGRAM_ADMIN_USER_ID;
 
-let client = null;
-let postedSignals = new Set(); // In-memory idempotency (cleared every 6h)
-let postedResults = new Set();
+let xClient = null;
+let telegramBot = null; // Set by telegramBot.js after init
+let postedSignalIds = new Set();
 let postsThisHour = 0;
 const MAX_POSTS_PER_HOUR = 6;
 
-// ─── Initialize X Client ─────────────────────────────────
+// ─── X Client ─────────────────────────────────────────────
 function initializeXClient() {
-    const apiKey = process.env.X_API_KEY;
-    const apiSecret = process.env.X_API_KEY_SECRET;
-    const accessToken = process.env.X_ACCESS_TOKEN;
-    const accessSecret = process.env.X_ACCESS_TOKEN_SECRET;
-
-    if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
-        console.log('[X] Missing API credentials — X posting disabled');
-        return null;
-    }
-
+    const k = process.env.X_API_KEY;
+    const ks = process.env.X_API_KEY_SECRET;
+    const t = process.env.X_ACCESS_TOKEN;
+    const ts = process.env.X_ACCESS_TOKEN_SECRET;
+    if (!k || !ks || !t || !ts) { console.log('[X] Missing credentials — disabled'); return; }
     try {
-        client = new TwitterApi({
-            appKey: apiKey,
-            appSecret: apiSecret,
-            accessToken: accessToken,
-            accessSecret: accessSecret,
-        });
-        console.log('[X] ✅ Client initialized');
-        return client;
-    } catch (e) {
-        console.error('[X] Failed to initialize:', e.message);
-        return null;
-    }
+        xClient = new TwitterApi({ appKey: k, appSecret: ks, accessToken: t, accessSecret: ts });
+        console.log('[X] ✅ Client ready');
+    } catch (e) { console.error('[X] Init failed:', e.message); }
 }
 
-// ─── Post to X (with safety) ─────────────────────────────
-async function postTweet(text) {
-    if (!ENABLED) return null;
-    if (postsThisHour >= MAX_POSTS_PER_HOUR) {
-        console.log('[X] Rate limit reached, skipping post');
-        return null;
-    }
+// Called by telegramBot.js to share its bot instance
+function setTelegramBot(bot) { telegramBot = bot; }
 
-    // Truncate to X limit (280 chars)
-    const truncated = text.length > 280 ? text.slice(0, 277) + '...' : text;
-
-    if (DRY_RUN) {
-        console.log(`[X] DRY RUN (${truncated.length} chars):\n${truncated}`);
-        return { id: 'dry-run' };
-    }
-
-    if (!client) {
-        console.log('[X] Client not initialized, skipping');
-        return null;
-    }
-
+// ─── Post to X (final step) ──────────────────────────────
+async function postToX(text) {
+    if (!ENABLED || !xClient) return null;
+    if (postsThisHour >= MAX_POSTS_PER_HOUR) { console.log('[X] Rate limit'); return null; }
+    const t = text.length > 280 ? text.slice(0, 277) + '...' : text;
     try {
-        const result = await client.v2.tweet(truncated);
+        const result = await xClient.v2.tweet(t);
         postsThisHour++;
-        console.log(`[X] ✅ Posted (${truncated.length} chars): ${truncated.slice(0, 50)}...`);
+        console.log(`[X] ✅ Posted: ${t.slice(0, 50)}...`);
         return result.data;
     } catch (e) {
-        console.error(`[X] ❌ Post failed:`, e.message);
-        if (e.data) console.error('[X] Error data:', JSON.stringify(e.data));
+        console.error('[X] ❌ Post failed:', e.message);
         return null;
     }
 }
 
 // ─── Message Templates ────────────────────────────────────
-
-function formatNewSignal(signal, isBest = false) {
+function fmtNewSignal(sym, dir, conf, isBest) {
     const prefix = isBest ? '🔥 BEST SETUP RIGHT NOW\n\n' : '';
-    const dir = signal.direction === 'LONG' ? 'LONG' : 'SHORT';
-    const tier = signal.confidence >= 70 ? 'Strong Setup' : 'Moderate Setup';
-
-    return `${prefix}AI Signal — ${signal.symbol}
-
-${dir} | ${signal.confidence}% Confidence
-${tier}
-
-Full trade setup on Nexus Signal AI
-${SITE}/signals`;
+    const tier = conf >= 70 ? 'Strong Setup' : 'Moderate Setup';
+    return `${prefix}AI Signal — ${sym}\n\n${dir} | ${conf}% Confidence\n${tier}\n\nFull trade setup on Nexus Signal AI\n${SITE}/signals`;
 }
 
-function formatResult(signal, isWin, movePct) {
-    const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
-    const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
-    const result = isWin ? 'Target Hit' : 'Stopped Out';
-    const pct = `${movePct >= 0 ? '+' : ''}${movePct.toFixed(1)}%`;
-
-    return `Signal Result — ${sym} ${dir}
-
-${isWin ? '✅' : '❌'} ${result} (${pct})
-
-Every signal tracked. No edits.
-${SITE}/signals`;
+function fmtResult(sym, dir, isWin, pct) {
+    const r = isWin ? 'Target Hit' : 'Stopped Out';
+    return `Signal Result — ${sym} ${dir}\n\n${isWin ? '✅' : '❌'} ${r} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)\n\nEvery signal tracked. No edits.\n${SITE}/signals`;
 }
 
-function formatDailyRecap(stats) {
-    return `Daily Signal Recap
-
-Signals: ${stats.total}
-Wins: ${stats.winners} | Losses: ${stats.losers}
-Win Rate: ${stats.winRate}%
-
-All results tracked publicly.
-${SITE}/signals`;
+function fmtRecap(stats) {
+    return `Daily Signal Recap\n\nSignals: ${stats.total}\nWins: ${stats.winners} | Losses: ${stats.losers}\nWin Rate: ${stats.winRate}%\n\nAll results tracked publicly.\n${SITE}/signals`;
 }
 
-// ─── Signal Posting (event-driven) ────────────────────────
+// ─── Create Pending Post + Send Approval ──────────────────
+async function queueForApproval(type, content, signalId = null) {
+    if (!ENABLED) return;
+
+    // Idempotency: check if already pending/approved/posted for this signal+type
+    if (signalId) {
+        const existing = await PendingXPost.findOne({
+            signalId, type, status: { $in: ['pending', 'approved', 'posted'] }
+        });
+        if (existing) return; // Already queued
+    }
+
+    // Save pending post
+    const pending = await new PendingXPost({ type, signalId, content, status: 'pending' }).save();
+
+    if (!REQUIRE_APPROVAL) {
+        // Skip approval — post directly
+        return await approveAndPost(pending._id.toString());
+    }
+
+    // Send approval DM to admin via Telegram
+    if (!telegramBot || !ADMIN_USER_ID) {
+        console.log('[X] No Telegram bot or admin ID — cannot send approval. Posting directly.');
+        return await approveAndPost(pending._id.toString());
+    }
+
+    const typeLabel = { new_signal: 'New Signal', best_setup: 'Best Setup', result_update: 'Signal Result', daily_recap: 'Daily Recap' }[type] || type;
+
+    const msg = `📝 *X Post Pending Approval*\n\nType: ${typeLabel}\n\nPreview:\n\`\`\`\n${content}\n\`\`\``;
+
+    try {
+        const sent = await telegramBot.sendMessage(ADMIN_USER_ID, msg, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '✅ Approve', callback_data: `xapprove:${pending._id}` },
+                    { text: '❌ Reject', callback_data: `xreject:${pending._id}` },
+                ]]
+            }
+        });
+
+        pending.telegramMessageId = sent.message_id;
+        pending.telegramChatId = ADMIN_USER_ID;
+        await pending.save();
+
+        console.log(`[X] Approval sent for ${typeLabel} (${pending._id})`);
+    } catch (e) {
+        console.error('[X] Failed to send approval DM:', e.message);
+        // Fallback: post directly if can't reach admin
+        await approveAndPost(pending._id.toString());
+    }
+}
+
+// ─── Approve + Post ───────────────────────────────────────
+async function approveAndPost(pendingId) {
+    const post = await PendingXPost.findById(pendingId);
+    if (!post || post.status !== 'pending') return { ok: false, reason: 'not pending' };
+
+    // Atomic status update (concurrency safety)
+    const updated = await PendingXPost.findOneAndUpdate(
+        { _id: pendingId, status: 'pending' },
+        { $set: { status: 'approved', approvedAt: new Date() } },
+        { new: true }
+    );
+    if (!updated) return { ok: false, reason: 'already processed' };
+
+    const result = await postToX(post.content);
+    if (result) {
+        await PendingXPost.updateOne({ _id: pendingId }, {
+            $set: { status: 'posted', postedAt: new Date(), xPostId: result.id }
+        });
+        // Also update Prediction record if applicable
+        if (post.signalId) {
+            const updateField = post.type === 'result_update' ? 'xResultPosted' : 'xPosted';
+            await Prediction.updateOne({ _id: post.signalId }, { $set: { [updateField]: true } }).catch(() => {});
+        }
+        return { ok: true, xPostId: result.id };
+    } else {
+        await PendingXPost.updateOne({ _id: pendingId }, {
+            $set: { status: 'failed', error: 'X API post failed' }
+        });
+        return { ok: false, reason: 'X API failed' };
+    }
+}
+
+// ─── Reject ───────────────────────────────────────────────
+async function rejectPost(pendingId) {
+    const updated = await PendingXPost.findOneAndUpdate(
+        { _id: pendingId, status: 'pending' },
+        { $set: { status: 'rejected', rejectedAt: new Date() } },
+        { new: true }
+    );
+    return { ok: !!updated };
+}
+
+// ─── Telegram Callback Handler ────────────────────────────
+// Called by the Telegram bot's callback_query handler
+async function handleApprovalCallback(query) {
+    const data = query.data;
+    if (!data?.startsWith('xapprove:') && !data?.startsWith('xreject:')) return false;
+
+    const [action, pendingId] = data.split(':');
+    const isApprove = action === 'xapprove';
+
+    let responseText;
+    if (isApprove) {
+        const result = await approveAndPost(pendingId);
+        responseText = result.ok
+            ? `✅ Posted to X successfully.${result.xPostId ? ` (ID: ${result.xPostId})` : ''}`
+            : `⚠️ Could not post: ${result.reason}`;
+    } else {
+        const result = await rejectPost(pendingId);
+        responseText = result.ok ? '❌ Post rejected.' : '⚠️ Already processed.';
+    }
+
+    // Reply to the approval message
+    try {
+        await telegramBot.answerCallbackQuery(query.id, { text: responseText.slice(0, 200) });
+        await telegramBot.editMessageReplyMarkup(
+            { inline_keyboard: [[{ text: responseText.slice(0, 50), callback_data: 'noop' }]] },
+            { chat_id: query.message.chat.id, message_id: query.message.message_id }
+        );
+    } catch (e) { /* non-critical */ }
+
+    return true;
+}
+
+// ─── Public API (called by signal generator + prediction checker) ─
 
 async function postNewSignal(signal) {
     if (!ENABLED || !signal) return;
     const conf = Math.round(signal.confidence || 0);
     if (conf < MIN_CONFIDENCE) return;
-
-    const signalId = signal._id?.toString() || signal.id?.toString();
-    if (!signalId || postedSignals.has(signalId)) return;
+    const sid = signal._id?.toString();
+    if (sid && postedSignalIds.has(sid)) return;
 
     const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+    const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
 
-    // Check if this is the best signal right now
+    // Check if best
     let isBest = false;
     try {
-        const topSignal = await Prediction.findOne({
-            confidence: { $gte: MIN_CONFIDENCE },
-            status: 'pending',
-            expiresAt: { $gt: new Date() }
-        }).sort({ confidence: -1 }).lean();
-        isBest = topSignal && topSignal._id.toString() === signalId;
-    } catch (e) { /* not critical */ }
+        const top = await Prediction.findOne({ confidence: { $gte: MIN_CONFIDENCE }, status: 'pending', expiresAt: { $gt: new Date() } }).sort({ confidence: -1 }).lean();
+        isBest = top && top._id.toString() === sid;
+    } catch (e) {}
 
-    const text = formatNewSignal({
-        symbol: sym,
-        direction: signal.direction === 'UP' ? 'LONG' : 'SHORT',
-        confidence: conf
-    }, isBest);
+    const content = fmtNewSignal(sym, dir, conf, isBest);
+    const type = isBest ? 'best_setup' : 'new_signal';
 
-    const result = await postTweet(text);
-    if (result) {
-        postedSignals.add(signalId);
-        // Persist to DB
-        try {
-            await Prediction.updateOne({ _id: signalId }, {
-                $set: { xPosted: true, xPostedAt: new Date(), xPostId: result.id }
-            });
-        } catch (e) { /* non-blocking */ }
-    }
+    await queueForApproval(type, content, signal._id);
+    if (sid) postedSignalIds.add(sid);
 }
 
 async function postSignalResult(signal, isWin, movePct) {
     if (!ENABLED || !signal) return;
-    const signalId = signal._id?.toString() || signal.id?.toString();
-    if (!signalId || postedResults.has(signalId)) return;
-
-    const text = formatResult(signal, isWin, movePct);
-    const result = await postTweet(text);
-    if (result) {
-        postedResults.add(signalId);
-        try {
-            await Prediction.updateOne({ _id: signalId }, {
-                $set: { xResultPosted: true, xResultPostedAt: new Date(), xResultPostId: result.id }
-            });
-        } catch (e) { /* non-blocking */ }
-    }
+    const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+    const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
+    const content = fmtResult(sym, dir, isWin, movePct);
+    await queueForApproval('result_update', content, signal._id);
 }
 
 async function postDailyRecap() {
     if (!ENABLED) return;
-
     try {
         const now = new Date();
-        const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
-        const recent = await Prediction.find({
-            user: null, isPublic: true,
-            createdAt: { $gte: dayAgo }
-        }).lean();
-
+        const dayAgo = new Date(now - 86400000);
+        const recent = await Prediction.find({ user: null, isPublic: true, createdAt: { $gte: dayAgo } }).lean();
         const closed = recent.filter(p => p.status === 'correct' || p.status === 'incorrect' || (p.status === 'pending' && new Date(p.expiresAt) < now));
         const winners = closed.filter(p => p.status === 'correct' || p.outcome?.wasCorrect);
         const winRate = closed.length > 0 ? Math.round((winners.length / closed.length) * 100) : 0;
-
         if (recent.length === 0) return;
 
-        const text = formatDailyRecap({
-            total: recent.length,
-            winners: winners.length,
-            losers: closed.length - winners.length,
-            winRate
-        });
-
-        await postTweet(text);
-        console.log(`[X] Daily recap: ${recent.length} signals, ${winRate}% win rate`);
-    } catch (e) {
-        console.error('[X] Daily recap error:', e.message);
-    }
+        const content = fmtRecap({ total: recent.length, winners: winners.length, losers: closed.length - winners.length, winRate });
+        await queueForApproval('daily_recap', content);
+    } catch (e) { console.error('[X] Recap error:', e.message); }
 }
 
-// ─── Initialize ───────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────────
 function startXPoster() {
-    if (!ENABLED) {
-        console.log('[X] Auto-posting disabled (X_AUTO_POST_ENABLED=false)');
-        return;
-    }
-
+    if (!ENABLED) { console.log('[X] Disabled'); return; }
     initializeXClient();
 
-    if (!client && !DRY_RUN) {
-        console.log('[X] No client — auto-posting will not work');
-        return;
-    }
-
-    // Hourly rate limit reset
     cron.schedule('0 * * * *', () => { postsThisHour = 0; });
-
-    // Daily recap at 9:30 PM UTC (offset from Telegram at 9:00 PM)
     cron.schedule('30 21 * * *', postDailyRecap);
+    cron.schedule('0 */6 * * *', () => { postedSignalIds.clear(); });
 
-    // Clear idempotency caches every 6 hours
-    cron.schedule('0 */6 * * *', () => {
-        postedSignals.clear();
-        postedResults.clear();
-    });
-
-    console.log(`[X] ✅ Auto-poster started${DRY_RUN ? ' (DRY RUN MODE)' : ''}`);
+    console.log(`[X] ✅ Started${REQUIRE_APPROVAL ? ' (approval required)' : ' (direct posting)'}`);
 }
 
 module.exports = {
-    startXPoster,
-    postNewSignal,
-    postSignalResult,
-    postDailyRecap,
+    startXPoster, setTelegramBot, handleApprovalCallback,
+    postNewSignal, postSignalResult, postDailyRecap,
 };

@@ -176,6 +176,15 @@ function setupCommands() {
     });
 
     bot.on('callback_query', async (query) => {
+        // X post approval callbacks
+        if (query.data?.startsWith('xapprove:') || query.data?.startsWith('xreject:')) {
+            try {
+                const { handleApprovalCallback } = require('./xPosterService');
+                await handleApprovalCallback(query);
+            } catch (e) { console.error('[TGBot] X approval error:', e.message); }
+            return;
+        }
+
         if (query.data === 'results') {
             const stats = await getRecentStats();
             bot.answerCallbackQuery(query.id);
@@ -281,6 +290,10 @@ function initializeTelegramBot() {
         });
 
         setupCommands();
+
+        // Share bot instance with X poster for approval DMs
+        try { const { setTelegramBot } = require('./xPosterService'); setTelegramBot(bot); } catch (e) {}
+
         cron.schedule('0 * * * *', () => { postsThisHour = 0; });
         cron.schedule('0 21 * * *', postDailyRecap);
         cron.schedule('0 */6 * * *', () => { lastPostedSignals.clear(); });
