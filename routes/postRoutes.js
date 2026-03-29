@@ -400,6 +400,27 @@ router.delete('/:id', postLimiter, auth, async (req, res) => {
     }
 });
 
+// @route   GET /api/posts/detail/:id
+// @desc    Get a single post by ID
+// @access  Public (with optional auth for like/bookmark status)
+router.get('/detail/:id', postLimiter, async (req, res) => {
+    try {
+        const post = await Post.findById(req.params.id)
+            .populate('user', 'username profile gamification')
+            .populate('comments.user', 'username profile')
+            .lean();
+
+        if (!post || post.deleted) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        res.json(post);
+    } catch (error) {
+        console.error('[Posts] Get by ID error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch post' });
+    }
+});
+
 // @route   GET /api/posts/user/:userId
 // @desc    Get posts by a specific user
 // @access  Private
