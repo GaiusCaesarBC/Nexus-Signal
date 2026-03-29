@@ -402,7 +402,6 @@ router.get('/dex-trending', auth, async (req, res) => {
 
     try {
         // Use CryptoCompare top movers by 24h change (no rate limit issues)
-        const axios = require('axios');
         const ccRes = await axios.get(
             'https://min-api.cryptocompare.com/data/top/totalvolfull?limit=50&tsym=USD',
             { timeout: 8000 }
