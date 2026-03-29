@@ -9,6 +9,7 @@ const SITE = 'https://www.nexussignal.ai';
 const MIN_CONFIDENCE = 65;
 let bot = null;
 let channelId = null;
+let groupId = null;
 let lastPostedSignals = new Set();
 
 // Rate limiting
@@ -198,8 +199,20 @@ function setupCommands() {
 
 // ─── Channel Posts (event-driven) ─────────────────────────
 
+// Send to all configured destinations (channel + group)
+async function sendToAll(text, options = {}) {
+    const targets = [channelId, groupId].filter(Boolean);
+    for (const target of targets) {
+        try {
+            await bot.sendMessage(target, text, options);
+        } catch (e) {
+            console.error(`[TGBot] Send error (${target}):`, e.message);
+        }
+    }
+}
+
 async function postSignalTeaser(signal) {
-    if (!bot || !channelId || !canPost()) return;
+    if (!bot || (!channelId && !groupId) || !canPost()) return;
     const conf = Math.round(signal.confidence || 0);
     if (conf < MIN_CONFIDENCE) return;
     if (lastPostedSignals.has(signal._id?.toString())) return;
@@ -208,7 +221,7 @@ async function postSignalTeaser(signal) {
     const long = signal.direction === 'UP';
 
     try {
-        await bot.sendMessage(channelId, buildTeaserMessage({ symbol: sym, direction: long ? 'LONG' : 'SHORT', long, confidence: conf }), {
+        await sendToAll(buildTeaserMessage({ symbol: sym, direction: long ? 'LONG' : 'SHORT', long, confidence: conf }), {
             parse_mode: 'MarkdownV2',
             reply_markup: { inline_keyboard: [[{ text: '🔓 View Full Signal', url: `${SITE}/signals` }]] }
         });
@@ -221,9 +234,9 @@ async function postSignalTeaser(signal) {
 }
 
 async function postResult(signal, isWin, movePct) {
-    if (!bot || !channelId || !canPost()) return;
+    if (!bot || (!channelId && !groupId) || !canPost()) return;
     try {
-        await bot.sendMessage(channelId, buildResultMessage(signal, isWin, movePct), {
+        await sendToAll(buildResultMessage(signal, isWin, movePct), {
             parse_mode: 'MarkdownV2',
             reply_markup: { inline_keyboard: [[{ text: '📊 View All Results', url: `${SITE}/signals` }]] }
         });
@@ -234,11 +247,11 @@ async function postResult(signal, isWin, movePct) {
 }
 
 async function postDailyRecap() {
-    if (!bot || !channelId) return;
+    if (!bot || (!channelId && !groupId)) return;
     try {
         const stats = await getRecentStats();
         if (stats.total === 0) return;
-        await bot.sendMessage(channelId, buildDailyRecap(stats), {
+        await sendToAll(buildDailyRecap(stats), {
             parse_mode: 'MarkdownV2',
             reply_markup: { inline_keyboard: [
                 [{ text: '🔓 View All Signals', url: `${SITE}/signals` }],
@@ -255,6 +268,7 @@ async function postDailyRecap() {
 function initializeTelegramBot() {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     channelId = process.env.TELEGRAM_CHANNEL_ID;
+    groupId = process.env.TELEGRAM_GROUP_ID;
 
     if (!token) {
         console.log('[TGBot] TELEGRAM_BOT_TOKEN not set — disabled');
@@ -280,7 +294,7 @@ function initializeTelegramBot() {
         cron.schedule('0 21 * * *', postDailyRecap);
         cron.schedule('0 */6 * * *', () => { lastPostedSignals.clear(); });
 
-        console.log(`[TGBot] ✅ Initialized${channelId ? ` (channel: ${channelId})` : ''}`);
+        console.log(`[TGBot] ✅ Initialized${channelId ? ` | channel: ${channelId}` : ''}${groupId ? ` | group: ${groupId}` : ''}`);
     } catch (error) {
         console.error('[TGBot] Init failed:', error.message);
     }
