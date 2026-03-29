@@ -242,7 +242,7 @@ const UserSchema = new mongoose.Schema({
     // ============ WALLET CONNECTION ============
     wallet: {
         address: { type: String, default: null },
-        chainId: { type: Number, default: null },
+        chainId: { type: mongoose.Schema.Types.Mixed, default: null },
         linkedAt: { type: Date, default: null },
         lastSyncedAt: { type: Date, default: null },
         // Track if portfolio data comes from wallet
