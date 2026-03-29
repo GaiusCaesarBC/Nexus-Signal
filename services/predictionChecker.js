@@ -8,6 +8,7 @@ const User = require('../models/User');
 const GamificationService = require('./gamificationService');
 const NotificationService = require('./notificationService');
 const { postResult } = require('./telegramBot');
+const { postSignalResult: postResultToX } = require('./xPosterService');
 
 // ============ INLINE PRICE CACHE ============
 const priceCache = new Map();
@@ -211,9 +212,12 @@ async function checkPrediction(prediction) {
             console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (predicted ${prediction.direction}, actual change: ${prediction.outcome.actualChangePercent.toFixed(2)}%)`);
         }
 
-        // Post result to Telegram (system signals only)
+        // Post result to Telegram + X (system signals only)
         if (!prediction.user) {
-            try { postResult(prediction, prediction.status === 'correct', prediction.outcome?.actualChangePercent || 0); } catch (e) { /* non-blocking */ }
+            const isCorrect = prediction.status === 'correct';
+            const movePct = prediction.outcome?.actualChangePercent || 0;
+            try { postResult(prediction, isCorrect, movePct); } catch (e) { /* non-blocking */ }
+            try { postResultToX(prediction, isCorrect, movePct); } catch (e) { /* non-blocking */ }
         }
 
         return { success: true, prediction };

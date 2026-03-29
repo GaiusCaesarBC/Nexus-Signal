@@ -320,6 +320,10 @@ const connectDB = async () => {
         const { initializeTelegramBot } = require('./services/telegramBot');
         initializeTelegramBot();
 
+        // X (TWITTER) AUTO-POSTER — Same signals as website + Telegram
+        const { startXPoster } = require('./services/xPosterService');
+        startXPoster();
+
         // ✅ INITIALIZE DISCORD BOT
         const { initializeBot: initializeDiscordBot } = require('./services/discordService');
         initializeDiscordBot();

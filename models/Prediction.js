@@ -138,6 +138,13 @@ const PredictionSchema = new mongoose.Schema({
         type: Boolean,
         default: true
     },
+    // X (Twitter) posting state
+    xPosted: { type: Boolean, default: false },
+    xPostedAt: { type: Date, default: null },
+    xPostId: { type: String, default: null },
+    xResultPosted: { type: Boolean, default: false },
+    xResultPostedAt: { type: Date, default: null },
+    xResultPostId: { type: String, default: null },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
