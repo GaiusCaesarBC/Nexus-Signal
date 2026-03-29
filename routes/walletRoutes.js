@@ -107,11 +107,13 @@ router.post('/link', authMiddleware, async (req, res) => {
             });
         }
 
-        // Validate Ethereum address format
-        if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        // Validate wallet address format (EVM or Solana)
+        const isEvm = /^0x[a-fA-F0-9]{40}$/.test(address);
+        const isSolana = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+        if (!isEvm && !isSolana) {
             return res.status(400).json({
                 success: false,
-                error: 'Invalid wallet address format'
+                error: 'Invalid wallet address format. Provide an EVM (0x...) or Solana address.'
             });
         }
 
