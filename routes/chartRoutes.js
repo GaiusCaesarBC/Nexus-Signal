@@ -1312,9 +1312,54 @@ switch(interval) {
                     dataKey = 'Time Series (Daily)';
             }
             
+            // TRY FINNHUB FIRST for stock candles (fast, have API key)
+            const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
+            if (FINNHUB_KEY) {
+                try {
+                    const now = Math.floor(Date.now() / 1000);
+                    let resolution, from;
+                    switch(interval) {
+                        case 'LIVE': case '1m': resolution = '1'; from = now - 86400; break;
+                        case '5m': resolution = '5'; from = now - 86400 * 3; break;
+                        case '15m': resolution = '15'; from = now - 86400 * 5; break;
+                        case '30m': resolution = '30'; from = now - 86400 * 7; break;
+                        case '1h': case '60m': resolution = '60'; from = now - 86400 * 14; break;
+                        case '4h': resolution = 'D'; from = now - 86400 * 90; break;
+                        case '1D': resolution = 'D'; from = now - 86400 * 365; break;
+                        case '1W': resolution = 'W'; from = now - 86400 * 365 * 3; break;
+                        case '1M': resolution = 'M'; from = now - 86400 * 365 * 5; break;
+                        default: resolution = 'D'; from = now - 86400 * 365;
+                    }
+
+                    console.log(`[Chart] 📊 Trying Finnhub for ${symbol} (${resolution})...`);
+                    const fhRes = await axios.get(
+                        `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${now}&token=${FINNHUB_KEY}`,
+                        { timeout: 8000 }
+                    );
+
+                    if (fhRes.data?.s === 'ok' && fhRes.data?.c?.length > 5) {
+                        const fhChart = fhRes.data.t.map((t, i) => ({
+                            time: t,
+                            open: fhRes.data.o[i],
+                            high: fhRes.data.h[i],
+                            low: fhRes.data.l[i],
+                            close: fhRes.data.c[i],
+                            volume: fhRes.data.v[i] || 0
+                        })).filter(c => c.close > 0);
+
+                        chartDataCache.set(cacheKey, { data: fhChart, timestamp: Date.now() });
+                        console.log(`[Chart] ✅ Finnhub: ${fhChart.length} candles for ${symbol}`);
+                        return res.json({ success: true, data: fhChart, symbol, interval, source: 'finnhub' });
+                    }
+                } catch (fhErr) {
+                    console.log(`[Chart] Finnhub failed for ${symbol}:`, fhErr.message);
+                }
+            }
+
+            // FALLBACK: Alpha Vantage
             // Build API URL for STOCKS
             let apiUrl = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-            
+
             if (alphaVantageFunction === 'TIME_SERIES_INTRADAY') {
                 let avInterval;
                 if (interval === '1h') {
