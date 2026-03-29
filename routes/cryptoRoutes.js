@@ -366,12 +366,42 @@ async function fetchCryptoData(symbol, range) {
         return historicalData;
 
     } catch (error) {
-        console.error(`[Crypto] ❌ API Error:`, error.message);
-        if (error.response) {
-            console.error(`[Crypto] Status:`, error.response.status);
-            console.error(`[Crypto] Data:`, JSON.stringify(error.response.data, null, 2));
+        console.error(`[Crypto] CoinGecko failed for ${symbol}:`, error.message);
+
+        // ═══ FALLBACK: CryptoCompare OHLCV ═══
+        try {
+            console.log(`[Crypto] Trying CryptoCompare fallback for ${symbol}...`);
+            const sym = symbol.toUpperCase().replace(/USDT|USD/i, '');
+            const daysNum = parseInt(days) || 180;
+            // Use daily if > 7 days, hourly if <= 7
+            const endpoint = daysNum > 7 ? 'histoday' : 'histohour';
+            const limit = daysNum > 7 ? Math.min(daysNum, 2000) : Math.min(daysNum * 24, 2000);
+
+            const ccRes = await axios.get(
+                `https://min-api.cryptocompare.com/data/v2/${endpoint}?fsym=${sym}&tsym=USD&limit=${limit}`,
+                { timeout: 10000 }
+            );
+
+            const bars = ccRes.data?.Data?.Data || [];
+            if (bars.length === 0) throw new Error('No CryptoCompare data');
+
+            const historicalData = bars.map(b => ({
+                time: b.time * 1000,
+                date: formatDateString(b.time * 1000, range),
+                open: b.open,
+                high: b.high,
+                low: b.low,
+                close: b.close,
+                volume: b.volumeto || 0
+            })).filter(b => b.close > 0);
+
+            console.log(`[Crypto] ✅ CryptoCompare: ${historicalData.length} data points for ${sym}`);
+            cryptoCache[cacheKey] = { timestamp: Date.now(), data: historicalData };
+            return historicalData;
+        } catch (ccError) {
+            console.error(`[Crypto] CryptoCompare fallback also failed:`, ccError.message);
+            throw error; // Throw original CoinGecko error
         }
-        throw error;
     }
 }
 
