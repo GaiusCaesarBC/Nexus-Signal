@@ -84,7 +84,13 @@ function connectAlpaca() {
                 }
 
                 if (msg.T === 'error') {
-                    console.error(`[WebSocket] Alpaca error message: ${msg.msg} (code: ${msg.code})`);
+                    if (msg.code === 406) {
+                        console.log('[WebSocket] Alpaca connection limit exceeded — stopping reconnects. Using REST fallback.');
+                        alpacaReconnectAttempts = MAX_RECONNECT_ATTEMPTS; // Stop reconnecting
+                        try { alpacaWs.close(); } catch (e) { /* ignore */ }
+                        return;
+                    }
+                    console.error(`[WebSocket] Alpaca error: ${msg.msg} (code: ${msg.code})`);
                 }
 
                 if (msg.T === 'subscription') {
@@ -130,8 +136,10 @@ function connectAlpaca() {
     });
 
     alpacaWs.on('close', (code, reason) => {
-        console.log(`[WebSocket] Alpaca disconnected (code: ${code}, reason: ${reason || 'none'})`);
-        reconnectAlpaca();
+        if (alpacaReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            console.log(`[WebSocket] Alpaca disconnected (code: ${code})`);
+            reconnectAlpaca();
+        }
     });
 
     alpacaWs.on('error', (error) => {
