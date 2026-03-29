@@ -1146,6 +1146,36 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     dataKey = 'Time Series (Digital Currency Daily)';
             }
 
+            // TRY CRYPTOCOMPARE FIRST (no rate limit issues, fast)
+            try {
+                console.log(`[Chart] 🔄 Trying CryptoCompare for ${crypto} (${interval})...`);
+                const ccEndpoint = ['1W','1M'].includes(interval) ? 'histoday' : 'histoday';
+                const ccLimit = interval === '1M' ? 30 : interval === '1W' ? 52 * 7 : interval === '6M' ? 180 : 365;
+                const ccRes = await axios.get(
+                    `https://min-api.cryptocompare.com/data/v2/${ccEndpoint}?fsym=${crypto}&tsym=USD&limit=${ccLimit}`,
+                    { timeout: 8000 }
+                );
+                const ccBars = ccRes.data?.Data?.Data || [];
+                if (ccBars.length > 10) {
+                    const ccChart = ccBars
+                        .filter(b => b.close > 0)
+                        .map(b => ({
+                            time: b.time,
+                            open: b.open,
+                            high: b.high,
+                            low: b.low,
+                            close: b.close,
+                            volume: b.volumeto || 0
+                        }));
+                    chartDataCache.set(cacheKey, { data: ccChart, timestamp: Date.now() });
+                    console.log(`[Chart] ✅ CryptoCompare: ${ccChart.length} candles for ${crypto}`);
+                    return res.json({ success: true, data: ccChart, symbol: `${crypto}-USD`, interval, source: 'cryptocompare' });
+                }
+            } catch (ccErr) {
+                console.log(`[Chart] CryptoCompare failed for ${crypto}:`, ccErr.message);
+            }
+
+            // FALLBACK: Alpha Vantage (may rate limit)
             const apiUrl = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${crypto}&market=${market}&apikey=${ALPHA_VANTAGE_API_KEY}`;
 
             console.log(`[Chart] 🔗 Crypto API call to Alpha Vantage`);
