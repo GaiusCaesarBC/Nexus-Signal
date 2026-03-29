@@ -97,6 +97,53 @@ function formatDateString(timestamp, range) {
     return date.toISOString().slice(0, 10);
 }
 
+// GET /api/crypto/info/:symbol — Get coin info including contract addresses
+router.get('/info/:symbol', async (req, res) => {
+    try {
+        const sym = req.params.symbol.toUpperCase();
+        const ccRes = await axios.get(
+            `https://min-api.cryptocompare.com/data/top/exchanges/full?fsym=${sym}&tsym=USD`,
+            { timeout: 8000 }
+        );
+
+        const coinData = ccRes.data?.Data?.CoinInfo || {};
+        const aggData = ccRes.data?.Data?.AggregatedData || {};
+
+        // Try to get contract address from CryptoCompare
+        let contractAddress = null;
+        let blockchain = null;
+
+        // CryptoCompare stores smart contract address in SmartContractAddress field
+        if (coinData.SmartContractAddress && coinData.SmartContractAddress !== 'N/A') {
+            contractAddress = coinData.SmartContractAddress;
+            blockchain = coinData.BuiltOn || 'Ethereum';
+        }
+
+        res.json({
+            success: true,
+            symbol: sym,
+            name: coinData.FullName || coinData.Name || sym,
+            contractAddress,
+            blockchain,
+            algorithm: coinData.Algorithm || null,
+            proofType: coinData.ProofType || null,
+            maxSupply: coinData.MaxSupply || null,
+            totalCoinsMined: coinData.TotalCoinsMined || null,
+            blockNumber: coinData.BlockNumber || null,
+            description: coinData.Description || null,
+            website: coinData.Url ? `https://www.cryptocompare.com${coinData.Url}` : null,
+            imageUrl: coinData.ImageUrl ? `https://www.cryptocompare.com${coinData.ImageUrl}` : null,
+            currentPrice: aggData.PRICE || null,
+            change24h: aggData.CHANGEPCT24HOUR || null,
+            volume24h: aggData.TOTALVOLUME24HTO || null,
+            marketCap: aggData.MKTCAP || null,
+        });
+    } catch (error) {
+        console.error(`[Crypto] Info error for ${req.params.symbol}:`, error.message);
+        res.json({ success: false, symbol: req.params.symbol.toUpperCase(), contractAddress: null });
+    }
+});
+
 // ✅ TEST ENDPOINT - Verify Pro API is working correctly
 router.get('/test-api/:symbol?', async (req, res) => {
     try {
