@@ -212,10 +212,11 @@ async function checkPrediction(prediction) {
             console.log(`[PredictionChecker] ❌ ${prediction.symbol}: INCORRECT (predicted ${prediction.direction}, actual change: ${prediction.outcome.actualChangePercent.toFixed(2)}%)`);
         }
 
-        // Post result to Telegram + X (system signals only)
+        // Distribute results: Notifications + Telegram + X (system signals only)
         if (!prediction.user) {
             const isCorrect = prediction.status === 'correct';
             const movePct = prediction.outcome?.actualChangePercent || 0;
+            try { NotificationService.createSignalResultNotification(prediction, isCorrect, movePct); } catch (e) { /* non-blocking */ }
             try { postResult(prediction, isCorrect, movePct); } catch (e) { /* non-blocking */ }
             try { postResultToX(prediction, isCorrect, movePct); } catch (e) { /* non-blocking */ }
         }

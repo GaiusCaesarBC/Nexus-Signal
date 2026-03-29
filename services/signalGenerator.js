@@ -7,6 +7,7 @@ const Prediction = require('../models/Prediction');
 const { discoverAssets } = require('./assetDiscovery');
 const { postSignalTeaser } = require('./telegramBot');
 const { postNewSignal: postSignalToX } = require('./xPosterService');
+const NotificationService = require('./notificationService');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const ML_API_KEY = process.env.ML_API_KEY;
@@ -152,8 +153,9 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         console.log(`[SignalGen] ✅ ${symbol} (${assetType}) — ${direction} ${confidence}% → $${targetPrice >= 1 ? targetPrice.toFixed(2) : targetPrice.toFixed(6)}`);
 
-        // Post high-confidence signals to Telegram + X (teaser only)
+        // Distribute high-confidence signals: Notifications + Telegram + X
         if (confidence >= 65) {
+            try { NotificationService.createSignalNotification({ symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
             try { postSignalTeaser({ _id: symbol, symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
             try { postSignalToX({ _id: symbol, symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
         }

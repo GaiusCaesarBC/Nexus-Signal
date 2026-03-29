@@ -472,4 +472,91 @@ class NotificationService {
     }
 }
 
+    // ============ NEW SIGNAL NOTIFICATION (BROADCAST) ============
+    static async createSignalNotification(signal) {
+        try {
+            const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+            const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
+            const conf = Math.round(signal.confidence || 0);
+            const tier = conf >= 70 ? 'Strong Setup' : 'Moderate Setup';
+            const icon = signal.direction === 'UP' ? 'trending-up' : 'trending-down';
+
+            // Get all active users (limit to avoid massive DB load)
+            const User = require('../models/User');
+            const users = await User.find({ isActive: { $ne: false } })
+                .select('_id')
+                .limit(1000)
+                .lean();
+
+            const title = `${dir === 'LONG' ? '📈' : '📉'} ${sym} ${dir} — ${tier}`;
+            const message = `${conf}% confidence AI signal detected`;
+
+            let created = 0;
+            for (const user of users) {
+                try {
+                    await Notification.create({
+                        user: user._id,
+                        type: 'signal',
+                        title,
+                        message,
+                        icon,
+                        link: '/signals',
+                        data: { symbol: sym, direction: dir, confidence: conf },
+                        read: false
+                    });
+                    created++;
+                } catch (e) { /* skip duplicates */ }
+            }
+
+            console.log(`[Notification] Signal notification sent to ${created} users: ${sym} ${dir}`);
+            return created;
+        } catch (error) {
+            console.error('[Notification] Signal broadcast error:', error.message);
+            return 0;
+        }
+    }
+
+    // ============ SIGNAL RESULT NOTIFICATION (BROADCAST) ============
+    static async createSignalResultNotification(signal, isWin, movePct) {
+        try {
+            const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+            const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
+            const result = isWin ? 'Target Hit' : 'Stopped Out';
+            const pct = `${movePct >= 0 ? '+' : ''}${movePct.toFixed(1)}%`;
+
+            const User = require('../models/User');
+            const users = await User.find({ isActive: { $ne: false } })
+                .select('_id')
+                .limit(1000)
+                .lean();
+
+            const title = `${isWin ? '✅' : '❌'} ${sym} ${dir} — ${result}`;
+            const message = `Signal closed: ${pct}`;
+
+            let created = 0;
+            for (const user of users) {
+                try {
+                    await Notification.create({
+                        user: user._id,
+                        type: 'signal_result',
+                        title,
+                        message,
+                        icon: isWin ? 'check-circle' : 'x-circle',
+                        link: '/signals',
+                        data: { symbol: sym, direction: dir, isWin, movePct },
+                        read: false
+                    });
+                    created++;
+                } catch (e) { /* skip */ }
+            }
+
+            console.log(`[Notification] Result notification sent to ${created} users: ${sym} ${result}`);
+            return created;
+        } catch (error) {
+            console.error('[Notification] Result broadcast error:', error.message);
+            return 0;
+        }
+    }
+}
+
 module.exports = NotificationService;
