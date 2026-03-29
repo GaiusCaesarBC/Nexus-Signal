@@ -398,24 +398,29 @@ router.get('/dex-trending', auth, async (req, res) => {
         return res.json(cachedDexTrending);
     }
 
-    console.log(`[Dashboard] Fetching DEX trending from GeckoTerminal (${network})...`);
+    console.log(`[Dashboard] Fetching trending crypto...`);
 
     try {
-        const trending = await geckoTerminalService.getTrendingPools(network);
+        // Use CryptoCompare top movers (no rate limit issues)
+        const axios = require('axios');
+        const ccRes = await axios.get(
+            'https://min-api.cryptocompare.com/data/top/totalvolfull?limit=20&tsym=USD',
+            { timeout: 8000 }
+        );
 
-        // Format for ticker tape display
-        const formattedTrending = trending.slice(0, 15).map(token => ({
-            symbol: token.symbol,
-            name: token.name,
-            price: token.price,
-            change: token.changePercent,
-            volume: token.volume,
-            tvl: token.tvl,
-            chain: token.chain || 'BSC',
-            source: 'geckoterminal',
-            poolAddress: token.poolAddress,
-            contractAddress: token.contractAddress,
-            badge: token.badge
+        const stablecoins = new Set(['USDT','USDC','BUSD','DAI','TUSD','USDP','FDUSD']);
+        const coins = (ccRes.data?.Data || [])
+            .filter(c => !stablecoins.has(c.CoinInfo?.Name))
+            .slice(0, 15);
+
+        const formattedTrending = coins.map(c => ({
+            symbol: c.CoinInfo?.Name || '?',
+            name: c.CoinInfo?.FullName || c.CoinInfo?.Name || '?',
+            price: c.RAW?.USD?.PRICE || 0,
+            change: c.RAW?.USD?.CHANGEPCT24HOUR || 0,
+            volume: c.RAW?.USD?.TOTALVOLUME24HTO || 0,
+            chain: 'Crypto',
+            source: 'cryptocompare'
         }));
 
         cachedDexTrending = {
