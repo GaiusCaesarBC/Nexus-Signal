@@ -811,29 +811,33 @@ function getExplorerLink(chainId, hash) {
 }
 
 /**
- * Fetch Solana wallet transactions via Solscan API
+ * Fetch Solana wallet transactions via Solana RPC + Solscan
  */
 async function fetchSolanaTrades(address) {
     try {
-        const res = await axios.get(
-            `https://api.solscan.io/account/transactions?address=${address}&limit=50`,
-            { timeout: 10000, headers: { 'Accept': 'application/json' } }
-        );
+        // Use Solana RPC to get recent signatures
+        const rpcRes = await axios.post('https://api.mainnet-beta.solana.com', {
+            jsonrpc: '2.0', id: 1,
+            method: 'getSignaturesForAddress',
+            params: [address, { limit: 30 }]
+        }, { timeout: 15000 });
 
-        if (!res.data || !Array.isArray(res.data)) return [];
+        const sigs = rpcRes.data?.result || [];
+        if (sigs.length === 0) return [];
 
-        return res.data.slice(0, 50).map(tx => ({
+        return sigs.map(tx => ({
             type: 'transfer',
-            hash: tx.txHash || tx.signature,
-            from: tx.signer?.[0] || address,
-            to: tx.signer?.[1] || '',
-            value: tx.lamport?.toString() || '0',
+            hash: tx.signature,
+            from: address,
+            to: '',
+            value: '0',
             tokenSymbol: 'SOL',
             tokenName: 'Solana',
             tokenDecimal: 9,
             timestamp: new Date((tx.blockTime || 0) * 1000),
             fee: tx.fee || 0,
-            status: tx.status === 'Success' ? 'success' : 'failed'
+            status: tx.err ? 'failed' : 'success',
+            memo: tx.memo || null
         }));
     } catch (error) {
         console.error('[Wallet] Solana trades fetch error:', error.message);
@@ -842,31 +846,96 @@ async function fetchSolanaTrades(address) {
 }
 
 /**
- * Fetch Solana token balances
+ * Fetch Solana token balances via Solana RPC (free, no API key)
  */
 async function fetchSolanaBalances(address) {
+    const balances = [];
+
     try {
-        const res = await axios.get(
-            `https://api.solscan.io/account/tokens?address=${address}`,
-            { timeout: 10000, headers: { 'Accept': 'application/json' } }
-        );
+        // 1. Get native SOL balance
+        const solRes = await axios.post('https://api.mainnet-beta.solana.com', {
+            jsonrpc: '2.0', id: 1,
+            method: 'getBalance',
+            params: [address]
+        }, { timeout: 10000 });
 
-        if (!res.data || !Array.isArray(res.data)) return [];
+        const lamports = solRes.data?.result?.value || 0;
+        const solBalance = lamports / 1e9;
+        if (solBalance > 0) {
+            // Get SOL price
+            let solPrice = 0;
+            try {
+                const priceRes = await axios.get('https://min-api.cryptocompare.com/data/price?fsym=SOL&tsyms=USD', { timeout: 5000 });
+                solPrice = priceRes.data?.USD || 0;
+            } catch (e) { /* no price */ }
 
-        return res.data
-            .filter(t => t.tokenAmount?.uiAmount > 0)
-            .map(t => ({
-                symbol: t.tokenSymbol || 'Unknown',
-                name: t.tokenName || t.tokenSymbol || 'Unknown Token',
-                balance: t.tokenAmount?.uiAmount || 0,
-                decimals: t.tokenAmount?.decimals || 9,
-                contractAddress: t.tokenAddress,
+            balances.push({
+                symbol: 'SOL',
+                name: 'Solana',
+                balance: solBalance,
+                decimals: 9,
+                contractAddress: 'native',
+                chain: 'Solana',
+                chainId: 'solana',
+                price: solPrice,
+                value: solBalance * solPrice
+            });
+        }
+
+        // 2. Get SPL token accounts
+        const tokenRes = await axios.post('https://api.mainnet-beta.solana.com', {
+            jsonrpc: '2.0', id: 2,
+            method: 'getTokenAccountsByOwner',
+            params: [address, { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' }, { encoding: 'jsonParsed' }]
+        }, { timeout: 15000 });
+
+        const tokenAccounts = tokenRes.data?.result?.value || [];
+        console.log(`[Wallet] Solana: Found ${tokenAccounts.length} SPL token accounts for ${address.slice(0,8)}...`);
+
+        for (const account of tokenAccounts) {
+            const info = account.account?.data?.parsed?.info;
+            if (!info) continue;
+
+            const amount = info.tokenAmount;
+            if (!amount || amount.uiAmount <= 0) continue;
+
+            balances.push({
+                symbol: info.mint?.slice(0, 6) || 'SPL',
+                name: 'SPL Token',
+                balance: amount.uiAmount,
+                decimals: amount.decimals || 9,
+                contractAddress: info.mint,
                 chain: 'Solana',
                 chainId: 'solana'
-            }));
+            });
+        }
+
+        // 3. Try to resolve token names/symbols via Jupiter token list
+        if (balances.length > 1) { // More than just SOL
+            try {
+                const jupRes = await axios.get('https://token.jup.ag/strict', { timeout: 8000 });
+                const tokenList = jupRes.data || [];
+                const tokenMap = new Map(tokenList.map(t => [t.address, t]));
+
+                for (const b of balances) {
+                    if (b.contractAddress && b.contractAddress !== 'native') {
+                        const jupToken = tokenMap.get(b.contractAddress);
+                        if (jupToken) {
+                            b.symbol = jupToken.symbol;
+                            b.name = jupToken.name;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('[Wallet] Jupiter token list failed, using raw mint addresses');
+            }
+        }
+
+        console.log(`[Wallet] Solana balances: ${balances.length} tokens for ${address.slice(0,8)}...`);
+        return balances;
     } catch (error) {
         console.error('[Wallet] Solana balances fetch error:', error.message);
-        return [];
+        return balances; // Return whatever we got (might have SOL balance)
     }
 }
 
