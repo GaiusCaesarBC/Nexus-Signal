@@ -111,39 +111,60 @@ function initializePlaidClient() {
  * @param {string} clientName - Client application name
  * @returns {Promise<object>} Link token response
  */
-async function createLinkToken(userId, clientName = 'Nexus Signal') {
+async function createLinkToken(userId, clientName = 'Nexus Signal AI') {
     const client = initializePlaidClient();
 
     try {
         const linkConfig = {
             user: {
-                client_user_id: userId,
+                client_user_id: userId.toString(),
             },
             client_name: clientName,
+            // Primary product: investments (for brokerage holdings)
             products: [Products.Investments],
+            // Additional consented products — Schwab and some brokerages need transactions too
+            additional_consented_products: [Products.Transactions],
             country_codes: [CountryCode.Us],
             language: 'en',
         };
 
-        // Add webhook URL for production
+        // Webhook URL for production (Plaid sends updates when holdings change)
         if (process.env.PLAID_WEBHOOK_URL) {
             linkConfig.webhook = process.env.PLAID_WEBHOOK_URL;
         }
 
-        // Add OAuth redirect URI for production (required for some institutions)
+        // OAuth redirect URI — REQUIRED for Schwab and other OAuth-based institutions
+        // Must match exactly what's registered in Plaid dashboard → Settings → Allowed redirect URIs
         if (process.env.PLAID_REDIRECT_URI) {
             linkConfig.redirect_uri = process.env.PLAID_REDIRECT_URI;
         }
 
+        console.log(`[Plaid] Creating link token for user ${userId}`, {
+            products: linkConfig.products,
+            additional: linkConfig.additional_consented_products,
+            redirect_uri: linkConfig.redirect_uri || 'NOT SET',
+            webhook: linkConfig.webhook || 'NOT SET',
+            env: process.env.PLAID_ENV || 'sandbox'
+        });
+
         const response = await client.linkTokenCreate(linkConfig);
+
+        console.log(`[Plaid] ✅ Link token created: ${response.data.link_token.slice(0, 20)}...`);
 
         return {
             linkToken: response.data.link_token,
             expiration: response.data.expiration
         };
     } catch (error) {
-        console.error('Error creating Plaid link token:', error.response?.data || error.message);
-        throw new Error('Failed to create link token');
+        const plaidError = error.response?.data;
+        console.error('[Plaid] ❌ Link token error:', {
+            error_type: plaidError?.error_type,
+            error_code: plaidError?.error_code,
+            error_message: plaidError?.error_message,
+            display_message: plaidError?.display_message,
+            raw: plaidError || error.message
+        });
+        throw new Error(plaidError?.error_message || 'Failed to create link token');
     }
 }
 
