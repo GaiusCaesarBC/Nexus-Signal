@@ -401,16 +401,17 @@ router.get('/dex-trending', auth, async (req, res) => {
     console.log(`[Dashboard] Fetching trending crypto...`);
 
     try {
-        // Use CryptoCompare top movers (no rate limit issues)
+        // Use CryptoCompare top movers by 24h change (no rate limit issues)
         const axios = require('axios');
         const ccRes = await axios.get(
-            'https://min-api.cryptocompare.com/data/top/totalvolfull?limit=20&tsym=USD',
+            'https://min-api.cryptocompare.com/data/top/totalvolfull?limit=50&tsym=USD',
             { timeout: 8000 }
         );
 
-        const stablecoins = new Set(['USDT','USDC','BUSD','DAI','TUSD','USDP','FDUSD']);
+        const stablecoins = new Set(['USDT','USDC','BUSD','DAI','TUSD','USDP','FDUSD','PYUSD','EURC','USD1']);
         const coins = (ccRes.data?.Data || [])
-            .filter(c => !stablecoins.has(c.CoinInfo?.Name))
+            .filter(c => !stablecoins.has(c.CoinInfo?.Name) && c.RAW?.USD?.CHANGEPCT24HOUR != null)
+            .sort((a, b) => Math.abs(b.RAW?.USD?.CHANGEPCT24HOUR || 0) - Math.abs(a.RAW?.USD?.CHANGEPCT24HOUR || 0))
             .slice(0, 15);
 
         const formattedTrending = coins.map(c => ({
