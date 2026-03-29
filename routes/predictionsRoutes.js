@@ -1746,4 +1746,95 @@ router.get('/accuracy-dashboard', predictionLimiter, auth, async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════
+// GET /api/predictions/signals — Clean scored signal feed
+// Same logic as frontend /signals page + Telegram bot
+// Public (no auth) — entry/SL/TP hidden for non-premium
+// ═══════════════════════════════════════════════════════════
+router.get('/signals', predictionLimiter, async (req, res) => {
+    try {
+        const { limit = 20, status = 'active' } = req.query;
+        const now = new Date();
+        const MIN_CONF = 65;
+
+        const query = {
+            confidence: { $gte: MIN_CONF },
+            $or: [{ status: 'pending' }, { user: null, isPublic: true }]
+        };
+
+        if (status === 'active') {
+            query.expiresAt = { $gt: now };
+        }
+
+        const signals = await Prediction.find(query)
+            .sort({ confidence: -1 })
+            .limit(parseInt(limit) * 2) // Fetch extra for scoring
+            .select('symbol direction confidence currentPrice targetPrice assetType signalStrength indicators analysis createdAt expiresAt status priceChangePercent')
+            .lean();
+
+        // Score each signal (same formula as frontend)
+        const scored = signals.map(s => {
+            const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
+            const conf = Math.round(s.confidence || 0);
+            const long = s.direction === 'UP';
+            const entry = s.currentPrice || 0;
+            const target = s.targetPrice || 0;
+            const range = Math.abs(target - entry);
+            const sl = long ? entry - range * 0.4 : entry + range * 0.4;
+            const rrNum = range > 0 && Math.abs(entry - sl) > 0 ? Math.abs(target - entry) / Math.abs(entry - sl) : 2;
+
+            const confWeight = (conf / 100) * 4;
+            const rrWeight = Math.min(rrNum / 3, 1) * 2.5;
+            const momentumWeight = conf >= 70 ? 2 : 1;
+            const volumeWeight = conf >= 75 ? 1.5 : 0.75;
+            const score = +(Math.min(10, confWeight + rrWeight + momentumWeight + volumeWeight)).toFixed(1);
+
+            const tier = conf >= 70 ? 'Strong Setup' : conf >= 65 ? 'Moderate Setup' : 'Below Threshold';
+            const riskReward = +rrNum.toFixed(1);
+
+            return {
+                id: s._id,
+                symbol: sym,
+                asset: `${sym}/USD`,
+                direction: long ? 'LONG' : 'SHORT',
+                confidence: conf,
+                tier,
+                score,
+                riskReward,
+                assetType: s.assetType || 'crypto',
+                signalStrength: s.signalStrength || 'moderate',
+                status: s.status,
+                // Entry/SL/TP intentionally excluded (paywall)
+                // Included: whether it exists (for "has levels" badge)
+                hasLevels: entry > 0 && target > 0,
+                createdAt: s.createdAt,
+                expiresAt: s.expiresAt,
+            };
+        });
+
+        // Sort by score descending
+        scored.sort((a, b) => b.score - a.score);
+        const topSignals = scored.slice(0, parseInt(limit));
+
+        // Mark best signal
+        if (topSignals.length > 0) {
+            topSignals[0].isBestSetup = true;
+        }
+
+        res.json({
+            success: true,
+            count: topSignals.length,
+            signals: topSignals,
+            meta: {
+                minConfidence: MIN_CONF,
+                scoring: 'Confidence 40% + R:R 25% + Momentum 20% + Volume 15%',
+                updatedAt: new Date().toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('[Signals API] Error:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch signals' });
+    }
+});
+
 module.exports = router;

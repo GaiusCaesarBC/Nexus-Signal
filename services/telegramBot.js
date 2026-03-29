@@ -22,54 +22,45 @@ function esc(text) {
     return String(text).replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
 
-// ─── Fetch signals (same source as frontend /signals page) ─
+// ─── Fetch signals from the clean /signals API endpoint ───
+// Same data as frontend /signals page — single source of truth
 async function getQualifiedSignals(limit = 20) {
     try {
-        const now = new Date();
-        const signals = await Prediction.find({
-            $or: [{ status: 'pending' }, { user: null, isPublic: true }],
-            confidence: { $gte: MIN_CONFIDENCE },
-            expiresAt: { $gt: now }
-        })
-            .sort({ confidence: -1 })
-            .limit(limit)
-            .lean();
+        const axios = require('axios');
+        const API_URL = process.env.API_URL || 'http://localhost:5000/api';
+        const res = await axios.get(`${API_URL}/predictions/signals?limit=${limit}&status=active`, { timeout: 10000 });
 
-        // Score each signal (same formula as frontend)
-        return signals.map(s => {
-            const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
-            const conf = Math.round(s.confidence || 0);
-            const long = s.direction === 'UP';
-            const entry = s.currentPrice || 0;
-            const target = s.targetPrice || 0;
-            const range = Math.abs(target - entry);
-            const sl = long ? entry - range * 0.4 : entry + range * 0.4;
-            const rrNum = range > 0 && Math.abs(entry - sl) > 0 ? Math.abs(target - entry) / Math.abs(entry - sl) : 2;
-
-            // Weighted score: Confidence 40% + R:R 25% + Momentum 20% + Volume 15%
-            const confWeight = (conf / 100) * 4;
-            const rrWeight = Math.min(rrNum / 3, 1) * 2.5;
-            const momentumWeight = conf >= 70 ? 2 : 1;
-            const volumeWeight = conf >= 75 ? 1.5 : 0.75;
-            const score = Math.min(10, confWeight + rrWeight + momentumWeight + volumeWeight);
-
-            const tier = conf >= 70 ? 'Strong Setup' : 'Moderate Setup';
-
-            return {
-                id: s._id,
-                symbol: sym,
-                direction: long ? 'LONG' : 'SHORT',
-                long,
-                confidence: conf,
-                tier,
-                score: +score.toFixed(1),
-                assetType: s.assetType || 'crypto',
-                createdAt: s.createdAt
-            };
-        }).sort((a, b) => b.score - a.score);
-    } catch (e) {
-        console.error('[TGBot] Error fetching signals:', e.message);
+        if (res.data?.success && res.data?.signals) {
+            return res.data.signals.map(s => ({
+                ...s,
+                long: s.direction === 'LONG'
+            }));
+        }
         return [];
+    } catch (e) {
+        // Fallback: query DB directly if API call fails (e.g., during startup)
+        try {
+            const now = new Date();
+            const signals = await Prediction.find({
+                confidence: { $gte: MIN_CONFIDENCE },
+                $or: [{ status: 'pending' }, { user: null, isPublic: true }],
+                expiresAt: { $gt: now }
+            }).sort({ confidence: -1 }).limit(limit).lean();
+
+            return signals.map(s => {
+                const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
+                const conf = Math.round(s.confidence || 0);
+                const long = s.direction === 'UP';
+                return {
+                    id: s._id, symbol: sym, direction: long ? 'LONG' : 'SHORT', long,
+                    confidence: conf, tier: conf >= 70 ? 'Strong Setup' : 'Moderate Setup',
+                    score: conf >= 70 ? 7 : 5, createdAt: s.createdAt
+                };
+            }).sort((a, b) => b.score - a.score);
+        } catch (dbErr) {
+            console.error('[TGBot] Both API and DB failed:', dbErr.message);
+            return [];
+        }
     }
 }
 
