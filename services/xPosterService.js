@@ -36,18 +36,53 @@ function setTelegramBot(bot) { telegramBot = bot; }
 
 // ─── Post to X (final step) ──────────────────────────────
 async function postToX(text) {
-    if (!ENABLED || !xClient) return null;
+    if (!ENABLED) { console.log('[X] Disabled'); return null; }
+    if (!xClient) { console.log('[X] No client initialized'); return null; }
     if (postsThisHour >= MAX_POSTS_PER_HOUR) { console.log('[X] Rate limit'); return null; }
     const t = text.length > 280 ? text.slice(0, 277) + '...' : text;
     try {
+        console.log(`[X] Attempting post (${t.length} chars)...`);
         const result = await xClient.v2.tweet(t);
         postsThisHour++;
-        console.log(`[X] ✅ Posted: ${t.slice(0, 50)}...`);
+        console.log(`[X] ✅ Posted! Tweet ID: ${result.data?.id}`);
         return result.data;
     } catch (e) {
-        console.error('[X] ❌ Post failed:', e.message);
+        console.error(`[X] ❌ POST FAILED`);
+        console.error(`[X] Message: ${e.message}`);
+        console.error(`[X] Code: ${e.code}`);
+        console.error(`[X] HTTP Status: ${e.data?.status || e.response?.status || 'unknown'}`);
+        console.error(`[X] Response body: ${JSON.stringify(e.data || {})}`);
+        console.error(`[X] Errors array: ${JSON.stringify(e.errors || e.data?.errors || [])}`);
+        if (e.data?.detail) console.error(`[X] Detail: ${e.data.detail}`);
+        if (e.data?.title) console.error(`[X] Title: ${e.data.title}`);
+        if (e.rateLimit) console.error(`[X] Rate limit: ${JSON.stringify(e.rateLimit)}`);
         return null;
     }
+}
+
+// Manual test — add route or call from console
+async function testXPost() {
+    console.log('[X] ═══ MANUAL TEST ═══');
+    console.log(`[X] Client: ${!!xClient}, Enabled: ${ENABLED}`);
+    console.log(`[X] X_API_KEY: ${process.env.X_API_KEY ? 'SET (' + process.env.X_API_KEY.slice(0, 6) + '...)' : 'MISSING'}`);
+    console.log(`[X] X_API_KEY_SECRET: ${process.env.X_API_KEY_SECRET ? 'SET' : 'MISSING'}`);
+    console.log(`[X] X_ACCESS_TOKEN: ${process.env.X_ACCESS_TOKEN ? 'SET' : 'MISSING'}`);
+    console.log(`[X] X_ACCESS_TOKEN_SECRET: ${process.env.X_ACCESS_TOKEN_SECRET ? 'SET' : 'MISSING'}`);
+
+    if (!xClient) { initializeXClient(); }
+    if (!xClient) { console.error('[X] Cannot init client — check keys'); return null; }
+
+    // Verify auth
+    try {
+        const me = await xClient.v2.me();
+        console.log(`[X] ✅ Authenticated as @${me.data.username}`);
+    } catch (authErr) {
+        console.error(`[X] ❌ Auth failed: ${authErr.message}`);
+        console.error(`[X] Auth data: ${JSON.stringify(authErr.data || {})}`);
+        return null;
+    }
+
+    return await postToX(`Test from Nexus Signal AI — ${new Date().toISOString()}`);
 }
 
 // ─── Message Templates ────────────────────────────────────
@@ -257,5 +292,5 @@ function startXPoster() {
 
 module.exports = {
     startXPoster, setTelegramBot, handleApprovalCallback,
-    postNewSignal, postSignalResult, postDailyRecap,
+    postNewSignal, postSignalResult, postDailyRecap, testXPost,
 };

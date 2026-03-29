@@ -321,8 +321,18 @@ const connectDB = async () => {
         initializeTelegramBot();
 
         // X (TWITTER) AUTO-POSTER — Same signals as website + Telegram
-        const { startXPoster } = require('./services/xPosterService');
+        const { startXPoster, testXPost } = require('./services/xPosterService');
         startXPoster();
+
+        // X test endpoint (temporary — remove after testing)
+        app.get('/api/test-x-post', async (req, res) => {
+            try {
+                const result = await testXPost();
+                res.json({ success: !!result, result: result || 'failed — check Render logs' });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
 
         // ✅ INITIALIZE DISCORD BOT
         const { initializeBot: initializeDiscordBot } = require('./services/discordService');
