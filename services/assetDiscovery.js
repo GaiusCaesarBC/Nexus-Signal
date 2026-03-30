@@ -49,6 +49,7 @@ const CONFIG = {
  * Fetch top crypto by volume from CryptoCompare with full market data
  */
 async function fetchCryptoPool() {
+    // Try CryptoCompare first
     try {
         const res = await axios.get(
             `https://min-api.cryptocompare.com/data/top/totalvolfull?limit=${CONFIG.crypto.topPoolSize}&tsym=USD`,
@@ -56,41 +57,40 @@ async function fetchCryptoPool() {
         );
 
         const rawData = res.data?.Data;
-        if (!Array.isArray(rawData)) {
-            console.warn('[Discovery] CryptoCompare returned non-array Data:', typeof rawData, JSON.stringify(rawData)?.slice(0, 200));
-            return [];
+        if (Array.isArray(rawData) && rawData.length > 0) {
+            const coins = rawData.map(c => {
+                const info = c.CoinInfo || {};
+                const raw = c.RAW?.USD || {};
+                return {
+                    symbol: info.Name,
+                    name: info.FullName,
+                    price: raw.PRICE || 0,
+                    volume24h: raw.TOTALVOLUME24HTO || 0,
+                    marketCap: raw.MKTCAP || 0,
+                    change24h: raw.CHANGEPCT24HOUR || 0,
+                    changeDay: raw.CHANGEDAY || 0,
+                    high24h: raw.HIGH24HOUR || 0,
+                    low24h: raw.LOW24HOUR || 0,
+                    open24h: raw.OPEN24HOUR || 0,
+                    supply: raw.SUPPLY || 0,
+                };
+            });
+            console.log(`[Discovery] Fetched ${coins.length} crypto from CryptoCompare`);
+            return coins;
         }
-
-        const coins = rawData.map(c => {
-            const info = c.CoinInfo || {};
-            const raw = c.RAW?.USD || {};
-            return {
-                symbol: info.Name,
-                name: info.FullName,
-                price: raw.PRICE || 0,
-                volume24h: raw.TOTALVOLUME24HTO || 0,
-                marketCap: raw.MKTCAP || 0,
-                change24h: raw.CHANGEPCT24HOUR || 0,
-                changeDay: raw.CHANGEDAY || 0,
-                high24h: raw.HIGH24HOUR || 0,
-                low24h: raw.LOW24HOUR || 0,
-                open24h: raw.OPEN24HOUR || 0,
-                supply: raw.SUPPLY || 0,
-            };
-        });
-
-        console.log(`[Discovery] Fetched ${coins.length} crypto from CryptoCompare`);
-        return coins;
+        console.warn('[Discovery] CryptoCompare returned empty/invalid Data:', typeof rawData, JSON.stringify(rawData)?.slice(0, 200));
     } catch (err) {
-        console.error('[Discovery] CryptoCompare top vol failed:', err.message);
-        // Fallback: try CoinGecko markets endpoint
-        try {
-            console.log('[Discovery] Trying CoinGecko fallback for crypto pool...');
-            const res = await axios.get(
-                `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=${CONFIG.crypto.topPoolSize}&page=1&sparkline=false&price_change_percentage=24h`,
-                { timeout: 12000 }
-            );
-            if (!Array.isArray(res.data)) return [];
+        console.error('[Discovery] CryptoCompare failed:', err.message);
+    }
+
+    // Fallback: CoinGecko markets endpoint
+    try {
+        console.log('[Discovery] Trying CoinGecko fallback for crypto pool...');
+        const res = await axios.get(
+            `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=${CONFIG.crypto.topPoolSize}&page=1&sparkline=false&price_change_percentage=24h`,
+            { timeout: 12000 }
+        );
+        if (Array.isArray(res.data) && res.data.length > 0) {
             const coins = res.data.map(c => ({
                 symbol: (c.symbol || '').toUpperCase(),
                 name: c.name,
@@ -106,11 +106,43 @@ async function fetchCryptoPool() {
             }));
             console.log(`[Discovery] CoinGecko fallback: ${coins.length} crypto fetched`);
             return coins;
-        } catch (fallbackErr) {
-            console.error('[Discovery] CoinGecko fallback also failed:', fallbackErr.message);
-            return [];
         }
+        console.warn('[Discovery] CoinGecko also returned empty data');
+    } catch (fallbackErr) {
+        console.error('[Discovery] CoinGecko fallback also failed:', fallbackErr.message);
     }
+
+    // Last resort: Binance top volume
+    try {
+        console.log('[Discovery] Trying Binance fallback...');
+        const res = await axios.get('https://api.binance.us/api/v3/ticker/24hr', { timeout: 10000 });
+        if (Array.isArray(res.data)) {
+            const usdtPairs = res.data
+                .filter(t => t.symbol?.endsWith('USDT') && parseFloat(t.quoteVolume) > 0)
+                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+                .slice(0, CONFIG.crypto.topPoolSize);
+            const coins = usdtPairs.map(t => ({
+                symbol: t.symbol.replace('USDT', ''),
+                name: t.symbol.replace('USDT', ''),
+                price: parseFloat(t.lastPrice) || 0,
+                volume24h: parseFloat(t.quoteVolume) || 0,
+                marketCap: 0,
+                change24h: parseFloat(t.priceChangePercent) || 0,
+                changeDay: parseFloat(t.priceChange) || 0,
+                high24h: parseFloat(t.highPrice) || 0,
+                low24h: parseFloat(t.lowPrice) || 0,
+                open24h: parseFloat(t.openPrice) || 0,
+                supply: 0,
+            }));
+            console.log(`[Discovery] Binance fallback: ${coins.length} crypto fetched`);
+            return coins;
+        }
+    } catch (binanceErr) {
+        console.error('[Discovery] Binance fallback also failed:', binanceErr.message);
+    }
+
+    console.error('[Discovery] All crypto sources failed — 0 candidates');
+    return [];
 }
 
 /**
