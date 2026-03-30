@@ -202,17 +202,21 @@ function setupCommands() {
 // Send to all configured destinations (channel + group)
 async function sendToAll(text, options = {}) {
     const targets = [channelId, groupId].filter(Boolean);
+    if (targets.length === 0) { console.log('[TGBot] No targets configured'); return; }
     for (const target of targets) {
         try {
             await bot.sendMessage(target, text, options);
+            console.log(`[TGBot] ✅ Sent to ${target}`);
         } catch (e) {
-            console.error(`[TGBot] Send error (${target}):`, e.message);
+            console.error(`[TGBot] ❌ Send error (${target}):`, e.message);
         }
     }
 }
 
 async function postSignalTeaser(signal) {
-    if (!bot || (!channelId && !groupId) || !canPost()) return;
+    if (!bot) { console.log('[TGBot] Skipping teaser — bot is null'); return; }
+    if (!channelId && !groupId) { console.log('[TGBot] Skipping teaser — no channel/group ID set'); return; }
+    if (!canPost()) { console.log('[TGBot] Skipping teaser — rate limit'); return; }
     const conf = Math.round(signal.confidence || 0);
     if (conf < MIN_CONFIDENCE) return;
     if (lastPostedSignals.has(signal._id?.toString())) return;
