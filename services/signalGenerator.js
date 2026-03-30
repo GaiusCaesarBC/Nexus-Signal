@@ -157,9 +157,9 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         // Distribute high-confidence signals: Notifications + Telegram + X
         if (confidence >= 65) {
-            try { NotificationService.createSignalNotification({ symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
-            try { postSignalTeaser({ _id: symbol, symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
-            try { postSignalToX({ _id: symbol, symbol, direction, confidence }); } catch (e) { /* non-blocking */ }
+            try { await NotificationService.createSignalNotification({ symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Notification error: ${e.message}`); }
+            try { await postSignalTeaser({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Telegram error: ${e.message}`); }
+            try { await postSignalToX({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] X post error: ${e.message}`); }
         }
 
         return { status: 'generated' };

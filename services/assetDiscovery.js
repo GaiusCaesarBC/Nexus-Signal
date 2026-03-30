@@ -55,7 +55,13 @@ async function fetchCryptoPool() {
             { timeout: 12000 }
         );
 
-        const coins = (res.data?.Data || []).map(c => {
+        const rawData = res.data?.Data;
+        if (!Array.isArray(rawData)) {
+            console.warn('[Discovery] CryptoCompare returned non-array Data:', typeof rawData, JSON.stringify(rawData)?.slice(0, 200));
+            return [];
+        }
+
+        const coins = rawData.map(c => {
             const info = c.CoinInfo || {};
             const raw = c.RAW?.USD || {};
             return {
@@ -77,7 +83,33 @@ async function fetchCryptoPool() {
         return coins;
     } catch (err) {
         console.error('[Discovery] CryptoCompare top vol failed:', err.message);
-        return [];
+        // Fallback: try CoinGecko markets endpoint
+        try {
+            console.log('[Discovery] Trying CoinGecko fallback for crypto pool...');
+            const res = await axios.get(
+                `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=${CONFIG.crypto.topPoolSize}&page=1&sparkline=false&price_change_percentage=24h`,
+                { timeout: 12000 }
+            );
+            if (!Array.isArray(res.data)) return [];
+            const coins = res.data.map(c => ({
+                symbol: (c.symbol || '').toUpperCase(),
+                name: c.name,
+                price: c.current_price || 0,
+                volume24h: c.total_volume || 0,
+                marketCap: c.market_cap || 0,
+                change24h: c.price_change_percentage_24h || 0,
+                changeDay: c.price_change_24h || 0,
+                high24h: c.high_24h || 0,
+                low24h: c.low_24h || 0,
+                open24h: 0,
+                supply: c.circulating_supply || 0,
+            }));
+            console.log(`[Discovery] CoinGecko fallback: ${coins.length} crypto fetched`);
+            return coins;
+        } catch (fallbackErr) {
+            console.error('[Discovery] CoinGecko fallback also failed:', fallbackErr.message);
+            return [];
+        }
     }
 }
 

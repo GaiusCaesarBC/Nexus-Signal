@@ -22,6 +22,11 @@ function esc(text) {
     return String(text).replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
 
+// Escape for inside MarkdownV2 link URLs — only ) and \ need escaping
+function escUrl(text) {
+    return String(text).replace(/[)\\]/g, '\\$&');
+}
+
 // ─── Fetch signals from the clean /signals API endpoint ───
 // Same data as frontend /signals page — single source of truth
 async function getQualifiedSignals(limit = 20) {
@@ -107,14 +112,14 @@ function buildSignalsMessage(signals) {
         msg += `\n`;
     }
 
-    msg += `👉 [View full trade setups \\(entry, SL, TP\\)](${esc(SITE)}/signals)`;
+    msg += `👉 [View full trade setups \\(entry, SL, TP\\)](${escUrl(SITE)}/signals)`;
     return msg;
 }
 
 function buildTeaserMessage(signal) {
     const dir = signal.long ? '📈' : '📉';
     const tier = signal.confidence >= 70 ? 'Strong Setup' : 'Moderate Setup';
-    return `🚨 *AI SIGNAL — ${esc(signal.symbol)}*\n\n${dir} *${esc(signal.direction)}*\n${esc(String(signal.confidence))}% — ${esc(tier)}\n\nFull trade levels inside\\.\n\n👉 [View signal](${esc(SITE)}/signals)`;
+    return `🚨 *AI SIGNAL — ${esc(signal.symbol)}*\n\n${dir} *${esc(signal.direction)}*\n${esc(String(signal.confidence))}% — ${esc(tier)}\n\nFull trade levels inside\\.\n\n👉 [View signal](${escUrl(SITE)}/signals)`;
 }
 
 function buildResultMessage(signal, isWin, movePct) {
@@ -123,11 +128,11 @@ function buildResultMessage(signal, isWin, movePct) {
     const icon = isWin ? '✅' : '❌';
     const result = isWin ? 'TARGET HIT' : 'STOP LOSS HIT';
     const pct = `${movePct >= 0 ? '+' : ''}${movePct.toFixed(1)}%`;
-    return `${icon} *RESULT — ${esc(sym)} ${esc(dir)}*\n\n${esc(result)} \\(${esc(pct)}\\)\n\nEvery signal tracked\\. No edits\\.\n\n👉 [See all signals](${esc(SITE)}/signals)`;
+    return `${icon} *RESULT — ${esc(sym)} ${esc(dir)}*\n\n${esc(result)} \\(${esc(pct)}\\)\n\nEvery signal tracked\\. No edits\\.\n\n👉 [See all signals](${escUrl(SITE)}/signals)`;
 }
 
 function buildDailyRecap(stats) {
-    return `📊 *TODAY'S SIGNALS*\n\n${esc(String(stats.total))} signals generated\n${esc(String(stats.winners))} winners\n${esc(String(stats.losers))} stopped out\n${esc(String(stats.active))} still active\n\nWin rate: *${esc(String(stats.winRate))}%*\n\nEvery signal tracked\\. No deletions\\.\n\n👉 [View all](${esc(SITE)}/signals)`;
+    return `📊 *TODAY'S SIGNALS*\n\n${esc(String(stats.total))} signals generated\n${esc(String(stats.winners))} winners\n${esc(String(stats.losers))} stopped out\n${esc(String(stats.active))} still active\n\nWin rate: *${esc(String(stats.winRate))}%*\n\nEvery signal tracked\\. No deletions\\.\n\n👉 [View all](${escUrl(SITE)}/signals)`;
 }
 
 function buildWelcome() {
@@ -170,7 +175,7 @@ function setupCommands() {
 
     bot.onText(/\/results/, async (msg) => {
         const stats = await getRecentStats();
-        bot.sendMessage(msg.chat.id, `📊 *Recent Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nActive: *${esc(String(stats.active))}*\nTracked publicly\n\n👉 [View all](${esc(SITE)}/signals)`, {
+        bot.sendMessage(msg.chat.id, `📊 *Recent Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nActive: *${esc(String(stats.active))}*\nTracked publicly\n\n👉 [View all](${escUrl(SITE)}/signals)`, {
             parse_mode: 'MarkdownV2', ...signalsKeyboard
         }).catch(e => console.log('[TGBot] results error:', e.message));
     });
@@ -188,7 +193,7 @@ function setupCommands() {
         if (query.data === 'results') {
             const stats = await getRecentStats();
             bot.answerCallbackQuery(query.id);
-            bot.sendMessage(query.message.chat.id, `📊 *Today's Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nWinners: *${esc(String(stats.winners))}*\nStopped: *${esc(String(stats.losers))}*\n\n👉 [View all](${esc(SITE)}/signals)`, {
+            bot.sendMessage(query.message.chat.id, `📊 *Today's Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nWinners: *${esc(String(stats.winners))}*\nStopped: *${esc(String(stats.losers))}*\n\n👉 [View all](${escUrl(SITE)}/signals)`, {
                 parse_mode: 'MarkdownV2', ...signalsKeyboard
             }).catch(e => console.log('[TGBot] callback error:', e.message));
         }
