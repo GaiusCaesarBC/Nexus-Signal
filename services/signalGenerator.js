@@ -82,12 +82,14 @@ function generateIndicators(price, dir) {
 
 async function processAsset(symbol, assetType, prefetchedPrice = null) {
     try {
-        // Skip if active system signal exists
-        const existing = await Prediction.findOne({
+        // Skip if a RECENT system signal exists (< 24h old)
+        // Older signals are allowed to be refreshed with new analysis
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const recentExisting = await Prediction.findOne({
             symbol, status: 'pending', user: null,
-            expiresAt: { $gt: new Date() }
+            createdAt: { $gt: oneDayAgo }
         });
-        if (existing) return { status: 'skipped', reason: 'exists' };
+        if (recentExisting) return { status: 'skipped', reason: 'recent signal exists' };
 
         // Get price
         const price = assetType === 'crypto'
@@ -96,8 +98,8 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         if (!price || price <= 0) return { status: 'skipped', reason: 'no price' };
 
-        // Try ML
-        const days = 7;
+        // Try ML — 3-day signals (shorter = fresher feed)
+        const days = 3;
         let direction, targetPrice, confidence, indicators, analysis;
 
         const ml = await getMLPrediction(symbol, assetType, days);
