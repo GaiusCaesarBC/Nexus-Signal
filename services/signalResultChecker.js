@@ -36,7 +36,20 @@ async function getStockPrice(symbol) {
     const cached = priceCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_DURATION) return cached.price;
 
-    // Finnhub first
+    // Yahoo Finance first (real-time, free)
+    try {
+        const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 8000
+        });
+        const price = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price > 0) {
+            priceCache.set(cacheKey, { price, ts: Date.now() });
+            return price;
+        }
+    } catch (e) { /* fallback */ }
+
+    // Finnhub fallback
     if (FINNHUB_KEY) {
         try {
             const res = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`, { timeout: 5000 });
@@ -44,18 +57,8 @@ async function getStockPrice(symbol) {
                 priceCache.set(cacheKey, { price: res.data.c, ts: Date.now() });
                 return res.data.c;
             }
-        } catch (e) { /* fallback */ }
+        } catch (e) { /* silent */ }
     }
-
-    // Yahoo fallback
-    try {
-        const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, { timeout: 8000 });
-        const price = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (price > 0) {
-            priceCache.set(cacheKey, { price, ts: Date.now() });
-            return price;
-        }
-    } catch (e) { /* silent */ }
 
     return null;
 }
@@ -66,9 +69,17 @@ async function getCryptoPrice(symbol) {
     const cached = priceCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_DURATION) return cached.price;
 
-    const geckoId = COINGECKO_IDS[cleanSymbol] || cleanSymbol.toLowerCase();
+    // CryptoCompare first (reliable from Render, no rate limit issues)
+    try {
+        const res = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${cleanSymbol}&tsyms=USD`, { timeout: 5000 });
+        if (res.data?.USD > 0) {
+            priceCache.set(cacheKey, { price: res.data.USD, ts: Date.now() });
+            return res.data.USD;
+        }
+    } catch (e) { /* fallback */ }
 
-    // CoinGecko
+    // CoinGecko fallback
+    const geckoId = COINGECKO_IDS[cleanSymbol] || cleanSymbol.toLowerCase();
     try {
         const headers = COINGECKO_API_KEY ? { 'x-cg-pro-api-key': COINGECKO_API_KEY } : {};
         const res = await axios.get(`${COINGECKO_BASE_URL}/simple/price?ids=${geckoId}&vs_currencies=usd`, {
@@ -78,14 +89,15 @@ async function getCryptoPrice(symbol) {
             priceCache.set(cacheKey, { price: res.data[geckoId].usd, ts: Date.now() });
             return res.data[geckoId].usd;
         }
-    } catch (e) { /* fallback */ }
+    } catch (e) { /* silent */ }
 
-    // CryptoCompare fallback
+    // Binance US fallback
     try {
-        const res = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${cleanSymbol}&tsyms=USD`, { timeout: 5000 });
-        if (res.data?.USD > 0) {
-            priceCache.set(cacheKey, { price: res.data.USD, ts: Date.now() });
-            return res.data.USD;
+        const res = await axios.get(`https://api.binance.us/api/v3/ticker/price?symbol=${cleanSymbol}USDT`, { timeout: 5000 });
+        if (res.data?.price > 0) {
+            const price = parseFloat(res.data.price);
+            priceCache.set(cacheKey, { price, ts: Date.now() });
+            return price;
         }
     } catch (e) { /* silent */ }
 
