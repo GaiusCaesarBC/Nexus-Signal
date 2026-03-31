@@ -127,12 +127,41 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         const signalStrength = confidence >= 80 ? 'strong' : confidence >= 65 ? 'moderate' : 'weak';
         const expiresAt = new Date(Date.now() + days * 86400000);
 
+        // ═══════════════════════════════════════════════════════════
+        // LOCK entry/SL/TP at creation - these NEVER change after this
+        // ═══════════════════════════════════════════════════════════
+        const entryPrice = price;  // Locked entry price
+        const range = Math.abs(targetPrice - entryPrice);
+        const isLong = direction === 'UP';
+
+        // Stop Loss: 40% of range in opposite direction
+        const stopLoss = isLong
+            ? entryPrice - range * 0.4
+            : entryPrice + range * 0.4;
+
+        // Take Profits at 40%, 100%, and 150% of range
+        const takeProfit1 = isLong
+            ? entryPrice + range * 0.4
+            : entryPrice - range * 0.4;
+        const takeProfit2 = targetPrice;  // Main target (100% of range)
+        const takeProfit3 = isLong
+            ? entryPrice + range * 1.5
+            : entryPrice - range * 1.5;
+
         await new Prediction({
             user: null,
             symbol,
             assetType,
             currentPrice: price,
             targetPrice,
+            // Locked trading levels
+            entryPrice,
+            stopLoss,
+            takeProfit1,
+            takeProfit2,
+            takeProfit3,
+            livePrice: price,  // Will be updated by price checker
+            livePriceUpdatedAt: new Date(),
             direction,
             signalStrength,
             isActionable: confidence >= 60,

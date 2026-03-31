@@ -316,6 +316,10 @@ const connectDB = async () => {
         const { startSignalGenerator } = require('./services/signalGenerator');
         startSignalGenerator();
 
+        // ✅ START SIGNAL RESULT CHECKER (checks TP/SL hits every 5 minutes)
+        const { startSignalResultChecker } = require('./services/signalResultChecker');
+        startSignalResultChecker();
+
         // TELEGRAM BOT — Conversion funnel (teases signals, posts results, drives to website)
         try {
             const { initializeTelegramBot } = require('./services/telegramBot');
