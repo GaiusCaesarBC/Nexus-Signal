@@ -316,9 +316,59 @@ const connectDB = async () => {
         const { startSignalGenerator } = require('./services/signalGenerator');
         startSignalGenerator();
 
-        // ✅ START SIGNAL RESULT CHECKER (checks TP/SL hits every 5 minutes)
-        const { startSignalResultChecker } = require('./services/signalResultChecker');
-        startSignalResultChecker();
+        // ✅ AUTO-BACKFILL + SIGNAL RESULT CHECKER
+        // First backfill locked levels, then start checking for TP/SL hits
+        const { startSignalResultChecker, runCheckCycle } = require('./services/signalResultChecker');
+
+        (async () => {
+            try {
+                const Prediction = require('./models/Prediction');
+                const signals = await Prediction.find({
+                    $or: [
+                        { entryPrice: { $exists: false } },
+                        { entryPrice: null }
+                    ]
+                });
+
+                if (signals.length > 0) {
+                    console.log(`[Backfill] Found ${signals.length} signals without locked levels, fixing...`);
+
+                    for (const signal of signals) {
+                        const entry = signal.currentPrice;
+                        const target = signal.targetPrice;
+
+                        if (!entry || !target || entry <= 0) continue;
+
+                        const range = Math.abs(target - entry);
+                        const isLong = signal.direction === 'UP';
+
+                        signal.entryPrice = entry;
+                        signal.stopLoss = isLong ? entry - range * 0.4 : entry + range * 0.4;
+                        signal.takeProfit1 = isLong ? entry + range * 0.4 : entry - range * 0.4;
+                        signal.takeProfit2 = target;
+                        signal.takeProfit3 = isLong ? entry + range * 1.5 : entry - range * 1.5;
+                        signal.livePrice = entry;
+                        signal.livePriceUpdatedAt = signal.createdAt;
+
+                        await signal.save();
+                    }
+
+                    console.log(`[Backfill] ✅ Fixed ${signals.length} signals with locked levels`);
+                }
+
+                // Start the scheduled checker
+                startSignalResultChecker();
+
+                // Run immediately after backfill to catch any TP/SL hits
+                console.log('[SignalChecker] Running initial check after backfill...');
+                await runCheckCycle();
+
+            } catch (err) {
+                console.error('[Backfill] Error:', err.message);
+                // Start checker anyway even if backfill fails
+                startSignalResultChecker();
+            }
+        })();
 
         // TELEGRAM BOT — Conversion funnel (teases signals, posts results, drives to website)
         try {
