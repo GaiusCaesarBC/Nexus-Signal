@@ -112,9 +112,9 @@ async function fetchCryptoPool() {
         console.error('[Discovery] CoinGecko fallback also failed:', fallbackErr.message);
     }
 
-    // Last resort: Binance top volume
+    // Last resort: Binance US top volume (low liquidity exchange, mark source)
     try {
-        console.log('[Discovery] Trying Binance fallback...');
+        console.log('[Discovery] Trying Binance US fallback...');
         const res = await axios.get('https://api.binance.us/api/v3/ticker/24hr', { timeout: 10000 });
         if (Array.isArray(res.data)) {
             const usdtPairs = res.data
@@ -133,12 +133,13 @@ async function fetchCryptoPool() {
                 low24h: parseFloat(t.lowPrice) || 0,
                 open24h: parseFloat(t.openPrice) || 0,
                 supply: 0,
+                _source: 'binance-us', // flag for relaxed filtering
             }));
-            console.log(`[Discovery] Binance fallback: ${coins.length} crypto fetched`);
+            console.log(`[Discovery] Binance US fallback: ${coins.length} crypto fetched`);
             return coins;
         }
     } catch (binanceErr) {
-        console.error('[Discovery] Binance fallback also failed:', binanceErr.message);
+        console.error('[Discovery] Binance US fallback also failed:', binanceErr.message);
     }
 
     console.error('[Discovery] All crypto sources failed — 0 candidates');
@@ -166,13 +167,17 @@ async function fetchCryptoHourly(symbol, hours = 12) {
 async function discoverCrypto() {
     const pool = await fetchCryptoPool();
 
-    // STEP 1: Liquidity filter
+    // STEP 1: Liquidity filter (relaxed for Binance US which has low volumes + no market cap)
+    const isBinanceFallback = pool.length > 0 && pool[0]._source === 'binance-us';
+    const minVol = isBinanceFallback ? 10_000 : CONFIG.crypto.minVolume24h;       // $10K for Binance US vs $5M
+    const minMcap = isBinanceFallback ? 0 : CONFIG.crypto.minMarketCap;           // skip mcap check for Binance
     const filtered = pool.filter(c =>
         !CONFIG.excludeSymbols.has(c.symbol) &&
-        c.volume24h >= CONFIG.crypto.minVolume24h &&
-        c.marketCap >= CONFIG.crypto.minMarketCap &&
+        c.volume24h >= minVol &&
+        c.marketCap >= minMcap &&
         c.price >= CONFIG.crypto.minPrice
     );
+    if (isBinanceFallback) console.log(`[Discovery] Using relaxed filters for Binance US data (minVol=$${minVol.toLocaleString()})`);
 
     console.log(`[Discovery] Crypto: ${pool.length} → ${filtered.length} after liquidity filter`);
 

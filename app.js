@@ -317,8 +317,12 @@ const connectDB = async () => {
         startSignalGenerator();
 
         // TELEGRAM BOT — Conversion funnel (teases signals, posts results, drives to website)
-        const { initializeTelegramBot } = require('./services/telegramBot');
-        initializeTelegramBot();
+        try {
+            const { initializeTelegramBot } = require('./services/telegramBot');
+            initializeTelegramBot();
+        } catch (tgErr) {
+            console.error('[TGBot] ❌ Failed to initialize:', tgErr.message);
+        }
 
         // X (TWITTER) AUTO-POSTER — Same signals as website + Telegram
         const { startXPoster, testXPost } = require('./services/xPosterService');
