@@ -1769,18 +1769,26 @@ router.get('/signals', predictionLimiter, async (req, res) => {
         const signals = await Prediction.find(query)
             .sort({ confidence: -1 })
             .limit(parseInt(limit) * 2) // Fetch extra for scoring
-            .select('symbol direction confidence currentPrice targetPrice assetType signalStrength indicators analysis createdAt expiresAt status priceChangePercent')
+            .select('symbol direction confidence currentPrice targetPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 livePrice livePriceUpdatedAt result resultText resultPrice resultAt assetType signalStrength indicators analysis createdAt expiresAt status priceChangePercent')
             .lean();
 
-        // Score each signal (same formula as frontend)
+        // Score each signal using LOCKED values (not recalculated)
         const scored = signals.map(s => {
             const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
             const conf = Math.round(s.confidence || 0);
             const long = s.direction === 'UP';
-            const entry = s.currentPrice || 0;
+
+            // Use LOCKED values from DB, with fallback calculation for old signals
+            const entry = s.entryPrice || s.currentPrice || 0;
             const target = s.targetPrice || 0;
             const range = Math.abs(target - entry);
-            const sl = long ? entry - range * 0.4 : entry + range * 0.4;
+
+            // Use stored SL/TP or calculate for legacy signals
+            const sl = s.stopLoss || (long ? entry - range * 0.4 : entry + range * 0.4);
+            const tp1 = s.takeProfit1 || (long ? entry + range * 0.4 : entry - range * 0.4);
+            const tp2 = s.takeProfit2 || target;
+            const tp3 = s.takeProfit3 || (long ? entry + range * 1.5 : entry - range * 1.5);
+
             const rrNum = range > 0 && Math.abs(entry - sl) > 0 ? Math.abs(target - entry) / Math.abs(entry - sl) : 2;
 
             const confWeight = (conf / 100) * 4;
@@ -1804,8 +1812,22 @@ router.get('/signals', predictionLimiter, async (req, res) => {
                 assetType: s.assetType || 'crypto',
                 signalStrength: s.signalStrength || 'moderate',
                 status: s.status,
-                // Entry/SL/TP intentionally excluded (paywall)
-                // Included: whether it exists (for "has levels" badge)
+                // ═══════════════════════════════════════════════════════════
+                // LOCKED trading levels - these NEVER change after creation
+                // ═══════════════════════════════════════════════════════════
+                entryPrice: entry,
+                stopLoss: sl,
+                takeProfit1: tp1,
+                takeProfit2: tp2,
+                takeProfit3: tp3,
+                // Live price for tracking (this one updates)
+                livePrice: s.livePrice || null,
+                livePriceUpdatedAt: s.livePriceUpdatedAt || null,
+                // Trade result (win/loss)
+                result: s.result || null,
+                resultText: s.resultText || null,
+                resultPrice: s.resultPrice || null,
+                resultAt: s.resultAt || null,
                 hasLevels: entry > 0 && target > 0,
                 createdAt: s.createdAt,
                 expiresAt: s.expiresAt,

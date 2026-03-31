@@ -37,6 +37,63 @@ const PredictionSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
+
+    // ═══════════════════════════════════════════════════════════
+    // LOCKED TRADING LEVELS - Set at creation, NEVER change
+    // These are the actual trade entry/exit points users should follow
+    // ═══════════════════════════════════════════════════════════
+    entryPrice: {
+        type: Number,
+        default: null  // Locked at signal creation
+    },
+    stopLoss: {
+        type: Number,
+        default: null  // Locked at signal creation
+    },
+    takeProfit1: {
+        type: Number,
+        default: null  // Conservative target (40% of range)
+    },
+    takeProfit2: {
+        type: Number,
+        default: null  // Main target (100% of range = targetPrice)
+    },
+    takeProfit3: {
+        type: Number,
+        default: null  // Extended target (150% of range)
+    },
+
+    // Live price tracking (this one DOES update)
+    livePrice: {
+        type: Number,
+        default: null
+    },
+    livePriceUpdatedAt: {
+        type: Date,
+        default: null
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // TRADE RESULT - Set when signal closes (hits TP or SL)
+    // ═══════════════════════════════════════════════════════════
+    result: {
+        type: String,
+        enum: ['win', 'loss', null],
+        default: null
+    },
+    resultText: {
+        type: String,  // 'TP1 Hit', 'TP2 Hit', 'TP3 Hit', 'SL Hit', 'Expired'
+        default: null
+    },
+    resultPrice: {
+        type: Number,  // Price when result was determined
+        default: null
+    },
+    resultAt: {
+        type: Date,    // When the result was recorded
+        default: null
+    },
+
     direction: {
         type: String,
         enum: ['UP', 'DOWN', 'NEUTRAL'],
