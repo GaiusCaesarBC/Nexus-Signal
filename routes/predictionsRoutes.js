@@ -1306,10 +1306,14 @@ router.get('/recent-public', predictionLimiter, async (req, res) => {
 });
 
 // Also handle /recent without auth for landing page
+// Price cache for /recent endpoint (60 second TTL)
+const recentPriceCache = new Map();
+const RECENT_CACHE_TTL = 60000; // 60 seconds
+
 router.get('/recent', predictionLimiter, async (req, res) => {
     try {
         const { limit = 10 } = req.query;
-        
+
         // Check if user is authenticated
         let userId = null;
         try {
@@ -1320,10 +1324,10 @@ router.get('/recent', predictionLimiter, async (req, res) => {
                 userId = decoded.user?.id || decoded.id;
             }
         } catch (e) { /* No valid token */ }
-        
+
         let predictions;
         const systemQuery = { user: null, isPublic: true };
-        const fields = 'symbol direction targetPrice currentPrice confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent';
+        const fields = 'symbol direction targetPrice currentPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 livePrice confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent result resultText';
 
         if (userId) {
             // Authenticated: show user's predictions + system-generated signals
@@ -1343,8 +1347,57 @@ router.get('/recent', predictionLimiter, async (req, res) => {
                 .select(fields)
                 .lean();
         }
-        
-        res.json(predictions);
+
+        // Fetch live prices for all predictions (with caching)
+        const now = Date.now();
+        const predictionsWithLivePrices = await Promise.all(
+            predictions.map(async (pred) => {
+                const cacheKey = `${pred.symbol}-${pred.assetType}`;
+                const cached = recentPriceCache.get(cacheKey);
+
+                let livePrice = null;
+                if (cached && (now - cached.ts) < RECENT_CACHE_TTL) {
+                    // Use cached price
+                    livePrice = cached.price;
+                } else {
+                    // Fetch fresh price
+                    try {
+                        const priceResult = await getFreshPrice(pred.symbol, pred.assetType, pred.dexInfo);
+                        if (priceResult?.price > 0) {
+                            livePrice = priceResult.price;
+                            recentPriceCache.set(cacheKey, { price: livePrice, ts: now });
+                        }
+                    } catch (e) {
+                        console.log(`[Recent] Price fetch failed for ${pred.symbol}: ${e.message}`);
+                    }
+                }
+
+                // Use locked entryPrice if available, otherwise fall back to currentPrice
+                const entryPrice = pred.entryPrice || pred.currentPrice;
+
+                return {
+                    ...pred,
+                    // Keep original entryPrice/currentPrice for reference
+                    entryPrice: entryPrice,
+                    // Add live price data
+                    livePrice: livePrice || pred.livePrice || entryPrice,
+                    liveChange: livePrice ? (livePrice - entryPrice) : 0,
+                    liveChangePercent: livePrice && entryPrice > 0
+                        ? ((livePrice - entryPrice) / entryPrice) * 100
+                        : 0,
+                    priceUpdatedAt: livePrice ? new Date().toISOString() : null
+                };
+            })
+        );
+
+        // Clean old cache entries (keep max 200)
+        if (recentPriceCache.size > 200) {
+            const entries = [...recentPriceCache.entries()];
+            entries.sort((a, b) => a[1].ts - b[1].ts);
+            entries.slice(0, 100).forEach(([key]) => recentPriceCache.delete(key));
+        }
+
+        res.json(predictionsWithLivePrices);
     } catch (error) {
         console.error('[Predictions] Error fetching recent:', error.message);
         res.status(500).json({ error: 'Failed to fetch recent predictions' });
