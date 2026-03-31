@@ -1327,7 +1327,7 @@ router.get('/recent', predictionLimiter, async (req, res) => {
 
         let predictions;
         const systemQuery = { user: null, isPublic: true };
-        const fields = 'symbol direction targetPrice currentPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 livePrice confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent result resultText';
+        const fields = 'symbol direction targetPrice currentPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 livePrice livePriceUpdatedAt confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent result resultText resultPrice resultAt';
 
         if (userId) {
             // Authenticated: show user's predictions + system-generated signals
@@ -1348,19 +1348,49 @@ router.get('/recent', predictionLimiter, async (req, res) => {
                 .lean();
         }
 
-        // Fetch live prices for all predictions (with caching)
+        // Fetch live prices for active predictions (with caching)
+        // Skip price fetching for closed signals (they have resultPrice)
+        // Skip if livePrice was updated recently by signalResultChecker
         const now = Date.now();
+        const LIVE_PRICE_FRESH = 5 * 60 * 1000; // 5 minutes — matches signalResultChecker interval
         const predictionsWithLivePrices = await Promise.all(
             predictions.map(async (pred) => {
+                const entryPrice = pred.entryPrice || pred.currentPrice;
+                const isClosed = pred.result === 'win' || pred.result === 'loss' || pred.status === 'correct' || pred.status === 'incorrect';
+
+                // Closed signals: use resultPrice, no need to fetch live
+                if (isClosed) {
+                    const closedPrice = pred.resultPrice || pred.livePrice || entryPrice;
+                    return {
+                        ...pred,
+                        entryPrice,
+                        livePrice: closedPrice,
+                        liveChange: closedPrice - entryPrice,
+                        liveChangePercent: entryPrice > 0 ? ((closedPrice - entryPrice) / entryPrice) * 100 : 0,
+                    };
+                }
+
+                // Active signals: use cached/DB livePrice if recent enough
+                const dbLiveFresh = pred.livePriceUpdatedAt && (now - new Date(pred.livePriceUpdatedAt).getTime()) < LIVE_PRICE_FRESH;
+                if (dbLiveFresh && pred.livePrice > 0) {
+                    return {
+                        ...pred,
+                        entryPrice,
+                        livePrice: pred.livePrice,
+                        liveChange: pred.livePrice - entryPrice,
+                        liveChangePercent: entryPrice > 0 ? ((pred.livePrice - entryPrice) / entryPrice) * 100 : 0,
+                        priceUpdatedAt: pred.livePriceUpdatedAt,
+                    };
+                }
+
+                // Fetch fresh price
                 const cacheKey = `${pred.symbol}-${pred.assetType}`;
                 const cached = recentPriceCache.get(cacheKey);
-
                 let livePrice = null;
+
                 if (cached && (now - cached.ts) < RECENT_CACHE_TTL) {
-                    // Use cached price
                     livePrice = cached.price;
                 } else {
-                    // Fetch fresh price
                     try {
                         const priceResult = await getFreshPrice(pred.symbol, pred.assetType, pred.dexInfo);
                         if (priceResult?.price > 0) {
@@ -1368,24 +1398,18 @@ router.get('/recent', predictionLimiter, async (req, res) => {
                             recentPriceCache.set(cacheKey, { price: livePrice, ts: now });
                         }
                     } catch (e) {
-                        console.log(`[Recent] Price fetch failed for ${pred.symbol}: ${e.message}`);
+                        // Use DB livePrice as fallback
                     }
                 }
 
-                // Use locked entryPrice if available, otherwise fall back to currentPrice
-                const entryPrice = pred.entryPrice || pred.currentPrice;
-
+                const finalPrice = livePrice || pred.livePrice || entryPrice;
                 return {
                     ...pred,
-                    // Keep original entryPrice/currentPrice for reference
-                    entryPrice: entryPrice,
-                    // Add live price data
-                    livePrice: livePrice || pred.livePrice || entryPrice,
-                    liveChange: livePrice ? (livePrice - entryPrice) : 0,
-                    liveChangePercent: livePrice && entryPrice > 0
-                        ? ((livePrice - entryPrice) / entryPrice) * 100
-                        : 0,
-                    priceUpdatedAt: livePrice ? new Date().toISOString() : null
+                    entryPrice,
+                    livePrice: finalPrice,
+                    liveChange: finalPrice - entryPrice,
+                    liveChangePercent: entryPrice > 0 ? ((finalPrice - entryPrice) / entryPrice) * 100 : 0,
+                    priceUpdatedAt: livePrice ? new Date().toISOString() : pred.livePriceUpdatedAt,
                 };
             })
         );
