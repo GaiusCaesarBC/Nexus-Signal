@@ -273,27 +273,29 @@ async function checkExpiredPredictions() {
 
             if (result.success) {
                 runStats.success++;
-                
-                const userId = prediction.user.toString();
-                if (!userResults.has(userId)) {
-                    userResults.set(userId, { correct: 0, incorrect: 0 });
+
+                // System signals (user=null) don't have user stats to update
+                const userId = prediction.user?.toString();
+                if (userId) {
+                    if (!userResults.has(userId)) {
+                        userResults.set(userId, { correct: 0, incorrect: 0 });
+                    }
+
+                    if (prediction.status === 'correct') {
+                        userResults.get(userId).correct++;
+                        try {
+                            await NotificationService.createPredictionResultNotification(userId, prediction, true);
+                        } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
+                    } else if (prediction.status === 'incorrect') {
+                        userResults.get(userId).incorrect++;
+                        try {
+                            await NotificationService.createPredictionResultNotification(userId, prediction, false);
+                        } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
+                    }
                 }
-                
-                if (prediction.status === 'correct') {
-                    runStats.correct++;
-                    userResults.get(userId).correct++;
-                    // Send notification for correct prediction
-                    try {
-                        await NotificationService.createPredictionResultNotification(userId, prediction, true);
-                    } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
-                } else if (prediction.status === 'incorrect') {
-                    runStats.incorrect++;
-                    userResults.get(userId).incorrect++;
-                    // Send notification for incorrect prediction
-                    try {
-                        await NotificationService.createPredictionResultNotification(userId, prediction, false);
-                    } catch (e) { console.error('[PredictionChecker] Notification error:', e.message); }
-                }
+
+                if (prediction.status === 'correct') runStats.correct++;
+                else if (prediction.status === 'incorrect') runStats.incorrect++;
             } else {
                 runStats.errors++;
             }
@@ -311,7 +313,7 @@ async function checkExpiredPredictions() {
         await updateGamificationStats(userResults);
 
         // Update user stats
-        const affectedUserIds = [...new Set(expiredPredictions.map(p => p.user.toString()))];
+        const affectedUserIds = [...new Set(expiredPredictions.filter(p => p.user).map(p => p.user.toString()))];
         await updateUserStats(affectedUserIds);
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
