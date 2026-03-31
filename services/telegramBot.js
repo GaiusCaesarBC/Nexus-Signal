@@ -74,14 +74,17 @@ async function getRecentStats() {
     try {
         const now = new Date();
         const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
+        // Only count system signals (user=null) with quality gate
         const recent = await Prediction.find({
             user: null, isPublic: true,
+            confidence: { $gte: MIN_CONFIDENCE },
             createdAt: { $gte: dayAgo }
         }).lean();
 
-        const closed = recent.filter(p => p.status === 'correct' || p.status === 'incorrect' || (p.status === 'pending' && new Date(p.expiresAt) < now));
-        const winners = closed.filter(p => p.status === 'correct' || p.outcome?.wasCorrect);
-        const active = recent.filter(p => p.status === 'pending' && new Date(p.expiresAt) > now && p.confidence >= MIN_CONFIDENCE);
+        // Use result field from signalResultChecker (win/loss) + status for expiry checker
+        const closed = recent.filter(p => p.result === 'win' || p.result === 'loss' || p.status === 'correct' || p.status === 'incorrect');
+        const winners = closed.filter(p => p.result === 'win' || p.status === 'correct');
+        const active = recent.filter(p => p.status === 'pending' && new Date(p.expiresAt) > now);
         const winRate = closed.length > 0 ? Math.round((winners.length / closed.length) * 100) : 0;
 
         return { total: recent.length, winners: winners.length, losers: closed.length - winners.length, active: active.length, winRate };
