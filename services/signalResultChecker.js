@@ -190,10 +190,12 @@ async function runCheckCycle() {
                     signal.resultAt = new Date();
                     signal.status = outcome.result === 'win' ? 'correct' : 'incorrect';
 
-                    // Calculate movement percentage from entry
-                    const movePct = signal.entryPrice > 0
+                    // Calculate movement percentage from entry (inverted for shorts: drop = positive profit)
+                    const isLong = signal.direction === 'UP';
+                    const rawMovePct = signal.entryPrice > 0
                         ? ((livePrice - signal.entryPrice) / signal.entryPrice) * 100
                         : 0;
+                    const movePct = isLong ? rawMovePct : -rawMovePct;
 
                     console.log(`[SignalChecker] ${outcome.result === 'win' ? '✅' : '❌'} ${signal.symbol}: ${outcome.resultText} @ $${livePrice.toFixed(livePrice < 1 ? 6 : 2)} (${movePct >= 0 ? '+' : ''}${movePct.toFixed(1)}%)`);
 
