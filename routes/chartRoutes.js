@@ -1269,50 +1269,60 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
         } else {
             // ====== STOCK PATH ======
             console.log(`[Chart] 📈 Detected STOCK: ${symbol}`);
-            
-            let alphaVantageFunction;
-            let dataKey;
-            
-            // Map interval to Alpha Vantage function
-switch(interval) {
-    case 'LIVE':
-    case '1m':
-    case '5m':
-    case '15m':
-    case '30m':
-    case '60m':
-    case '1h':
-        alphaVantageFunction = 'TIME_SERIES_INTRADAY';
-        // Convert to Alpha Vantage format: LIVE/1m -> 1min, 5m -> 5min, etc.
-        let avInterval;
-        if (interval === '1h') {
-            avInterval = '60min';
-        } else if (interval === 'LIVE') {
-            avInterval = '1min'; // LIVE uses 1-minute candles
-        } else {
-            avInterval = interval.replace('m', 'min'); // 1m -> 1min, 5m -> 5min
-        }
-        dataKey = `Time Series (${avInterval})`;
-        break;
-                case '4h':
-                case '1D':
-                    alphaVantageFunction = 'TIME_SERIES_DAILY';
-                    dataKey = 'Time Series (Daily)';
-                    break;
-                case '1W':
-                    alphaVantageFunction = 'TIME_SERIES_WEEKLY';
-                    dataKey = 'Weekly Time Series';
-                    break;
-                case '1M':
-                    alphaVantageFunction = 'TIME_SERIES_MONTHLY';
-                    dataKey = 'Monthly Time Series';
-                    break;
-                default:
-                    alphaVantageFunction = 'TIME_SERIES_DAILY';
-                    dataKey = 'Time Series (Daily)';
+
+            // TRY YAHOO FINANCE FIRST (real-time, free, accurate)
+            try {
+                let yahooInterval, yahooRange;
+                switch(interval) {
+                    case 'LIVE': case '1m': yahooInterval = '1m'; yahooRange = '1d'; break;
+                    case '5m': yahooInterval = '5m'; yahooRange = '5d'; break;
+                    case '15m': yahooInterval = '15m'; yahooRange = '5d'; break;
+                    case '30m': yahooInterval = '30m'; yahooRange = '1mo'; break;
+                    case '1h': case '60m': yahooInterval = '1h'; yahooRange = '1mo'; break;
+                    case '4h': yahooInterval = '1d'; yahooRange = '6mo'; break;
+                    case '1D': yahooInterval = '1d'; yahooRange = '2y'; break;
+                    case '1W': yahooInterval = '1wk'; yahooRange = '5y'; break;
+                    case '1M': yahooInterval = '1mo'; yahooRange = '10y'; break;
+                    default: yahooInterval = '1d'; yahooRange = '1y';
+                }
+
+                console.log(`[Chart] 📊 Trying Yahoo Finance for ${symbol} (${yahooInterval}/${yahooRange})...`);
+                const yahooRes = await axios.get(
+                    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yahooInterval}&range=${yahooRange}`,
+                    {
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                        timeout: 10000
+                    }
+                );
+
+                const result = yahooRes.data?.chart?.result?.[0];
+                const timestamps = result?.timestamp;
+                const quote = result?.indicators?.quote?.[0];
+
+                if (timestamps?.length > 5 && quote) {
+                    const yahooChart = timestamps.map((t, i) => ({
+                        time: t,
+                        open: quote.open?.[i],
+                        high: quote.high?.[i],
+                        low: quote.low?.[i],
+                        close: quote.close?.[i],
+                        volume: quote.volume?.[i] || 0
+                    })).filter(c => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0 &&
+                                    Number.isFinite(c.open) && Number.isFinite(c.close));
+
+                    if (yahooChart.length > 5) {
+                        chartDataCache.set(cacheKey, { data: yahooChart, timestamp: Date.now() });
+                        const lastPrice = yahooChart[yahooChart.length - 1].close;
+                        console.log(`[Chart] ✅ Yahoo Finance: ${yahooChart.length} candles for ${symbol} (last: $${lastPrice.toFixed(2)})`);
+                        return res.json({ success: true, data: yahooChart, symbol, interval, source: 'yahoo' });
+                    }
+                }
+                console.log(`[Chart] ⚠️ Yahoo Finance returned insufficient data for ${symbol}`);
+            } catch (yahooErr) {
+                console.log(`[Chart] Yahoo Finance failed for ${symbol}:`, yahooErr.message);
             }
-            
-            // TRY FINNHUB FIRST for stock candles (fast, have API key)
+
+            // FALLBACK: Finnhub (delayed data on free tier but works for daily+)
             const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
             if (FINNHUB_KEY) {
                 try {
@@ -1354,6 +1364,38 @@ switch(interval) {
                 } catch (fhErr) {
                     console.log(`[Chart] Finnhub failed for ${symbol}:`, fhErr.message);
                 }
+            }
+
+            let alphaVantageFunction;
+            let dataKey;
+
+            // Map interval to Alpha Vantage function
+            switch(interval) {
+                case 'LIVE': case '1m': case '5m': case '15m': case '30m': case '60m': case '1h':
+                    alphaVantageFunction = 'TIME_SERIES_INTRADAY';
+                    {
+                        let avInterval;
+                        if (interval === '1h') avInterval = '60min';
+                        else if (interval === 'LIVE') avInterval = '1min';
+                        else avInterval = interval.replace('m', 'min');
+                        dataKey = `Time Series (${avInterval})`;
+                    }
+                    break;
+                case '4h': case '1D':
+                    alphaVantageFunction = 'TIME_SERIES_DAILY';
+                    dataKey = 'Time Series (Daily)';
+                    break;
+                case '1W':
+                    alphaVantageFunction = 'TIME_SERIES_WEEKLY';
+                    dataKey = 'Weekly Time Series';
+                    break;
+                case '1M':
+                    alphaVantageFunction = 'TIME_SERIES_MONTHLY';
+                    dataKey = 'Monthly Time Series';
+                    break;
+                default:
+                    alphaVantageFunction = 'TIME_SERIES_DAILY';
+                    dataKey = 'Time Series (Daily)';
             }
 
             // FALLBACK: Alpha Vantage
