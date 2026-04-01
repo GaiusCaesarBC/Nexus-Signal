@@ -80,8 +80,36 @@ router.post('/create-checkout-session', auth, async (req, res) => {
             console.log(`[Stripe] Created new customer: ${customerId}`);
         }
 
+        // ═══ LAUNCH PROMO: 25% off for 30 days (auto-expires) ═══
+        // Create or reuse a Stripe coupon for the launch discount
+        let launchCouponId = null;
+        const LAUNCH_PROMO_END = new Date('2026-05-01T00:00:00Z'); // 30 days from launch
+        if (new Date() < LAUNCH_PROMO_END) {
+            try {
+                // Try to retrieve existing coupon
+                const coupon = await stripe.coupons.retrieve('LAUNCH25');
+                launchCouponId = coupon.id;
+            } catch (e) {
+                // Create coupon if it doesn't exist
+                try {
+                    const coupon = await stripe.coupons.create({
+                        id: 'LAUNCH25',
+                        percent_off: 25,
+                        duration: 'repeating',
+                        duration_in_months: 3, // Discount applies for first 3 months
+                        name: 'Launch Day - 25% Off',
+                        redeem_by: Math.floor(LAUNCH_PROMO_END.getTime() / 1000),
+                    });
+                    launchCouponId = coupon.id;
+                    console.log('[Stripe] Created LAUNCH25 coupon');
+                } catch (couponErr) {
+                    console.log('[Stripe] Coupon creation failed:', couponErr.message);
+                }
+            }
+        }
+
         // Create checkout session
-        const session = await stripe.checkout.sessions.create({
+        const sessionParams = {
             customer: customerId,
             payment_method_types: ['card'],
             line_items: [
@@ -96,7 +124,14 @@ router.post('/create-checkout-session', auth, async (req, res) => {
             metadata: {
                 userId: user._id.toString()
             }
-        });
+        };
+
+        // Apply launch discount if active
+        if (launchCouponId) {
+            sessionParams.discounts = [{ coupon: launchCouponId }];
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionParams);
 
         res.json({ sessionId: session.id, url: session.url });
     } catch (error) {
