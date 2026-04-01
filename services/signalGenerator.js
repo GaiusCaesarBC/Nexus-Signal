@@ -98,8 +98,9 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         if (!price || price <= 0) return { status: 'skipped', reason: 'no price' };
 
-        // Try ML — 3-day signals (shorter = fresher feed)
-        const days = 3;
+        // ML prediction — 7-day horizon to match trained models
+        // (signals still expire in 7 days, giving the prediction time to play out)
+        const days = 7;
         let direction, targetPrice, confidence, indicators, analysis;
 
         const ml = await getMLPrediction(symbol, assetType, days);
@@ -108,16 +109,13 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             direction = p.direction === 'NEUTRAL' ? (p.price_change_percent > 0 ? 'UP' : 'DOWN') : p.direction;
             targetPrice = p.target_price || p.targetPrice;
             confidence = p.confidence;
-            indicators = ml.indicators || generateIndicators(price, direction);
+            // Use real indicators from ML service, only fallback to generated if none returned
+            indicators = ml.indicators || ml.technical_analysis || generateIndicators(price, direction);
             analysis = ml.analysis || {};
         } else {
-            // Fallback: momentum-based signal
-            const pct = (Math.random() * 14 - 4); // -4% to +10% bullish bias
-            direction = pct > 0 ? 'UP' : 'DOWN';
-            targetPrice = price * (1 + pct / 100);
-            confidence = 65 + Math.floor(Math.random() * 20); // 65-85 (above quality threshold)
-            indicators = generateIndicators(price, direction);
-            analysis = { message: `AI: ${direction === 'UP' ? 'Bullish' : 'Bearish'} momentum detected for ${symbol}` };
+            // ML unavailable — skip this asset instead of publishing random signals
+            console.log(`[SignalGen] ⚠ ML unavailable for ${symbol}, skipping (no random fallback)`);
+            return { status: 'skipped', reason: 'ml unavailable' };
         }
 
         if (confidence < MIN_CONFIDENCE) return { status: 'skipped', reason: 'low confidence' };
