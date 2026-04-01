@@ -93,6 +93,34 @@ async function getRecentStats() {
     }
 }
 
+// ─── Fetch top winning trades ─────────────────────────────
+async function getTopWins(limit = 5) {
+    try {
+        const wins = await Prediction.find({
+            user: null, isPublic: true,
+            result: 'win',
+            resultText: { $exists: true },
+            entryPrice: { $gt: 0 },
+            resultPrice: { $gt: 0 },
+        }).sort({ resultAt: -1 }).limit(50).lean();
+
+        // Calculate profit % (direction-aware) and sort by highest gain
+        return wins.map(w => {
+            const isLong = w.direction === 'UP';
+            const rawPct = ((w.resultPrice - w.entryPrice) / w.entryPrice) * 100;
+            const pct = isLong ? rawPct : -rawPct;
+            const sym = w.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || w.symbol;
+            return { symbol: sym, direction: isLong ? 'LONG' : 'SHORT', pct, resultText: w.resultText, resultAt: w.resultAt };
+        })
+        .filter(w => w.pct > 0)
+        .sort((a, b) => b.pct - a.pct)
+        .slice(0, limit);
+    } catch (e) {
+        console.error('[TGBot] getTopWins error:', e.message);
+        return [];
+    }
+}
+
 // ─── Message Builders ─────────────────────────────────────
 
 function buildSignalsMessage(signals) {
@@ -138,6 +166,37 @@ function buildDailyRecap(stats) {
     return `📊 *TODAY'S SIGNALS*\n\n${esc(String(stats.total))} signals generated\n${esc(String(stats.winners))} winners\n${esc(String(stats.losers))} stopped out\n${esc(String(stats.active))} still active\n\nWin rate: *${esc(String(stats.winRate))}%*\n\nEvery signal tracked\\. No deletions\\.\n\n👉 [View all](${escUrl(SITE)}/signals)`;
 }
 
+function buildTopWinsMessage(wins, stats) {
+    if (!wins.length) return `No verified wins yet\\. Results will appear here as signals hit targets\\.`;
+
+    const best = wins[0];
+    const rest = wins.slice(1);
+
+    let msg = `🏆 *VERIFIED RESULTS*\n_Every trade tracked\\. No hiding\\._\n\n`;
+
+    // Featured top trade
+    msg += `🔥 *TOP TRADE*\n`;
+    msg += `*${esc(best.symbol)}* ${best.direction === 'LONG' ? '📈' : '📉'} ${esc(best.direction)}\n`;
+    msg += `*\\+${esc(best.pct.toFixed(1))}%* — ${esc(best.resultText)}\n\n`;
+
+    // Other wins
+    if (rest.length) {
+        msg += `✅ *More Winners:*\n`;
+        for (const w of rest) {
+            msg += `${w.direction === 'LONG' ? '📈' : '📉'} *${esc(w.symbol)}* \\+${esc(w.pct.toFixed(1))}% — ${esc(w.resultText)}\n`;
+        }
+        msg += `\n`;
+    }
+
+    // Stats
+    if (stats) {
+        msg += `📊 ${esc(String(stats.total))} tracked \\| ${esc(String(stats.winners))} winners \\| *${esc(String(stats.winRate))}% win rate*\n\n`;
+    }
+
+    msg += `👉 [See all results](${escUrl(SITE)}/signals)`;
+    return msg;
+}
+
 function buildWelcome() {
     return `👋 *Welcome to Nexus Signal AI*\n\nAI\\-powered trade signals for stocks \\& crypto — tracked and validated\\.\n\nNo fake wins\\. No deleted trades\\.\n\nGet started below 👇`;
 }
@@ -177,10 +236,17 @@ function setupCommands() {
     });
 
     bot.onText(/\/results/, async (msg) => {
-        const stats = await getRecentStats();
-        bot.sendMessage(msg.chat.id, `📊 *Recent Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nActive: *${esc(String(stats.active))}*\nTracked publicly\n\n👉 [View all](${escUrl(SITE)}/signals)`, {
+        const [stats, wins] = await Promise.all([getRecentStats(), getTopWins(5)]);
+        bot.sendMessage(msg.chat.id, buildTopWinsMessage(wins, stats), {
             parse_mode: 'MarkdownV2', ...signalsKeyboard
         }).catch(e => console.log('[TGBot] results error:', e.message));
+    });
+
+    bot.onText(/\/wins/, async (msg) => {
+        const [stats, wins] = await Promise.all([getRecentStats(), getTopWins(5)]);
+        bot.sendMessage(msg.chat.id, buildTopWinsMessage(wins, stats), {
+            parse_mode: 'MarkdownV2', ...signalsKeyboard
+        }).catch(e => console.log('[TGBot] wins error:', e.message));
     });
 
     bot.on('callback_query', async (query) => {
@@ -194,15 +260,15 @@ function setupCommands() {
         }
 
         if (query.data === 'results') {
-            const stats = await getRecentStats();
+            const [stats, wins] = await Promise.all([getRecentStats(), getTopWins(5)]);
             bot.answerCallbackQuery(query.id);
-            bot.sendMessage(query.message.chat.id, `📊 *Today's Performance*\n\nWin Rate: *${esc(String(stats.winRate))}%*\nSignals: *${esc(String(stats.total))}*\nWinners: *${esc(String(stats.winners))}*\nStopped: *${esc(String(stats.losers))}*\n\n👉 [View all](${escUrl(SITE)}/signals)`, {
+            bot.sendMessage(query.message.chat.id, buildTopWinsMessage(wins, stats), {
                 parse_mode: 'MarkdownV2', ...signalsKeyboard
             }).catch(e => console.log('[TGBot] callback error:', e.message));
         }
     });
 
-    console.log('[TGBot] Commands: /start, /signals, /pricing, /results');
+    console.log('[TGBot] Commands: /start, /signals, /pricing, /results, /wins');
 }
 
 // ─── Channel Posts (event-driven) ─────────────────────────
@@ -261,8 +327,10 @@ async function postResult(signal, isWin, movePct) {
 async function postDailyRecap() {
     if (!bot || (!channelId && !groupId)) return;
     try {
-        const stats = await getRecentStats();
+        const [stats, wins] = await Promise.all([getRecentStats(), getTopWins(5)]);
         if (stats.total === 0) return;
+
+        // Send daily stats
         await sendToAll(buildDailyRecap(stats), {
             parse_mode: 'MarkdownV2',
             reply_markup: { inline_keyboard: [
@@ -270,7 +338,18 @@ async function postDailyRecap() {
                 [{ text: '🚀 Start Free Trial', url: `${SITE}/pricing` }],
             ]}
         });
-        console.log(`[TGBot] Daily recap: ${stats.total} signals, ${stats.winRate}% win rate`);
+
+        // Send top wins separately (if any)
+        if (wins.length > 0) {
+            await sendToAll(buildTopWinsMessage(wins, stats), {
+                parse_mode: 'MarkdownV2',
+                reply_markup: { inline_keyboard: [
+                    [{ text: '📊 View All Results', url: `${SITE}/signals` }],
+                ]}
+            });
+        }
+
+        console.log(`[TGBot] Daily recap: ${stats.total} signals, ${stats.winRate}% win rate, ${wins.length} top wins`);
     } catch (e) {
         console.error('[TGBot] Recap error:', e.message);
     }
