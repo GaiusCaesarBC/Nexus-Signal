@@ -343,10 +343,10 @@ const connectDB = async () => {
                         const isLong = signal.direction === 'UP';
 
                         signal.entryPrice = entry;
-                        signal.stopLoss = isLong ? entry - range * 0.4 : entry + range * 0.4;
-                        signal.takeProfit1 = isLong ? entry + range * 0.4 : entry - range * 0.4;
+                        signal.stopLoss = isLong ? entry - range * 0.25 : entry + range * 0.25;
+                        signal.takeProfit1 = isLong ? entry + range * 0.5 : entry - range * 0.5;
                         signal.takeProfit2 = target;
-                        signal.takeProfit3 = isLong ? entry + range * 1.5 : entry - range * 1.5;
+                        signal.takeProfit3 = isLong ? entry + range * 1.75 : entry - range * 1.75;
                         signal.livePrice = entry;
                         signal.livePriceUpdatedAt = signal.createdAt;
 

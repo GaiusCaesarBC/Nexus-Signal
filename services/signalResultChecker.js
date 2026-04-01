@@ -127,7 +127,8 @@ function checkResult(signal, livePrice) {
         return { result: 'loss', resultText: 'SL Hit', resultPrice: livePrice };
     }
 
-    // Check Take Profit hits (TP3 > TP2 > TP1 priority)
+    // Check Take Profit hits — only TP2 and TP3 close the trade
+    // TP1 is tracked for display but does NOT close (let winners run)
     if (isLong) {
         if (takeProfit3 && livePrice >= takeProfit3) {
             return { result: 'win', resultText: 'TP3 Hit', resultPrice: livePrice };
@@ -135,9 +136,7 @@ function checkResult(signal, livePrice) {
         if (takeProfit2 && livePrice >= takeProfit2) {
             return { result: 'win', resultText: 'TP2 Hit', resultPrice: livePrice };
         }
-        if (takeProfit1 && livePrice >= takeProfit1) {
-            return { result: 'win', resultText: 'TP1 Hit', resultPrice: livePrice };
-        }
+        // TP1 — do NOT close, just continue monitoring
     } else {
         if (takeProfit3 && livePrice <= takeProfit3) {
             return { result: 'win', resultText: 'TP3 Hit', resultPrice: livePrice };
@@ -145,9 +144,7 @@ function checkResult(signal, livePrice) {
         if (takeProfit2 && livePrice <= takeProfit2) {
             return { result: 'win', resultText: 'TP2 Hit', resultPrice: livePrice };
         }
-        if (takeProfit1 && livePrice <= takeProfit1) {
-            return { result: 'win', resultText: 'TP1 Hit', resultPrice: livePrice };
-        }
+        // TP1 — do NOT close, just continue monitoring
     }
 
     return null; // No result yet

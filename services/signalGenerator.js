@@ -132,19 +132,19 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         const range = Math.abs(targetPrice - entryPrice);
         const isLong = direction === 'UP';
 
-        // Stop Loss: 40% of range in opposite direction
+        // Stop Loss: 25% of range (tight — cut losses fast)
         const stopLoss = isLong
-            ? entryPrice - range * 0.4
-            : entryPrice + range * 0.4;
+            ? entryPrice - range * 0.25
+            : entryPrice + range * 0.25;
 
-        // Take Profits at 40%, 100%, and 150% of range
+        // Take Profits: TP1 (50%) for reference, TP2 (100%) main close, TP3 (175%) stretch
         const takeProfit1 = isLong
-            ? entryPrice + range * 0.4
-            : entryPrice - range * 0.4;
+            ? entryPrice + range * 0.5
+            : entryPrice - range * 0.5;
         const takeProfit2 = targetPrice;  // Main target (100% of range)
         const takeProfit3 = isLong
-            ? entryPrice + range * 1.5
-            : entryPrice - range * 1.5;
+            ? entryPrice + range * 1.75
+            : entryPrice - range * 1.75;
 
         await new Prediction({
             user: null,
