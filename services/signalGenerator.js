@@ -14,7 +14,7 @@ const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
-const MIN_CONFIDENCE = 65; // Only publish signals worth trading
+const MIN_CONFIDENCE = 55; // Lowered from 65 — ML models pre-retraining are conservative
 
 let isRunning = false;
 let lastRun = null;
@@ -104,12 +104,28 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         let direction, targetPrice, confidence, indicators, analysis;
 
         const ml = await getMLPrediction(symbol, assetType, days);
-        if (ml?.prediction?.confidence) {
+        if (ml?.prediction) {
             const p = ml.prediction;
-            direction = p.direction === 'NEUTRAL' ? (p.price_change_percent > 0 ? 'UP' : 'DOWN') : p.direction;
+            const mlConf = p.confidence || 0;
+            const pctChange = p.price_change_percent || 0;
+
+            // Resolve direction: NEUTRAL uses predicted price change direction
+            if (p.direction && p.direction !== 'NEUTRAL') {
+                direction = p.direction;
+            } else {
+                direction = pctChange >= 0 ? 'UP' : 'DOWN';
+            }
+
             targetPrice = p.target_price || p.targetPrice;
-            confidence = p.confidence;
-            // Use real indicators from ML service, only fallback to generated if none returned
+            confidence = mlConf;
+
+            // If ML returned NEUTRAL but has meaningful price change, boost confidence
+            // (the model is uncertain about direction but the magnitude suggests a move)
+            if (p.direction === 'NEUTRAL' && Math.abs(pctChange) > 1.5 && mlConf >= 45) {
+                confidence = Math.min(mlConf + 10, 70);
+                console.log(`[SignalGen] Boosted ${symbol}: NEUTRAL ${mlConf}% → ${confidence}% (pctChange=${pctChange.toFixed(1)}%)`);
+            }
+
             indicators = ml.indicators || ml.technical_analysis || generateIndicators(price, direction);
             analysis = ml.analysis || {};
         } else {
