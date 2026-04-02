@@ -392,6 +392,31 @@ const connectDB = async () => {
             }
         });
 
+        // Admin: clean up bad signals (broken SL/TP levels)
+        app.get('/api/admin/cleanup-bad-signals', async (req, res) => {
+            try {
+                const Prediction = require('./models/Prediction');
+                // Remove signals where SL is within 0.5% of entry (broken levels)
+                const badSignals = await Prediction.find({
+                    user: null,
+                    entryPrice: { $exists: true, $gt: 0 },
+                    stopLoss: { $exists: true, $gt: 0 },
+                });
+                let removed = 0;
+                for (const s of badSignals) {
+                    const slDist = Math.abs(s.stopLoss - s.entryPrice) / s.entryPrice * 100;
+                    if (slDist < 0.5) {
+                        await Prediction.deleteOne({ _id: s._id });
+                        removed++;
+                        console.log(`[Cleanup] Removed ${s.symbol} (SL ${slDist.toFixed(2)}% from entry)`);
+                    }
+                }
+                res.json({ success: true, removed, message: `Removed ${removed} signals with broken SL levels` });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
         // Manual signal generation trigger (for debugging)
         app.get('/api/trigger-signals', async (req, res) => {
             try {
