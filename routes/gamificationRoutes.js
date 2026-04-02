@@ -800,6 +800,27 @@ router.get('/achievements', authMiddleware, async (req, res) => {
             };
         });
 
+        // Auto-catch-up: run achievement check with real stats to unlock anything missed
+        try {
+            const AchievementService = require('../services/achievementService');
+            const newlyUnlocked = await AchievementService.checkAllAchievements(req.user.id, userStats);
+            if (newlyUnlocked && newlyUnlocked.length > 0) {
+                console.log(`[Achievements] Auto-unlocked ${newlyUnlocked.length} achievements on page load`);
+                // Re-fetch user to get updated achievements list
+                const refreshed = await User.findById(req.user.id).select('gamification').lean();
+                const refreshedAchIds = (refreshed?.gamification?.achievements || []).map(a => a.id);
+                // Update unlocked status in our response
+                allAchievements.forEach(a => {
+                    if (refreshedAchIds.includes(a.id)) {
+                        a.unlocked = true;
+                        a.unlockedAt = a.unlockedAt || new Date();
+                    }
+                });
+            }
+        } catch (achErr) {
+            console.error('[Achievements] Auto-check error:', achErr.message);
+        }
+
         // Sort: unlocked first, then by rarity (legendary first)
         const rarityOrder = { legendary: 0, epic: 1, rare: 2, common: 3 };
         allAchievements.sort((a, b) => {
