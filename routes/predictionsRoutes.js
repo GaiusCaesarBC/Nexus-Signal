@@ -755,15 +755,20 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
                 symbol: dbSymbol
             });
         }
+        // Check for existing SYSTEM signal first (any timeframe), then user predictions
         const existingPrediction = await Prediction.findOne({
             symbol: dbSymbol,
             status: 'pending',
             expiresAt: { $gt: new Date() },
-            timeframe: days // Same timeframe
-        }).sort({ createdAt: -1 });
+            $or: [
+                { user: null, isPublic: true },  // System signals (priority — any timeframe)
+                { user: req.user.id, timeframe: days }  // User's own prediction (exact timeframe)
+            ]
+        }).sort({ user: 1, createdAt: -1 }); // user:null sorts first (system signals win)
 
         if (existingPrediction) {
-            console.log(`[Predictions] ✅ Found existing shared prediction for ${dbSymbol}`);
+            const isSystem = !existingPrediction.user;
+            console.log(`[Predictions] ✅ Found existing ${isSystem ? 'SYSTEM' : 'user'} prediction for ${dbSymbol}`);
             
             // Get fresh price for display (use already fetched price, or refresh)
             const displayPrice = currentPrice || existingPrediction.currentPrice;
@@ -796,15 +801,24 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
                     price_change: existingPrediction.priceChange,
                     price_change_percent: existingPrediction.priceChangePercent,
                     confidence: existingPrediction.confidence,
+                    signal_strength: existingPrediction.signalStrength || (existingPrediction.confidence >= 70 ? 'strong' : 'moderate'),
+                    is_actionable: existingPrediction.confidence >= 55,
                     days: existingPrediction.timeframe
                 },
                 analysis: existingPrediction.analysis,
                 indicators: existingPrediction.indicators || {},
+                // Trade levels (locked at creation)
+                entryPrice: existingPrediction.entryPrice,
+                stopLoss: existingPrediction.stopLoss,
+                takeProfit1: existingPrediction.takeProfit1,
+                takeProfit2: existingPrediction.takeProfit2,
+                takeProfit3: existingPrediction.takeProfit3,
                 predictionId: existingPrediction._id,
                 _id: existingPrediction._id,
-                isShared: true, // ✅ Flag that this is a shared prediction
-                sharedMessage: 'Prediction already in progress!',
-                liveConfidence,
+                isShared: true,
+                isSystemSignal: isSystem,
+                sharedMessage: isSystem ? 'Active AI signal found — showing live tracked data.' : 'Prediction already in progress!',
+                liveConfidence: isSystem ? existingPrediction.confidence : liveConfidence, // System signals use their own confidence
                 livePrice: displayPrice,
                 timeRemaining,
                 daysRemaining: Math.ceil(timeRemaining / (1000 * 60 * 60 * 24)),
