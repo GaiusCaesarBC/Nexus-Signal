@@ -925,14 +925,32 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + days);
 
+        // Lock trade levels (same logic as signalGenerator)
+        const entryPrice = predictionData.current_price;
+        const targetPrice = predictionData.prediction.target_price;
+        const rawRange = Math.abs(targetPrice - entryPrice);
+        const minRange = entryPrice * 0.02;
+        const range = Math.max(rawRange, minRange);
+        const isLong = predictionData.prediction.direction === 'UP';
+        const slDistance = Math.max(range * 0.25, entryPrice * 0.015);
+
         // Build prediction data object
         const predictionRecord = {
             user: req.user.id,
             symbol: dbSymbol,
             assetType,
-            currentPrice: predictionData.current_price,
-            targetPrice: predictionData.prediction.target_price,
-            direction: predictionData.prediction.direction,
+            currentPrice: entryPrice,
+            targetPrice,
+            entryPrice,
+            stopLoss: isLong ? entryPrice - slDistance : entryPrice + slDistance,
+            takeProfit1: isLong ? entryPrice + range * 0.5 : entryPrice - range * 0.5,
+            takeProfit2: isLong ? entryPrice + range : entryPrice - range,
+            takeProfit3: isLong ? entryPrice + range * 1.75 : entryPrice - range * 1.75,
+            livePrice: entryPrice,
+            livePriceUpdatedAt: new Date(),
+            direction: predictionData.prediction.direction === 'NEUTRAL'
+                ? (predictionData.prediction.price_change_percent >= 0 ? 'UP' : 'DOWN')
+                : predictionData.prediction.direction,
             priceChange: predictionData.prediction.price_change,
             priceChangePercent: predictionData.prediction.price_change_percent,
             confidence: predictionData.prediction.confidence,
@@ -947,6 +965,7 @@ router.post('/predict', predictionLimiter, auth, requireSubscription('starter'),
                 message: predictionData.analysis?.message
             },
             expiresAt,
+            isPublic: false, // User predictions are NOT public (don't show in feed)
             viewers: [req.user.id],
             viewCount: 1
         };
@@ -1329,24 +1348,13 @@ router.get('/recent', predictionLimiter, async (req, res) => {
         const systemQuery = { user: null, isPublic: true };
         const fields = 'symbol direction targetPrice currentPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 livePrice livePriceUpdatedAt confidence createdAt expiresAt status assetType indicators analysis signalStrength priceChangePercent result resultText resultPrice resultAt';
 
-        if (userId) {
-            // Authenticated: show user's predictions + system-generated signals
-            predictions = await Prediction.find({
-                $or: [ { user: userId }, systemQuery ]
-            })
-                .sort({ createdAt: -1 })
-                .limit(parseInt(limit))
-                .lean();
-        } else {
-            // Public: show system signals + pending user predictions
-            predictions = await Prediction.find({
-                $or: [ { status: 'pending' }, systemQuery ]
-            })
-                .sort({ createdAt: -1 })
-                .limit(parseInt(limit))
-                .select(fields)
-                .lean();
-        }
+        // Live Signal Feed: ONLY system signals (user=null)
+        // User predictions stay on the AI Predict page, not the feed
+        predictions = await Prediction.find(systemQuery)
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .select(fields)
+            .lean();
 
         // Fetch live prices for active predictions (with caching)
         // Skip price fetching for closed signals (they have resultPrice)
