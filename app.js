@@ -392,15 +392,32 @@ const connectDB = async () => {
             }
         });
 
-        // Admin: expire stale predictions that are still "pending" past their expiresAt
+        // Admin: expire stale predictions that are still "pending" past their expiresAt or older than 14 days
         app.get('/api/admin/expire-stale', async (req, res) => {
             try {
                 const Prediction = require('./models/Prediction');
-                const result = await Prediction.updateMany(
-                    { status: 'pending', expiresAt: { $lt: new Date() } },
-                    { $set: { status: 'expired', result: null, resultText: 'Expired', resultAt: new Date() } }
+                const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+                // Expire predictions past their expiresAt
+                const r1 = await Prediction.updateMany(
+                    { status: 'pending', expiresAt: { $exists: true, $lt: new Date() } },
+                    { $set: { status: 'expired', resultText: 'Expired', resultAt: new Date() } }
                 );
-                res.json({ success: true, expired: result.modifiedCount, message: `Marked ${result.modifiedCount} stale predictions as expired` });
+
+                // Expire predictions older than 14 days with no expiresAt
+                const r2 = await Prediction.updateMany(
+                    { status: 'pending', expiresAt: { $exists: false }, createdAt: { $lt: fourteenDaysAgo } },
+                    { $set: { status: 'expired', resultText: 'Expired', resultAt: new Date() } }
+                );
+
+                // Expire predictions older than 14 days where expiresAt is null
+                const r3 = await Prediction.updateMany(
+                    { status: 'pending', expiresAt: null, createdAt: { $lt: fourteenDaysAgo } },
+                    { $set: { status: 'expired', resultText: 'Expired', resultAt: new Date() } }
+                );
+
+                const total = r1.modifiedCount + r2.modifiedCount + r3.modifiedCount;
+                res.json({ success: true, expired: total, details: { pastExpiry: r1.modifiedCount, noExpiry: r2.modifiedCount, nullExpiry: r3.modifiedCount } });
             } catch (e) {
                 res.json({ success: false, error: e.message });
             }
