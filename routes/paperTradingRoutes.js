@@ -790,14 +790,17 @@ console.log(`[Trade Rewards] ${xpReward.rewards.join(', ')}`);
 
         // Achievement check
         try {
-            await AchievementService.recordTradeAndCheck(req.user.id, {
+            const achResult = await AchievementService.recordTradeAndCheck(req.user.id, {
                 profit: 0,
                 leverage: safeLeverage,
                 positionType,
                 isFirstTrade,
                 usedMaxLeverage: safeLeverage === 20
             });
-        } catch (e) { /* ignore */ }
+            if (achResult && achResult.length > 0) {
+                console.log(`[Paper Trading] 🏆 Achievements unlocked: ${achResult.map(a => a.name).join(', ')}`);
+            }
+        } catch (e) { console.error('[Paper Trading] Achievement check error:', e.message); }
         
         const leverageMsg = safeLeverage > 1 ? ` with ${safeLeverage}x leverage` : '';
         const tpSlMsg = (safeTP || safeSL) ? ` | TP: ${safeTP ? '$' + safeTP : 'None'}, SL: ${safeSL ? '$' + safeSL : 'None'}` : '';

@@ -113,7 +113,9 @@ class AchievementService {
                 console.log(`[Achievements] 🎉 LEVEL UP! ${oldLevel} → ${newLevel}`);
             }
             
-            // Save all changes
+            // Save all changes (markModified needed for Mixed schema types)
+            user.markModified('gamification.stats');
+            user.markModified('gamification.achievements');
             await user.save();
 
             // Create notifications for new achievements
@@ -319,9 +321,14 @@ class AchievementService {
             console.log('[Achievements] Current stats:', {
                 totalTrades: user.gamification.stats.totalTrades,
                 profitableTrades: user.gamification.stats.profitableTrades,
-                todayTrades: user.gamification.dailyStats.tradesCount
+                leveragedTrades: user.gamification.stats.leveragedTrades,
+                shortTrades: user.gamification.stats.shortTrades,
+                todayTrades: user.gamification.dailyStats?.tradesCount
             });
 
+            // CRITICAL: Mixed schema type requires markModified for nested changes
+            user.markModified('gamification.stats');
+            user.markModified('gamification.dailyStats');
             await user.save();
 
             // Check achievements
@@ -349,11 +356,12 @@ class AchievementService {
             if (!user.gamification.stats) user.gamification.stats = {};
 
             user.gamification.stats.totalRefills = (user.gamification.stats.totalRefills || 0) + 1;
-            
+
             if (wasAtZero) {
                 user.gamification.stats.accountBlown = true;
             }
 
+            user.markModified('gamification.stats');
             await user.save();
 
             return await this.checkAllAchievements(userId);
