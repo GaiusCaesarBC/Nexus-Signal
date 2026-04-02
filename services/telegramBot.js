@@ -69,25 +69,18 @@ async function getQualifiedSignals(limit = 20) {
     }
 }
 
-// ─── Get recent stats ─────────────────────────────────────
+// ─── Get all-time stats (matches website) ────────────────
 async function getRecentStats() {
     try {
-        const now = new Date();
-        const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
-        // Only count system signals (user=null) with quality gate
-        const recent = await Prediction.find({
-            user: null, isPublic: true,
-            confidence: { $gte: MIN_CONFIDENCE },
-            createdAt: { $gte: dayAgo }
-        }).lean();
+        const systemQuery = { user: null, isPublic: true };
+        const total = await Prediction.countDocuments(systemQuery);
+        const winners = await Prediction.countDocuments({ ...systemQuery, result: 'win' });
+        const losers = await Prediction.countDocuments({ ...systemQuery, result: 'loss' });
+        const active = await Prediction.countDocuments({ ...systemQuery, status: 'pending', expiresAt: { $gt: new Date() } });
+        const closed = winners + losers;
+        const winRate = closed > 0 ? Math.round((winners / closed) * 100) : 0;
 
-        // Use result field from signalResultChecker (win/loss) + status for expiry checker
-        const closed = recent.filter(p => p.result === 'win' || p.result === 'loss' || p.status === 'correct' || p.status === 'incorrect');
-        const winners = closed.filter(p => p.result === 'win' || p.status === 'correct');
-        const active = recent.filter(p => p.status === 'pending' && new Date(p.expiresAt) > now);
-        const winRate = closed.length > 0 ? Math.round((winners.length / closed.length) * 100) : 0;
-
-        return { total: recent.length, winners: winners.length, losers: closed.length - winners.length, active: active.length, winRate };
+        return { total, winners, losers, active, winRate };
     } catch (e) {
         return { total: 0, winners: 0, losers: 0, active: 0, winRate: 0 };
     }
