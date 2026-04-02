@@ -731,11 +731,28 @@ router.get('/achievements', authMiddleware, async (req, res) => {
             await userDoc.save();
         }
 
+        // Fetch REAL prediction counts from DB (gamification.stats may be stale)
+        const Prediction = require('../models/Prediction');
+        const realPredictionCount = await Prediction.countDocuments({ user: req.user.id });
+        const realCorrectCount = await Prediction.countDocuments({ user: req.user.id, status: 'correct' });
+
+        // Fetch paper trading stats
+        let realTradeCount = 0;
+        try {
+            const PaperTradingAccount = require('../models/PaperTradingAccount');
+            const ptAccount = await PaperTradingAccount.findOne({ user: req.user.id }).lean();
+            realTradeCount = ptAccount?.totalTrades || 0;
+        } catch (e) {}
+
         // Convert to lean object for processing
         const user = userDoc.toObject();
         const userStats = {
             ...(user?.gamification?.stats || {}),
-            // Merge social stats (stored in user.social, not gamification.stats)
+            // Override with REAL counts from DB (fixes stale gamification.stats)
+            predictionsCreated: Math.max(realPredictionCount, user?.gamification?.stats?.predictionsCreated || 0),
+            correctPredictions: Math.max(realCorrectCount, user?.gamification?.stats?.correctPredictions || 0),
+            totalTrades: Math.max(realTradeCount, user?.gamification?.stats?.totalTrades || 0),
+            // Social stats (stored in user.social, not gamification.stats)
             followingCount: user?.social?.following?.length || 0,
             followersCount: user?.social?.followers?.length || 0,
             // Login streak
