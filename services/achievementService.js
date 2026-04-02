@@ -33,9 +33,21 @@ class AchievementService {
             // ✅ FIXED: Track old level BEFORE any XP changes
             const oldLevel = user.gamification.level || 1;
 
-            // Merge stats from different sources
+            // Merge stats from ALL sources (gamification + social + paper trading)
             const stats = {
                 ...user.gamification.stats,
+                // Social stats (stored in user.social, not gamification.stats)
+                followingCount: user.social?.following?.length || user.social?.followingCount || 0,
+                followersCount: user.social?.followers?.length || user.social?.followersCount || 0,
+                // Login streak
+                loginStreak: user.gamification?.loginStreak || 0,
+                maxLoginStreak: user.gamification?.maxLoginStreak || 0,
+                // Level info
+                level: user.gamification?.level || 1,
+                xp: user.gamification?.xp || 0,
+                nexusCoins: user.gamification?.nexusCoins || 0,
+                // Days active (approximate from account age)
+                daysActive: Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
                 ...additionalStats
             };
 
@@ -245,13 +257,41 @@ class AchievementService {
 
             // Record the trade in stats
             user.gamification.stats.totalTrades = (user.gamification.stats.totalTrades || 0) + 1;
-            
-            if (tradeData.profitable) {
+
+            // Fix: check profit number OR profitable boolean
+            const isProfitable = tradeData.profitable || (tradeData.profit > 0);
+            if (isProfitable) {
                 user.gamification.stats.profitableTrades = (user.gamification.stats.profitableTrades || 0) + 1;
-                console.log('[Achievements] ✅ Profitable trade recorded');
             } else {
                 user.gamification.stats.losingTrades = (user.gamification.stats.losingTrades || 0) + 1;
-                console.log('[Achievements] ❌ Losing trade recorded');
+            }
+
+            // Track leverage stats
+            if (tradeData.leverage && tradeData.leverage > 1) {
+                user.gamification.stats.leveragedTrades = (user.gamification.stats.leveragedTrades || 0) + 1;
+                if (tradeData.leverage >= 20 || tradeData.usedMaxLeverage) {
+                    user.gamification.stats.usedMaxLeverage = true;
+                }
+            }
+
+            // Track short positions
+            if (tradeData.positionType === 'short') {
+                user.gamification.stats.shortTrades = (user.gamification.stats.shortTrades || 0) + 1;
+            }
+
+            // Track biggest wins/losses
+            const profit = tradeData.profit || 0;
+            if (profit > (user.gamification.stats.biggestWin || 0)) {
+                user.gamification.stats.biggestWin = profit;
+            }
+            if (profit < 0 && Math.abs(profit) > Math.abs(user.gamification.stats.biggestLoss || 0)) {
+                user.gamification.stats.biggestLoss = profit;
+            }
+            if (tradeData.leverage > 1 && profit > (user.gamification.stats.biggestLeverageWin || 0)) {
+                user.gamification.stats.biggestLeverageWin = profit;
+            }
+            if (tradeData.leverage > 1 && profit < 0 && Math.abs(profit) > Math.abs(user.gamification.stats.biggestLeverageLoss || 0)) {
+                user.gamification.stats.biggestLeverageLoss = Math.abs(profit);
             }
             
             // Update daily stats

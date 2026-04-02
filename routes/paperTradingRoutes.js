@@ -1831,6 +1831,12 @@ router.post('/refill', auth, async (req, res) => {
         
         console.log(`[Paper Trading] Refill: +$${amountToAdd} | New Balance: $${account.cashBalance} | Coins left: ${user.gamification.nexusCoins}`);
 
+        // Check achievements after refill
+        try {
+            const wasAtZero = currentBalance === 0 || currentBalance < 1;
+            await AchievementService.recordRefill(req.user.id, wasAtZero);
+        } catch (e) { console.error('[Paper Trading] Achievement check after refill:', e.message); }
+
         res.json({
             success: true,
             message: `Added $${amountToAdd.toLocaleString()} to your account`,
