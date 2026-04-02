@@ -108,72 +108,11 @@ class GamificationService {
         }
     }
 
-    // Check and award achievements
+    // Check and award achievements — delegates to AchievementService (single source of truth)
     static async checkAchievements(userId) {
         try {
-            const user = await User.findById(userId);
-            if (!user) return [];
-
-            const newAchievements = [];
-            const unlockedIds = (user.gamification.achievements || []).map(a => a.id);
-
-            // Check each achievement
-            for (const [key, achievement] of Object.entries(ACHIEVEMENTS)) {
-                try {
-                    // Skip if not a valid achievement object
-                    if (!achievement || typeof achievement !== 'object') continue;
-                    if (typeof achievement === 'function') continue;
-                    if (!achievement.id || !achievement.check) continue;
-                    
-                    // Skip if already unlocked
-                    if (unlockedIds.includes(achievement.id)) continue;
-
-                    // Check if requirements met
-                    const unlocked = achievement.check(user.gamification.stats || {}, user.gamification);
-                    
-                    if (unlocked) {
-                        // Award achievement
-                        if (!user.gamification.achievements) user.gamification.achievements = [];
-                        
-                        user.gamification.achievements.push({
-                            id: achievement.id,
-                            name: achievement.name,
-                            description: achievement.description,
-                            icon: achievement.icon,
-                            points: achievement.points,
-                            rarity: achievement.rarity,
-                            unlockedAt: new Date()
-                        });
-
-                        // Award XP and coins using User model methods
-                        await user.addXp(achievement.points, `Achievement: ${achievement.name}`);
-                        await user.addCoins(achievement.points, `Achievement: ${achievement.name}`);
-
-                        newAchievements.push(achievement);
-                        
-                        console.log(`[Gamification] 🏆 Achievement unlocked for user ${userId}: ${achievement.name}`);
-                        
-                        // Send achievement notification
-                        try {
-                            await NotificationService.notifyAchievementUnlocked(userId, {
-                                name: achievement.name,
-                                description: achievement.description,
-                                icon: achievement.icon,
-                                points: achievement.points,
-                                rarity: achievement.rarity
-                            });
-                        } catch (e) { /* ignore notification errors */ }
-                    }
-                } catch (achievementError) {
-                    console.error(`[Gamification] Error checking achievement ${key}:`, achievementError.message);
-                }
-            }
-
-            if (newAchievements.length > 0) {
-                await user.save();
-            }
-
-            return newAchievements;
+            const AchievementService = require('./achievementService');
+            return await AchievementService.checkAllAchievements(userId);
         } catch (error) {
             console.error('[Gamification] Check achievements error:', error);
             return [];
