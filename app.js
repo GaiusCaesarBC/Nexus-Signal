@@ -392,6 +392,17 @@ const connectDB = async () => {
             }
         });
 
+        // Manual signal generation trigger (for debugging)
+        app.get('/api/trigger-signals', async (req, res) => {
+            try {
+                const { runCycle } = require('./services/signalGenerator');
+                res.json({ success: true, message: 'Signal cycle triggered — check logs' });
+                runCycle(); // Run async, don't await
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
         // ✅ INITIALIZE DISCORD BOT
         const { initializeBot: initializeDiscordBot } = require('./services/discordService');
         initializeDiscordBot();
