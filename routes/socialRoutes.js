@@ -453,8 +453,8 @@ router.get('/profile/:userId', optionalAuth, async (req, res) => {
             totalReturnPercent: user.stats?.totalReturnPercent || 0,
             winRate: user.stats?.winRate || gamificationData?.stats?.winRate || 0,
             totalTrades: user.stats?.totalTrades || gamificationData?.stats?.totalTrades || 0,
-            currentStreak: user.stats?.currentStreak || gamificationData?.profitStreak || gamificationData?.loginStreak || 0,
-            longestStreak: user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
+            currentStreak: gamificationData?.loginStreak || user.stats?.currentStreak || gamificationData?.profitStreak || 0,
+            longestStreak: gamificationData?.maxLoginStreak || user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
             bestTrade: user.stats?.bestTrade || gamificationData?.stats?.biggestWinPercent || 0,
             rank: user.stats?.rank || 0,
             // 🔥 USE REAL PREDICTION STATS
@@ -793,8 +793,8 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             totalReturnPercent: user.stats?.totalReturnPercent || 0,
             winRate: user.stats?.winRate || gamificationData?.stats?.winRate || 0,
             totalTrades: user.stats?.totalTrades || gamificationData?.stats?.totalTrades || 0,
-            currentStreak: user.stats?.currentStreak || gamificationData?.profitStreak || gamificationData?.loginStreak || 0,
-            longestStreak: user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
+            currentStreak: gamificationData?.loginStreak || user.stats?.currentStreak || gamificationData?.profitStreak || 0,
+            longestStreak: gamificationData?.maxLoginStreak || user.stats?.longestStreak || gamificationData?.maxProfitStreak || 0,
             bestTrade: user.stats?.bestTrade || gamificationData?.stats?.biggestWinPercent || 0,
             worstTrade: user.stats?.worstTrade || 0,
             avgTradeReturn: user.stats?.avgTradeReturn || 0,
@@ -914,6 +914,13 @@ router.post('/follow/:userId', auth, async (req, res) => {
             targetUserId,
             currentUser
         );
+
+        // Check achievements after following
+        try {
+            const GamificationService = require('../services/gamificationService');
+            await GamificationService.awardXP(currentUserId, 10, `Followed ${targetUser.username}`);
+            await GamificationService.checkAchievements(currentUserId);
+        } catch (e) { console.error('[Social] Achievement check error:', e.message); }
 
         res.json({ success: true, message: 'Successfully followed user' });
     } catch (error) {
