@@ -221,6 +221,8 @@ class GamificationService {
                 }
             }
 
+            user.markModified('gamification.stats');
+            user.markModified('gamification');
             await user.save();
 
             // Award XP
@@ -273,6 +275,7 @@ class GamificationService {
                 } catch (e) { /* ignore */ }
             }
 
+            user.markModified('gamification.stats');
             await user.save();
 
             // Award XP
@@ -303,6 +306,7 @@ class GamificationService {
             const oldValue = user.gamification.stats.portfolioValue || 0;
             user.gamification.stats.portfolioValue = portfolioValue;
             user.gamification.stats.stocksOwned = stocksOwned;
+            user.markModified('gamification.stats');
             await user.save();
 
             // Check for significant portfolio changes

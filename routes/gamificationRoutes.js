@@ -710,7 +710,7 @@ const ACHIEVEMENT_PROGRESS_MAP = {
 router.get('/achievements', authMiddleware, async (req, res) => {
     try {
         // First fetch user (non-lean) so we can auto-sync if needed
-        let userDoc = await User.findById(req.user.id).select('gamification');
+        let userDoc = await User.findById(req.user.id).select('gamification social createdAt');
 
         if (!userDoc?.gamification) {
             return res.status(404).json({ success: false, error: 'User gamification data not found' });
@@ -733,7 +733,19 @@ router.get('/achievements', authMiddleware, async (req, res) => {
 
         // Convert to lean object for processing
         const user = userDoc.toObject();
-        const userStats = user?.gamification?.stats || {};
+        const userStats = {
+            ...(user?.gamification?.stats || {}),
+            // Merge social stats (stored in user.social, not gamification.stats)
+            followingCount: user?.social?.following?.length || 0,
+            followersCount: user?.social?.followers?.length || 0,
+            // Login streak
+            loginStreak: user?.gamification?.loginStreak || 0,
+            maxLoginStreak: user?.gamification?.maxLoginStreak || 0,
+            // Computed: days active from account creation
+            daysActive: Math.floor((Date.now() - new Date(user?.createdAt || Date.now()).getTime()) / (1000 * 60 * 60 * 24)),
+            // Level
+            level: correctLevel,
+        };
 
         // Map all achievements with unlock status and progress
         const allAchievements = Object.values(ACHIEVEMENTS).map(ach => {
