@@ -392,11 +392,10 @@ const connectDB = async () => {
             }
         });
 
-        // Admin: clean up bad signals (broken SL/TP levels)
+        // Admin: clean up bad signals (broken SL/TP levels or blown-past SL)
         app.get('/api/admin/cleanup-bad-signals', async (req, res) => {
             try {
                 const Prediction = require('./models/Prediction');
-                // Remove signals where SL is within 0.5% of entry (broken levels)
                 const badSignals = await Prediction.find({
                     user: null,
                     entryPrice: { $exists: true, $gt: 0 },
@@ -405,13 +404,24 @@ const connectDB = async () => {
                 let removed = 0;
                 for (const s of badSignals) {
                     const slDist = Math.abs(s.stopLoss - s.entryPrice) / s.entryPrice * 100;
-                    if (slDist < 0.5) {
+                    // Remove if SL too close to entry
+                    if (slDist < 1.0) {
                         await Prediction.deleteOne({ _id: s._id });
                         removed++;
                         console.log(`[Cleanup] Removed ${s.symbol} (SL ${slDist.toFixed(2)}% from entry)`);
+                        continue;
+                    }
+                    // Remove if loss result blew way past SL (result > 3x SL distance = broken)
+                    if (s.result === 'loss' && s.resultPrice && s.entryPrice) {
+                        const actualLoss = Math.abs(s.resultPrice - s.entryPrice) / s.entryPrice * 100;
+                        if (actualLoss > slDist * 3 && actualLoss > 10) {
+                            await Prediction.deleteOne({ _id: s._id });
+                            removed++;
+                            console.log(`[Cleanup] Removed ${s.symbol} (actual loss ${actualLoss.toFixed(1)}% >> SL ${slDist.toFixed(1)}%)`);
+                        }
                     }
                 }
-                res.json({ success: true, removed, message: `Removed ${removed} signals with broken SL levels` });
+                res.json({ success: true, removed, message: `Removed ${removed} signals with broken levels` });
             } catch (e) {
                 res.json({ success: false, error: e.message });
             }
