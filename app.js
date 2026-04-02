@@ -392,6 +392,20 @@ const connectDB = async () => {
             }
         });
 
+        // Admin: expire stale predictions that are still "pending" past their expiresAt
+        app.get('/api/admin/expire-stale', async (req, res) => {
+            try {
+                const Prediction = require('./models/Prediction');
+                const result = await Prediction.updateMany(
+                    { status: 'pending', expiresAt: { $lt: new Date() } },
+                    { $set: { status: 'expired', result: null, resultText: 'Expired', resultAt: new Date() } }
+                );
+                res.json({ success: true, expired: result.modifiedCount, message: `Marked ${result.modifiedCount} stale predictions as expired` });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
         // Admin: clean up bad signals (broken SL/TP levels or blown-past SL)
         app.get('/api/admin/cleanup-bad-signals', async (req, res) => {
             try {
