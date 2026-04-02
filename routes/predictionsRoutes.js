@@ -1476,6 +1476,21 @@ router.get('/stats/me', predictionLimiter, auth, async (req, res) => {
     }
 });
 
+// Public: get any user's predictions by userId
+router.get('/user/:userId', predictionLimiter, async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+        const predictions = await Prediction.find({ user: req.params.userId })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .select('symbol direction targetPrice currentPrice entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 confidence status result resultText resultPrice resultAt assetType timeframe createdAt expiresAt signalStrength')
+            .lean();
+        res.json(predictions);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/user', predictionLimiter, auth, async (req, res) => {
     try {
         const { limit = 5 } = req.query;
