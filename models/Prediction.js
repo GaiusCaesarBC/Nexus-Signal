@@ -335,29 +335,16 @@ PredictionSchema.statics.getUserAccuracy = async function(userId) {
 // Static method to get overall platform accuracy
 // Only counts actionable predictions (excludes NEUTRAL and weak signals)
 PredictionSchema.statics.getPlatformAccuracy = async function() {
-    const predictions = await this.find({
-        status: { $in: ['correct', 'incorrect'] },
-        direction: { $in: ['UP', 'DOWN'] }, // Exclude NEUTRAL
-        $or: [
-            { isActionable: true },
-            { isActionable: { $exists: false } } // Include old predictions without this field
-        ]
-    });
-
-    if (predictions.length === 0) {
-        return {
-            totalPredictions: 0,
-            correctPredictions: 0,
-            accuracy: 0
-        };
-    }
-
-    const correctPredictions = predictions.filter(p => p.status === 'correct').length;
-    const accuracy = (correctPredictions / predictions.length) * 100;
+    // Only count system signals (matches Live Signal Feed stats)
+    const total = await this.countDocuments({ user: null, isPublic: true });
+    const wins = await this.countDocuments({ user: null, isPublic: true, result: 'win' });
+    const losses = await this.countDocuments({ user: null, isPublic: true, result: 'loss' });
+    const closed = wins + losses;
+    const accuracy = closed > 0 ? (wins / closed) * 100 : 0;
 
     return {
-        totalPredictions: predictions.length,
-        correctPredictions,
+        totalPredictions: total,
+        correctPredictions: wins,
         accuracy: Math.round(accuracy * 100) / 100
     };
 };
