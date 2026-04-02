@@ -617,20 +617,34 @@ router.post('/buy', auth, async (req, res) => {
         
         const safePrice = safeNumber(priceResult.price, 0);
         
-        // Validate TP/SL for long positions
+        // Validate TP/SL based on position type
         const safeTP = takeProfit ? safeNumber(takeProfit, null) : null;
         const safeSL = stopLoss ? safeNumber(stopLoss, null) : null;
         const safeTrailing = trailingStopPercent ? safeNumber(trailingStopPercent, null) : null;
-        
-        if (safeTP && safeTP <= safePrice) {
-            return res.status(400).json({ 
-                error: `Take Profit ($${safeTP}) must be above current price ($${safePrice.toFixed(2)}) for long positions`
-            });
-        }
-        if (safeSL && safeSL >= safePrice) {
-            return res.status(400).json({ 
-                error: `Stop Loss ($${safeSL}) must be below current price ($${safePrice.toFixed(2)}) for long positions`
-            });
+        const isLong = positionType === 'long';
+
+        if (isLong) {
+            if (safeTP && safeTP <= safePrice) {
+                return res.status(400).json({
+                    error: `Take Profit ($${safeTP}) must be above current price ($${safePrice.toFixed(2)}) for long positions`
+                });
+            }
+            if (safeSL && safeSL >= safePrice) {
+                return res.status(400).json({
+                    error: `Stop Loss ($${safeSL}) must be below current price ($${safePrice.toFixed(2)}) for long positions`
+                });
+            }
+        } else {
+            if (safeTP && safeTP >= safePrice) {
+                return res.status(400).json({
+                    error: `Take Profit ($${safeTP}) must be below current price ($${safePrice.toFixed(2)}) for short positions`
+                });
+            }
+            if (safeSL && safeSL <= safePrice) {
+                return res.status(400).json({
+                    error: `Stop Loss ($${safeSL}) must be above current price ($${safePrice.toFixed(2)}) for short positions`
+                });
+            }
         }
         if (safeTrailing && (safeTrailing <= 0 || safeTrailing >= 100)) {
             return res.status(400).json({ error: 'Trailing stop must be between 0 and 100%' });
