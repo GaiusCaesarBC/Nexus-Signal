@@ -1,7 +1,7 @@
 // server/services/achievementService.js - UPDATED TO USE USER.GAMIFICATION
 
 const User = require('../models/User');
-const ACHIEVEMENTS = require('../config/achievements');
+const { ACHIEVEMENTS } = require('../config/achievements');
 const Notification = require('../models/Notification');
 
 class AchievementService {
@@ -48,6 +48,9 @@ class AchievementService {
 
             // Check each achievement
             for (const [key, achievement] of Object.entries(ACHIEVEMENTS)) {
+                // Skip non-achievement entries (functions, etc.)
+                if (!achievement || typeof achievement !== 'object' || typeof achievement.check !== 'function' || !achievement.id) continue;
+
                 // Skip if already unlocked
                 if (unlockedIds.includes(achievement.id)) {
                     continue;

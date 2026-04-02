@@ -1,6 +1,6 @@
 // server/services/gamificationService.js - UPDATED TO USE USER.GAMIFICATION
 const User = require('../models/User');
-const ACHIEVEMENTS = require('../config/achievements');
+const { ACHIEVEMENTS } = require('../config/achievements');
 const NotificationService = require('./notificationService');
 
 class GamificationService {

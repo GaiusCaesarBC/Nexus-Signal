@@ -5,7 +5,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const GamificationService = require('../services/gamificationService');
 const AchievementService = require('../services/achievementService');
-const ACHIEVEMENTS = require('../config/achievements');
+const { ACHIEVEMENTS } = require('../config/achievements');
 const DailyRewardService = require('../services/dailyRewardService');
 
 // ============ LEVEL THRESHOLDS (MUST MATCH User.js!) ============

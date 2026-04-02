@@ -1103,7 +1103,10 @@ const countByRarity = () => {
     return counts;
 };
 
-module.exports = ACHIEVEMENTS;
-module.exports.getAchievementsByCategory = getAchievementsByCategory;
-module.exports.getAllCategories = getAllCategories;
-module.exports.countByRarity = countByRarity;
+// Export achievements as default, helpers as named (don't pollute ACHIEVEMENTS object)
+module.exports = {
+    ACHIEVEMENTS,
+    getAchievementsByCategory,
+    getAllCategories,
+    countByRarity
+};
