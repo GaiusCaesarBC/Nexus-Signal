@@ -827,11 +827,11 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
             nexusCoins: gamificationData?.nexusCoins || user.gamification?.nexusCoins || 0,
             totalEarned: gamificationData?.totalEarned || 0,
             
-            // Streaks
-            loginStreak: gamificationData?.loginStreak || 0,
-            profitStreak: gamificationData?.profitStreak || 0,
-            maxLoginStreak: gamificationData?.maxLoginStreak || 0,
-            maxProfitStreak: gamificationData?.maxProfitStreak || 0,
+            // Streaks — check both Gamification doc AND User.gamification (login streak lives on User)
+            loginStreak: user.gamification?.loginStreak || gamificationData?.loginStreak || 0,
+            profitStreak: gamificationData?.profitStreak || user.gamification?.profitStreak || 0,
+            maxLoginStreak: user.gamification?.maxLoginStreak || gamificationData?.maxLoginStreak || 0,
+            maxProfitStreak: gamificationData?.maxProfitStreak || user.gamification?.maxProfitStreak || 0,
             
             // Stats object
             stats: gamificationData?.stats || user.gamification?.stats || {},
