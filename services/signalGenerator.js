@@ -149,19 +149,32 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         // LOCK entry/SL/TP at creation - these NEVER change after this
         // ═══════════════════════════════════════════════════════════
         const entryPrice = price;  // Locked entry price
-        const range = Math.abs(targetPrice - entryPrice);
+        const rawRange = Math.abs(targetPrice - entryPrice);
         const isLong = direction === 'UP';
 
-        // Stop Loss: 25% of range (tight — cut losses fast)
+        // Minimum range = 2% of entry (prevents micro-range signals with 0% SL)
+        const minRange = entryPrice * 0.02;
+        const range = Math.max(rawRange, minRange);
+
+        // If range was too small, skip — ML target was basically flat
+        if (rawRange < entryPrice * 0.005) {
+            console.log(`[SignalGen] ⚠ ${symbol}: target too close to entry (${(rawRange/entryPrice*100).toFixed(2)}%), skipping`);
+            return { status: 'skipped', reason: 'target too close' };
+        }
+
+        // Stop Loss: 25% of range, minimum 1.5% from entry
+        const slDistance = Math.max(range * 0.25, entryPrice * 0.015);
         const stopLoss = isLong
-            ? entryPrice - range * 0.25
-            : entryPrice + range * 0.25;
+            ? entryPrice - slDistance
+            : entryPrice + slDistance;
 
         // Take Profits: TP1 (50%) for reference, TP2 (100%) main close, TP3 (175%) stretch
         const takeProfit1 = isLong
             ? entryPrice + range * 0.5
             : entryPrice - range * 0.5;
-        const takeProfit2 = targetPrice;  // Main target (100% of range)
+        const takeProfit2 = isLong
+            ? entryPrice + range
+            : entryPrice - range;
         const takeProfit3 = isLong
             ? entryPrice + range * 1.75
             : entryPrice - range * 1.75;
