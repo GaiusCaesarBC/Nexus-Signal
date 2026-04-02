@@ -55,11 +55,15 @@ async function getCryptoPrice(symbol, prefetchedPrice) {
 
 async function getMLPrediction(symbol, type, days) {
     try {
-        const res = await axios.post(`${ML_SERVICE_URL}/predict`, { symbol, days, type }, {
+        const url = `${ML_SERVICE_URL}/predict`;
+        const res = await axios.post(url, { symbol, days, type }, {
             headers: { ...ML_HEADERS, 'Content-Type': 'application/json' }, timeout: 30000
         });
-        if (res.data?.prediction?.confidence) return res.data;
-    } catch (e) { /* silent */ }
+        if (res.data?.prediction) return res.data;
+        console.log(`[SignalGen] ML returned no prediction for ${symbol}:`, JSON.stringify(res.data).slice(0, 200));
+    } catch (e) {
+        console.error(`[SignalGen] ML call failed for ${symbol}: ${e.message} (URL: ${ML_SERVICE_URL})`);
+    }
     return null;
 }
 
