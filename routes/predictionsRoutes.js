@@ -1824,6 +1824,19 @@ router.get('/accuracy-dashboard', predictionLimiter, auth, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// GET /api/predictions/stats — Total signal counts (not capped by limit)
+router.get('/stats', async (req, res) => {
+    try {
+        const total = await Prediction.countDocuments({ user: null, isPublic: true });
+        const wins = await Prediction.countDocuments({ user: null, isPublic: true, result: 'win' });
+        const losses = await Prediction.countDocuments({ user: null, isPublic: true, result: 'loss' });
+        const active = await Prediction.countDocuments({ user: null, isPublic: true, status: 'pending', expiresAt: { $gt: new Date() } });
+        res.json({ success: true, total, wins, losses, active, closed: wins + losses });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // GET /api/predictions/signals — Clean scored signal feed
 // Same logic as frontend /signals page + Telegram bot
 // Public (no auth) — entry/SL/TP hidden for non-premium
