@@ -1453,6 +1453,7 @@ router.get('/recent', predictionLimiter, async (req, res) => {
 // Public performance data (no auth — used by Live Performance Tracker)
 router.get('/performance', async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit) || 200, 500);
         const systemQuery = { user: null, isPublic: true };
         const total = await Prediction.countDocuments(systemQuery);
         const wins = await Prediction.countDocuments({ ...systemQuery, result: 'win' });
@@ -1500,16 +1501,28 @@ router.get('/performance', async (req, res) => {
         const avgLoss = lossReturns.length > 0 ? lossReturns.reduce((a, b) => a + b, 0) / lossReturns.length : 0;
         const edge = closed > 0 ? (winRate / 100) * avgWin + (1 - winRate / 100) * avgLoss : 0;
 
-        // Recent trades (last 50 for the table)
-        const recentTrades = await Prediction.find({
+        // Recent trades (last 30 days + active, up to limit)
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+        // Get open/pending trades
+        const openTrades = await Prediction.find({
             ...systemQuery,
-            $or: [
-                { result: { $in: ['win', 'loss'] } },
-                { status: 'pending', expiresAt: { $gt: new Date() } }
-            ]
-        }).sort({ createdAt: -1 }).limit(50).select(
+            status: 'pending',
+            expiresAt: { $gt: new Date() }
+        }).sort({ createdAt: -1 }).select(
             'symbol direction entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 resultPrice livePrice result resultText confidence assetType status createdAt resultAt expiresAt'
         ).lean();
+
+        // Get closed trades from last 30 days
+        const recentClosedTrades = await Prediction.find({
+            ...systemQuery,
+            result: { $in: ['win', 'loss'] },
+            resultAt: { $gte: thirtyDaysAgo }
+        }).sort({ resultAt: -1 }).limit(limit).select(
+            'symbol direction entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 resultPrice livePrice result resultText confidence assetType status createdAt resultAt expiresAt'
+        ).lean();
+
+        const recentTrades = [...openTrades, ...recentClosedTrades].slice(0, limit);
 
         // 7-day rolling performance
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -1528,11 +1541,59 @@ router.get('/performance', async (req, res) => {
                 const currentPrice = t.resultPrice || t.livePrice || t.entryPrice;
                 const rawPct = t.entryPrice > 0 ? ((currentPrice - t.entryPrice) / t.entryPrice) * 100 : 0;
                 const changePct = isLong ? rawPct : -rawPct;
-                return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice };
+                return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice, exitPrice: t.resultPrice || null };
             })
         });
     } catch (e) {
         console.error('[Performance] Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Archived trades (older than 30 days)
+router.get('/performance/archived', async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const systemQuery = { user: null, isPublic: true };
+
+        const archivedTrades = await Prediction.find({
+            ...systemQuery,
+            result: { $in: ['win', 'loss'] },
+            resultAt: { $lt: thirtyDaysAgo }
+        }).sort({ resultAt: -1 }).limit(limit).select(
+            'symbol direction entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 resultPrice livePrice result resultText confidence assetType status createdAt resultAt expiresAt'
+        ).lean();
+
+        // Calculate archived stats
+        const wins = archivedTrades.filter(t => t.result === 'win').length;
+        const losses = archivedTrades.filter(t => t.result === 'loss').length;
+        const winRate = wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
+
+        // Calculate total return
+        let totalReturn = 0;
+        const tradesWithPct = archivedTrades.map(t => {
+            const isLong = t.direction === 'UP';
+            const currentPrice = t.resultPrice || t.livePrice || t.entryPrice;
+            const rawPct = t.entryPrice > 0 ? ((currentPrice - t.entryPrice) / t.entryPrice) * 100 : 0;
+            const changePct = isLong ? rawPct : -rawPct;
+            totalReturn += changePct;
+            return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice, exitPrice: t.resultPrice || null };
+        });
+
+        res.json({
+            success: true,
+            trades: tradesWithPct,
+            stats: {
+                total: archivedTrades.length,
+                wins,
+                losses,
+                winRate,
+                totalReturn: Math.round(totalReturn * 100) / 100
+            }
+        });
+    } catch (e) {
+        console.error('[Performance/Archived] Error:', e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
