@@ -231,6 +231,56 @@ PredictionSchema.index({ viewCount: -1, createdAt: -1 });
 // - status is 'expired' AND deleteAfter has passed
 PredictionSchema.index({ deleteAfter: 1 }, { expireAfterSeconds: 0 });
 
+// ═══════════════════════════════════════════════════════════
+// PRE-SAVE VALIDATION - Prevent garbage SL/TP values
+// ═══════════════════════════════════════════════════════════
+PredictionSchema.pre('save', function(next) {
+    // Only validate if we have trading levels set
+    if (this.entryPrice && this.stopLoss) {
+        const entry = this.entryPrice;
+        const sl = this.stopLoss;
+        const tp1 = this.takeProfit1;
+        const tp2 = this.takeProfit2;
+        const tp3 = this.takeProfit3;
+        const isLong = this.direction === 'UP';
+
+        // 1. All prices must be positive
+        if (entry <= 0 || sl <= 0) {
+            return next(new Error(`Invalid prices: entry=${entry}, sl=${sl}`));
+        }
+        if ((tp1 && tp1 <= 0) || (tp2 && tp2 <= 0) || (tp3 && tp3 <= 0)) {
+            return next(new Error(`Negative take profit values: tp1=${tp1}, tp2=${tp2}, tp3=${tp3}`));
+        }
+
+        // 2. SL must be within 20% of entry (sanity check)
+        const slDistance = Math.abs(sl - entry) / entry;
+        if (slDistance > 0.20) {
+            return next(new Error(`Stop loss too far from entry: ${(slDistance * 100).toFixed(1)}% (max 20%)`));
+        }
+
+        // 3. Direction sanity: LONG = SL below entry, SHORT = SL above entry
+        if (isLong && sl >= entry) {
+            return next(new Error(`LONG signal but SL (${sl}) >= entry (${entry})`));
+        }
+        if (!isLong && sl <= entry) {
+            return next(new Error(`SHORT signal but SL (${sl}) <= entry (${entry})`));
+        }
+
+        // 4. TP order sanity: LONG = TPs above entry, SHORT = TPs below entry
+        if (isLong) {
+            if ((tp1 && tp1 <= entry) || (tp2 && tp2 <= entry) || (tp3 && tp3 <= entry)) {
+                return next(new Error(`LONG signal but TP below entry`));
+            }
+        } else {
+            if ((tp1 && tp1 >= entry) || (tp2 && tp2 >= entry) || (tp3 && tp3 >= entry)) {
+                return next(new Error(`SHORT signal but TP above entry`));
+            }
+        }
+    }
+
+    next();
+});
+
 // Method to check if prediction has expired
 PredictionSchema.methods.isExpired = function() {
     return Date.now() > this.expiresAt;

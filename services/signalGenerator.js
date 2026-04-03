@@ -172,6 +172,22 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             ? entryPrice * 1.08   // 8% above entry
             : entryPrice * 0.92;  // 8% below entry
 
+        // ═══════════════════════════════════════════════════════════
+        // SAFETY VALIDATION - Catch any issues before saving
+        // ═══════════════════════════════════════════════════════════
+        if (entryPrice <= 0 || stopLoss <= 0 || takeProfit1 <= 0 || takeProfit2 <= 0 || takeProfit3 <= 0) {
+            console.error(`[SignalGen] ❌ ${symbol}: Invalid prices detected - entry=${entryPrice}, sl=${stopLoss}, tp1=${takeProfit1}`);
+            return { status: 'skipped', reason: 'invalid prices' };
+        }
+        if (isLong && (stopLoss >= entryPrice || takeProfit1 <= entryPrice)) {
+            console.error(`[SignalGen] ❌ ${symbol}: LONG signal with invalid SL/TP relationship`);
+            return { status: 'skipped', reason: 'invalid sl/tp' };
+        }
+        if (!isLong && (stopLoss <= entryPrice || takeProfit1 >= entryPrice)) {
+            console.error(`[SignalGen] ❌ ${symbol}: SHORT signal with invalid SL/TP relationship`);
+            return { status: 'skipped', reason: 'invalid sl/tp' };
+        }
+
         await new Prediction({
             user: null,
             symbol,
