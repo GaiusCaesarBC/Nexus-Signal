@@ -529,11 +529,29 @@ router.get('/analytics', authMiddleware, async (req, res) => {
         // Fetch native balance with price
         const balances = await fetchWalletBalances(address, chainId);
         const nativeSymbol = chainId === 'solana' ? 'SOL' : chainId === 56 ? 'BNB' : 'ETH';
-        const nativeTokenId = tokenPriceService.getTokenIdFromSymbol(nativeSymbol);
-        const nativePrices = await tokenPriceService.getMultipleTokenPrices([nativeTokenId]);
-        const nativePrice = nativePrices[nativeTokenId]?.price || 0;
         const nativeBalance = balances.find(b => b.isNative)?.balance || 0;
+
+        // Get native token price (try multiple sources)
+        let nativePrice = 0;
+        try {
+            const nativeTokenId = tokenPriceService.getTokenIdFromSymbol(nativeSymbol);
+            const nativePrices = await tokenPriceService.getMultipleTokenPrices([nativeTokenId]);
+            nativePrice = nativePrices[nativeTokenId]?.price || 0;
+        } catch (e) {}
+        // Fallback: CryptoCompare
+        if (!nativePrice) {
+            try {
+                const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${nativeSymbol}&tsyms=USD`, { timeout: 5000 });
+                nativePrice = ccRes.data?.USD || 0;
+            } catch (e) {}
+        }
+        // Fallback: use price from balances array (fetchSolanaBalances already fetches it)
+        if (!nativePrice) {
+            nativePrice = balances.find(b => b.isNative)?.price || 0;
+        }
+
         const nativeValue = nativeBalance * nativePrice;
+        console.log(`[Wallet] Analytics: ${nativeSymbol} balance=${nativeBalance}, price=$${nativePrice}, value=$${nativeValue.toFixed(2)}`);
 
         // Calculate analytics
         const analytics = {
