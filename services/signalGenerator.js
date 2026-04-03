@@ -153,24 +153,25 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         const isLong = direction === 'UP';
 
         // For LONG positions (expecting price to go UP):
-        //   SL: 2% below entry, TP1: 2% above, TP2: 5% above, TP3: 8% above
+        //   SL: 5% below entry, TP2: 8% above, TP3: 12% above
         // For SHORT positions (expecting price to go DOWN):
-        //   SL: 2% above entry, TP1: 2% below, TP2: 5% below, TP3: 8% below
+        //   SL: 5% above entry, TP2: 8% below, TP3: 12% below
+        // 5% SL gives 7-day signals room for normal volatility
         const stopLoss = isLong
-            ? entryPrice * 0.98   // 2% below entry
-            : entryPrice * 1.02;  // 2% above entry
+            ? entryPrice * 0.95   // 5% below entry
+            : entryPrice * 1.05;  // 5% above entry
 
         const takeProfit1 = isLong
-            ? entryPrice * 1.02   // 2% above entry
-            : entryPrice * 0.98;  // 2% below entry
+            ? entryPrice * 1.03   // 3% above entry
+            : entryPrice * 0.97;  // 3% below entry
 
         const takeProfit2 = isLong
-            ? entryPrice * 1.05   // 5% above entry
-            : entryPrice * 0.95;  // 5% below entry
-
-        const takeProfit3 = isLong
             ? entryPrice * 1.08   // 8% above entry
             : entryPrice * 0.92;  // 8% below entry
+
+        const takeProfit3 = isLong
+            ? entryPrice * 1.12   // 12% above entry
+            : entryPrice * 0.88;  // 12% below entry
 
         // ═══════════════════════════════════════════════════════════
         // SAFETY VALIDATION - Catch any issues before saving
