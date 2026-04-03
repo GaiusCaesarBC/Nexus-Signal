@@ -25,12 +25,10 @@ async function backfillSignalLevels() {
         await mongoose.connect(mongoUri);
         console.log('[Migration] Connected.\n');
 
-        // Find all predictions without entryPrice set
+        // Find all pending predictions to fix SL/TP levels
         const signals = await Prediction.find({
-            entryPrice: { $exists: false }
-        }).or([
-            { entryPrice: null }
-        ]);
+            status: 'pending'
+        });
 
         console.log(`[Migration] Found ${signals.length} signals to backfill\n`);
 
@@ -47,23 +45,26 @@ async function backfillSignalLevels() {
                 continue;
             }
 
-            const range = Math.abs(target - entry);
             const isLong = signal.direction === 'UP';
 
-            // Calculate locked levels using same formula as signalGenerator.js
+            // Fixed percentage levels from entry price
+            // LONG: SL 2% below, TP1 2%, TP2 5%, TP3 8% above entry
+            // SHORT: SL 2% above, TP1 2%, TP2 5%, TP3 8% below entry
             const stopLoss = isLong
-                ? entry - range * 0.4
-                : entry + range * 0.4;
+                ? entry * 0.98   // 2% below entry
+                : entry * 1.02;  // 2% above entry
 
             const takeProfit1 = isLong
-                ? entry + range * 0.4
-                : entry - range * 0.4;
+                ? entry * 1.02   // 2% above entry
+                : entry * 0.98;  // 2% below entry
 
-            const takeProfit2 = target;  // Main target
+            const takeProfit2 = isLong
+                ? entry * 1.05   // 5% above entry
+                : entry * 0.95;  // 5% below entry
 
             const takeProfit3 = isLong
-                ? entry + range * 1.5
-                : entry - range * 1.5;
+                ? entry * 1.08   // 8% above entry
+                : entry * 0.92;  // 8% below entry
 
             // Update the signal
             signal.entryPrice = entry;
