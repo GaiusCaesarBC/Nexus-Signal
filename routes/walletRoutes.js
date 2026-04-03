@@ -528,7 +528,7 @@ router.get('/analytics', authMiddleware, async (req, res) => {
 
         // Fetch native balance with price
         const balances = await fetchWalletBalances(address, chainId);
-        const nativeSymbol = chainId === 56 ? 'BNB' : 'ETH';
+        const nativeSymbol = chainId === 'solana' ? 'SOL' : chainId === 56 ? 'BNB' : 'ETH';
         const nativeTokenId = tokenPriceService.getTokenIdFromSymbol(nativeSymbol);
         const nativePrices = await tokenPriceService.getMultipleTokenPrices([nativeTokenId]);
         const nativePrice = nativePrices[nativeTokenId]?.price || 0;
