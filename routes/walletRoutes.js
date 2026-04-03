@@ -596,8 +596,10 @@ router.get('/analytics', authMiddleware, async (req, res) => {
 
             analytics.tokens[symbol].lastTx = trade.timestamp;
 
-            // Sum gas used
-            if (trade.gasUsed && trade.gasPrice) {
+            // Sum gas/fees used
+            if (trade.fee) {
+                totalGasUsed += parseFloat(trade.fee) || 0;
+            } else if (trade.gasUsed && trade.gasPrice) {
                 totalGasUsed += (parseInt(trade.gasUsed) * parseInt(trade.gasPrice)) / 1e18;
             }
         }
@@ -849,18 +851,59 @@ async function fetchSolanaTrades(address) {
                     solChange = (postBalances[accountIndex] - preBalances[accountIndex]) / 1e9;
                 }
 
-                const isOutgoing = solChange < 0;
+                const fee = (tx.meta?.fee || 0) / 1e9;
+
+                // Detect swap transactions (Jupiter, Raydium, etc.)
+                // If SOL change is tiny (< 0.0001) but fee exists, it's likely a token swap
+                const isSwap = Math.abs(solChange) < 0.0001 && fee > 0;
+
+                // Try to extract token info from token balance changes
+                let tokenSymbol = 'SOL';
+                let tokenName = 'Solana';
+                let tokenValue = Math.abs(solChange);
+                let txType = 'transfer';
+
+                if (isSwap) {
+                    txType = 'swap';
+                    // Check pre/post token balances for the actual swap amounts
+                    const preTokenBal = tx.meta?.preTokenBalances || [];
+                    const postTokenBal = tx.meta?.postTokenBalances || [];
+
+                    // Find tokens that changed for this address
+                    for (const post of postTokenBal) {
+                        if (post.owner === address) {
+                            const pre = preTokenBal.find(p => p.accountIndex === post.accountIndex);
+                            const preAmt = parseFloat(pre?.uiTokenAmount?.uiAmountString || '0');
+                            const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
+                            const diff = postAmt - preAmt;
+                            if (Math.abs(diff) > 0) {
+                                // Use the token mint to get a readable name
+                                const mint = post.mint || '';
+                                tokenSymbol = mint.slice(0, 6) + '...';
+                                tokenValue = Math.abs(diff);
+                                if (diff > 0) tokenName = 'Received token';
+                                else tokenName = 'Sent token';
+                                break;
+                            }
+                        }
+                    }
+
+                    // Use fee as the SOL cost for the swap
+                    tokenValue = tokenValue || fee;
+                }
+
+                const isOutgoing = solChange < 0 || txType === 'swap';
                 trades.push({
-                    type: 'transfer',
+                    type: txType,
                     hash: sig.signature,
                     from: isOutgoing ? address : '',
                     to: isOutgoing ? '' : address,
-                    value: Math.abs(solChange).toString(),
-                    tokenSymbol: 'SOL',
-                    tokenName: 'Solana',
+                    value: tokenValue.toString(),
+                    tokenSymbol: isSwap ? tokenSymbol : 'SOL',
+                    tokenName: isSwap ? 'Token Swap' : 'Solana',
                     tokenDecimal: 9,
                     timestamp: new Date((sig.blockTime || 0) * 1000),
-                    fee: (tx.meta?.fee || 0) / 1e9,
+                    fee,
                     status: sig.err ? 'failed' : 'success',
                 });
             } catch (e) {
