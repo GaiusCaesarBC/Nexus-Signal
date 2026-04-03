@@ -816,8 +816,103 @@ function getExplorerLink(chainId, hash) {
  * Fetch Solana wallet transactions via Solana RPC + Solscan
  */
 async function fetchSolanaTrades(address) {
+    const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
+
+    // ─── Helius Enhanced Transactions (preferred) ────────────
+    if (HELIUS_API_KEY) {
+        try {
+            console.log(`[Wallet] Fetching Solana txs via Helius for ${address.slice(0, 8)}...`);
+            const res = await axios.get(
+                `https://api-mainnet.helius-rpc.com/v0/addresses/${address}/transactions?api-key=${HELIUS_API_KEY}&limit=20`,
+                { timeout: 15000 }
+            );
+
+            if (Array.isArray(res.data) && res.data.length > 0) {
+                const trades = res.data.map(tx => {
+                    // Native SOL transfers
+                    const nativeTransfers = tx.nativeTransfers || [];
+                    const solOut = nativeTransfers.filter(t => t.fromUserAccount === address).reduce((s, t) => s + (t.amount || 0), 0) / 1e9;
+                    const solIn = nativeTransfers.filter(t => t.toUserAccount === address).reduce((s, t) => s + (t.amount || 0), 0) / 1e9;
+
+                    // Token transfers
+                    const tokenTransfers = tx.tokenTransfers || [];
+                    const tokenOut = tokenTransfers.find(t => t.fromUserAccount === address);
+                    const tokenIn = tokenTransfers.find(t => t.toUserAccount === address);
+
+                    // Determine transaction type and value
+                    const txType = tx.type || 'UNKNOWN';
+                    const isSwap = txType === 'SWAP';
+                    const isTransfer = txType === 'TRANSFER';
+                    const source = tx.source || '';
+
+                    let tokenSymbol = 'SOL';
+                    let tokenName = tx.description || source || txType;
+                    let value = 0;
+                    let isOutgoing = true;
+
+                    if (isSwap) {
+                        // For swaps: show the token received
+                        if (tokenIn) {
+                            tokenSymbol = tokenIn.symbol || tokenIn.mint?.slice(0, 6) + '...' || 'Token';
+                            value = tokenIn.tokenAmount || 0;
+                            isOutgoing = false;
+                            tokenName = `Swap via ${source}`;
+                        } else if (tokenOut) {
+                            tokenSymbol = tokenOut.symbol || tokenOut.mint?.slice(0, 6) + '...' || 'Token';
+                            value = tokenOut.tokenAmount || 0;
+                            isOutgoing = true;
+                            tokenName = `Swap via ${source}`;
+                        } else {
+                            value = Math.abs(solOut - solIn);
+                            tokenName = `Swap via ${source}`;
+                        }
+                    } else if (isTransfer) {
+                        if (tokenOut) {
+                            tokenSymbol = tokenOut.symbol || 'Token';
+                            value = tokenOut.tokenAmount || 0;
+                            isOutgoing = true;
+                        } else if (tokenIn) {
+                            tokenSymbol = tokenIn.symbol || 'Token';
+                            value = tokenIn.tokenAmount || 0;
+                            isOutgoing = false;
+                        } else {
+                            value = Math.max(solOut, solIn);
+                            isOutgoing = solOut > solIn;
+                        }
+                    } else {
+                        // Other types (NFT, STAKE, etc.)
+                        value = Math.max(solOut, solIn);
+                        isOutgoing = solOut > solIn;
+                        tokenName = `${txType} on ${source}`;
+                    }
+
+                    return {
+                        type: isSwap ? 'swap' : 'transfer',
+                        hash: tx.signature,
+                        from: isOutgoing ? address : '',
+                        to: isOutgoing ? '' : address,
+                        value: value.toString(),
+                        tokenSymbol,
+                        tokenName,
+                        tokenDecimal: 9,
+                        timestamp: new Date((tx.timestamp || 0) * 1000),
+                        fee: (tx.fee || 0) / 1e9,
+                        status: tx.transactionError ? 'failed' : 'success',
+                        description: tx.description || '',
+                    };
+                });
+
+                console.log(`[Wallet] Helius: ${trades.length} parsed Solana transactions`);
+                return trades;
+            }
+        } catch (e) {
+            console.error(`[Wallet] Helius API failed: ${e.message}, falling back to RPC`);
+        }
+    }
+
+    // ─── Fallback: Public Solana RPC (basic, no parsed data) ─
     try {
-        // Get recent signatures
+        console.log(`[Wallet] Fetching Solana txs via public RPC for ${address.slice(0, 8)}...`);
         const rpcRes = await axios.post('https://api.mainnet-beta.solana.com', {
             jsonrpc: '2.0', id: 1,
             method: 'getSignaturesForAddress',
@@ -825,100 +920,19 @@ async function fetchSolanaTrades(address) {
         }, { timeout: 15000 });
 
         const sigs = rpcRes.data?.result || [];
-        if (sigs.length === 0) return [];
-
-        // Fetch actual transaction details for each signature (batch of first 10)
-        const trades = [];
-        for (const sig of sigs.slice(0, 10)) {
-            try {
-                const txRes = await axios.post('https://api.mainnet-beta.solana.com', {
-                    jsonrpc: '2.0', id: 1,
-                    method: 'getTransaction',
-                    params: [sig.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]
-                }, { timeout: 10000 });
-
-                const tx = txRes.data?.result;
-                if (!tx) continue;
-
-                // Find SOL balance changes for this address
-                const preBalances = tx.meta?.preBalances || [];
-                const postBalances = tx.meta?.postBalances || [];
-                const accounts = tx.transaction?.message?.accountKeys || [];
-                const accountIndex = accounts.findIndex(a => (a.pubkey || a) === address);
-
-                let solChange = 0;
-                if (accountIndex >= 0 && preBalances[accountIndex] !== undefined) {
-                    solChange = (postBalances[accountIndex] - preBalances[accountIndex]) / 1e9;
-                }
-
-                const fee = (tx.meta?.fee || 0) / 1e9;
-
-                // Detect swap transactions (Jupiter, Raydium, etc.)
-                // If SOL change is tiny (< 0.0001) but fee exists, it's likely a token swap
-                const isSwap = Math.abs(solChange) < 0.0001 && fee > 0;
-
-                // Try to extract token info from token balance changes
-                let tokenSymbol = 'SOL';
-                let tokenName = 'Solana';
-                let tokenValue = Math.abs(solChange);
-                let txType = 'transfer';
-
-                if (isSwap) {
-                    txType = 'swap';
-                    // Check pre/post token balances for the actual swap amounts
-                    const preTokenBal = tx.meta?.preTokenBalances || [];
-                    const postTokenBal = tx.meta?.postTokenBalances || [];
-
-                    // Find tokens that changed for this address
-                    for (const post of postTokenBal) {
-                        if (post.owner === address) {
-                            const pre = preTokenBal.find(p => p.accountIndex === post.accountIndex);
-                            const preAmt = parseFloat(pre?.uiTokenAmount?.uiAmountString || '0');
-                            const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
-                            const diff = postAmt - preAmt;
-                            if (Math.abs(diff) > 0) {
-                                // Use the token mint to get a readable name
-                                const mint = post.mint || '';
-                                tokenSymbol = mint.slice(0, 6) + '...';
-                                tokenValue = Math.abs(diff);
-                                if (diff > 0) tokenName = 'Received token';
-                                else tokenName = 'Sent token';
-                                break;
-                            }
-                        }
-                    }
-
-                    // Use fee as the SOL cost for the swap
-                    tokenValue = tokenValue || fee;
-                }
-
-                const isOutgoing = solChange < 0 || txType === 'swap';
-                trades.push({
-                    type: txType,
-                    hash: sig.signature,
-                    from: isOutgoing ? address : '',
-                    to: isOutgoing ? '' : address,
-                    value: tokenValue.toString(),
-                    tokenSymbol: isSwap ? tokenSymbol : 'SOL',
-                    tokenName: isSwap ? 'Token Swap' : 'Solana',
-                    tokenDecimal: 9,
-                    timestamp: new Date((sig.blockTime || 0) * 1000),
-                    fee,
-                    status: sig.err ? 'failed' : 'success',
-                });
-            } catch (e) {
-                // Individual tx fetch failed, add basic entry
-                trades.push({
-                    type: 'transfer', hash: sig.signature, from: address, to: '',
-                    value: '0', tokenSymbol: 'SOL', tokenName: 'Solana', tokenDecimal: 9,
-                    timestamp: new Date((sig.blockTime || 0) * 1000), fee: 0,
-                    status: sig.err ? 'failed' : 'success',
-                });
-            }
-        }
-
-        console.log(`[Wallet] Solana: Fetched details for ${trades.length} transactions`);
-        return trades;
+        return sigs.map(sig => ({
+            type: 'transfer',
+            hash: sig.signature,
+            from: address,
+            to: '',
+            value: '0',
+            tokenSymbol: 'SOL',
+            tokenName: 'Solana Transaction',
+            tokenDecimal: 9,
+            timestamp: new Date((sig.blockTime || 0) * 1000),
+            fee: 0,
+            status: sig.err ? 'failed' : 'success',
+        }));
     } catch (error) {
         console.error('[Wallet] Solana trades fetch error:', error.message);
         return [];
