@@ -1213,12 +1213,13 @@ UserSchema.methods.linkWallet = async function(address, chainId = 1) {
         throw new Error('Wallet address is required');
     }
 
-    // Normalize address to lowercase
-    const normalizedAddress = address.toLowerCase();
+    // Normalize EVM addresses to lowercase, but preserve Solana case (base58 is case-sensitive)
+    const isSolana = chainId === 'solana' || (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) && !address.startsWith('0x'));
+    const normalizedAddress = isSolana ? address : address.toLowerCase();
 
     // Check if this wallet is already linked to another user
     const existingUser = await mongoose.model('User').findOne({
-        'wallet.address': normalizedAddress,
+        'wallet.address': isSolana ? normalizedAddress : normalizedAddress.toLowerCase(),
         _id: { $ne: this._id }
     });
 
