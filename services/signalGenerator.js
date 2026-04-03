@@ -147,37 +147,30 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         // ═══════════════════════════════════════════════════════════
         // LOCK entry/SL/TP at creation - these NEVER change after this
+        // Fixed percentage levels from entry price
         // ═══════════════════════════════════════════════════════════
         const entryPrice = price;  // Locked entry price
-        const rawRange = Math.abs(targetPrice - entryPrice);
         const isLong = direction === 'UP';
 
-        // Minimum range = 2% of entry (prevents micro-range signals with 0% SL)
-        const minRange = entryPrice * 0.02;
-        const range = Math.max(rawRange, minRange);
-
-        // If range was too small, skip — ML target was basically flat
-        if (rawRange < entryPrice * 0.005) {
-            console.log(`[SignalGen] ⚠ ${symbol}: target too close to entry (${(rawRange/entryPrice*100).toFixed(2)}%), skipping`);
-            return { status: 'skipped', reason: 'target too close' };
-        }
-
-        // Stop Loss: 25% of range, minimum 1.5% from entry
-        const slDistance = Math.max(range * 0.25, entryPrice * 0.015);
+        // For LONG positions (expecting price to go UP):
+        //   SL: 2% below entry, TP1: 2% above, TP2: 5% above, TP3: 8% above
+        // For SHORT positions (expecting price to go DOWN):
+        //   SL: 2% above entry, TP1: 2% below, TP2: 5% below, TP3: 8% below
         const stopLoss = isLong
-            ? entryPrice - slDistance
-            : entryPrice + slDistance;
+            ? entryPrice * 0.98   // 2% below entry
+            : entryPrice * 1.02;  // 2% above entry
 
-        // Take Profits: TP1 (50%) for reference, TP2 (100%) main close, TP3 (175%) stretch
         const takeProfit1 = isLong
-            ? entryPrice + range * 0.5
-            : entryPrice - range * 0.5;
+            ? entryPrice * 1.02   // 2% above entry
+            : entryPrice * 0.98;  // 2% below entry
+
         const takeProfit2 = isLong
-            ? entryPrice + range
-            : entryPrice - range;
+            ? entryPrice * 1.05   // 5% above entry
+            : entryPrice * 0.95;  // 5% below entry
+
         const takeProfit3 = isLong
-            ? entryPrice + range * 1.75
-            : entryPrice - range * 1.75;
+            ? entryPrice * 1.08   // 8% above entry
+            : entryPrice * 0.92;  // 8% below entry
 
         await new Prediction({
             user: null,
