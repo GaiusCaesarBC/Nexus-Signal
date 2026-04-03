@@ -1716,6 +1716,48 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
+// @route   POST /api/paper-trading/force-close
+// @desc    Force close a broken position (bad price data, stuck, etc.)
+router.post('/force-close', auth, async (req, res) => {
+    try {
+        const { symbol, type } = req.body;
+        if (!symbol) return res.status(400).json({ error: 'Symbol required' });
+
+        const account = await PaperTradingAccount.findOne({ user: req.user.id });
+        if (!account) return res.status(404).json({ error: 'Account not found' });
+
+        const posIndex = account.positions.findIndex(
+            p => p.symbol === symbol.toUpperCase() && (!type || p.type === type)
+        );
+
+        if (posIndex === -1) {
+            return res.status(400).json({ error: `No position found for ${symbol}` });
+        }
+
+        const position = account.positions[posIndex];
+        const margin = safeNumber(position.marginUsed || (position.quantity * position.averagePrice), 0);
+
+        // Remove position — no P/L applied (treated as a write-off)
+        account.positions.splice(posIndex, 1);
+        account.totalTrades = (account.totalTrades || 0) + 1;
+        account.losingTrades = (account.losingTrades || 0) + 1;
+
+        calculatePortfolioStats(account);
+        await account.save();
+
+        console.log(`[Paper Trading] Force-closed ${position.positionType} position in ${symbol} (bad data write-off)`);
+
+        res.json({
+            success: true,
+            message: `Force-closed ${symbol} position (written off due to bad price data)`,
+            account
+        });
+    } catch (error) {
+        console.error('[Paper Trading] Force-close error:', error);
+        res.status(500).json({ error: 'Failed to force close position' });
+    }
+});
+
 // @route   GET /api/paper-trading/refill-tiers
 router.get('/refill-tiers', auth, async (req, res) => {
     try {
