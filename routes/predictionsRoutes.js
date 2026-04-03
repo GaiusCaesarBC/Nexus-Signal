@@ -1450,6 +1450,93 @@ router.get('/recent', predictionLimiter, async (req, res) => {
     }
 });
 
+// Public performance data (no auth — used by Live Performance Tracker)
+router.get('/performance', async (req, res) => {
+    try {
+        const systemQuery = { user: null, isPublic: true };
+        const total = await Prediction.countDocuments(systemQuery);
+        const wins = await Prediction.countDocuments({ ...systemQuery, result: 'win' });
+        const losses = await Prediction.countDocuments({ ...systemQuery, result: 'loss' });
+        const active = await Prediction.countDocuments({ ...systemQuery, status: 'pending', expiresAt: { $gt: new Date() } });
+        const closed = wins + losses;
+        const winRate = closed > 0 ? Math.round((wins / closed) * 100) : 0;
+
+        // Get all closed trades for avg calculations + equity curve
+        const closedTrades = await Prediction.find({
+            ...systemQuery,
+            result: { $in: ['win', 'loss'] },
+            entryPrice: { $gt: 0 },
+            resultPrice: { $gt: 0 },
+        }).sort({ resultAt: 1 }).select('symbol direction entryPrice resultPrice result resultText confidence assetType createdAt resultAt').lean();
+
+        // Calculate returns
+        let totalReturnPct = 0;
+        let winReturns = [];
+        let lossReturns = [];
+        const equityCurve = [];
+        let cumReturn = 0;
+
+        for (const t of closedTrades) {
+            const isLong = t.direction === 'UP';
+            const rawPct = ((t.resultPrice - t.entryPrice) / t.entryPrice) * 100;
+            const pct = isLong ? rawPct : -rawPct;
+            totalReturnPct += pct;
+            cumReturn += pct;
+
+            if (t.result === 'win') winReturns.push(pct);
+            else lossReturns.push(pct);
+
+            equityCurve.push({
+                date: t.resultAt || t.createdAt,
+                cumReturn: Math.round(cumReturn * 100) / 100,
+                symbol: t.symbol,
+                result: t.result,
+                pct: Math.round(pct * 100) / 100,
+            });
+        }
+
+        const avgReturn = closed > 0 ? totalReturnPct / closed : 0;
+        const avgWin = winReturns.length > 0 ? winReturns.reduce((a, b) => a + b, 0) / winReturns.length : 0;
+        const avgLoss = lossReturns.length > 0 ? lossReturns.reduce((a, b) => a + b, 0) / lossReturns.length : 0;
+        const edge = closed > 0 ? (winRate / 100) * avgWin + (1 - winRate / 100) * avgLoss : 0;
+
+        // Recent trades (last 50 for the table)
+        const recentTrades = await Prediction.find({
+            ...systemQuery,
+            $or: [
+                { result: { $in: ['win', 'loss'] } },
+                { status: 'pending', expiresAt: { $gt: new Date() } }
+            ]
+        }).sort({ createdAt: -1 }).limit(50).select(
+            'symbol direction entryPrice stopLoss takeProfit1 takeProfit2 takeProfit3 resultPrice livePrice result resultText confidence assetType status createdAt resultAt expiresAt'
+        ).lean();
+
+        // 7-day rolling performance
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const recent7d = closedTrades.filter(t => new Date(t.resultAt || t.createdAt) > sevenDaysAgo);
+        const wins7d = recent7d.filter(t => t.result === 'win').length;
+        const closed7d = recent7d.length;
+        const winRate7d = closed7d > 0 ? Math.round((wins7d / closed7d) * 100) : 0;
+
+        res.json({
+            success: true,
+            stats: { total, wins, losses, active, closed, winRate, avgReturn: Math.round(avgReturn * 100) / 100, totalReturn: Math.round(totalReturnPct * 100) / 100, avgWin: Math.round(avgWin * 100) / 100, avgLoss: Math.round(avgLoss * 100) / 100, edge: Math.round(edge * 100) / 100 },
+            rolling7d: { wins: wins7d, losses: closed7d - wins7d, closed: closed7d, winRate: winRate7d },
+            equityCurve,
+            trades: recentTrades.map(t => {
+                const isLong = t.direction === 'UP';
+                const currentPrice = t.resultPrice || t.livePrice || t.entryPrice;
+                const rawPct = t.entryPrice > 0 ? ((currentPrice - t.entryPrice) / t.entryPrice) * 100 : 0;
+                const changePct = isLong ? rawPct : -rawPct;
+                return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice };
+            })
+        });
+    } catch (e) {
+        console.error('[Performance] Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Public platform stats (no auth — used by Live Signal Feed)
 router.get('/stats', async (req, res) => {
     try {
