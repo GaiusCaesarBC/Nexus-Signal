@@ -815,30 +815,67 @@ function getExplorerLink(chainId, hash) {
  */
 async function fetchSolanaTrades(address) {
     try {
-        // Use Solana RPC to get recent signatures
+        // Get recent signatures
         const rpcRes = await axios.post('https://api.mainnet-beta.solana.com', {
             jsonrpc: '2.0', id: 1,
             method: 'getSignaturesForAddress',
-            params: [address, { limit: 30 }]
+            params: [address, { limit: 20 }]
         }, { timeout: 15000 });
 
         const sigs = rpcRes.data?.result || [];
         if (sigs.length === 0) return [];
 
-        return sigs.map(tx => ({
-            type: 'transfer',
-            hash: tx.signature,
-            from: address,
-            to: '',
-            value: '0',
-            tokenSymbol: 'SOL',
-            tokenName: 'Solana',
-            tokenDecimal: 9,
-            timestamp: new Date((tx.blockTime || 0) * 1000),
-            fee: tx.fee || 0,
-            status: tx.err ? 'failed' : 'success',
-            memo: tx.memo || null
-        }));
+        // Fetch actual transaction details for each signature (batch of first 10)
+        const trades = [];
+        for (const sig of sigs.slice(0, 10)) {
+            try {
+                const txRes = await axios.post('https://api.mainnet-beta.solana.com', {
+                    jsonrpc: '2.0', id: 1,
+                    method: 'getTransaction',
+                    params: [sig.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]
+                }, { timeout: 10000 });
+
+                const tx = txRes.data?.result;
+                if (!tx) continue;
+
+                // Find SOL balance changes for this address
+                const preBalances = tx.meta?.preBalances || [];
+                const postBalances = tx.meta?.postBalances || [];
+                const accounts = tx.transaction?.message?.accountKeys || [];
+                const accountIndex = accounts.findIndex(a => (a.pubkey || a) === address);
+
+                let solChange = 0;
+                if (accountIndex >= 0 && preBalances[accountIndex] !== undefined) {
+                    solChange = (postBalances[accountIndex] - preBalances[accountIndex]) / 1e9;
+                }
+
+                const isOutgoing = solChange < 0;
+                trades.push({
+                    type: 'transfer',
+                    hash: sig.signature,
+                    from: isOutgoing ? address : '',
+                    to: isOutgoing ? '' : address,
+                    value: Math.abs(solChange).toString(),
+                    tokenSymbol: 'SOL',
+                    tokenName: 'Solana',
+                    tokenDecimal: 9,
+                    timestamp: new Date((sig.blockTime || 0) * 1000),
+                    fee: (tx.meta?.fee || 0) / 1e9,
+                    status: sig.err ? 'failed' : 'success',
+                });
+            } catch (e) {
+                // Individual tx fetch failed, add basic entry
+                trades.push({
+                    type: 'transfer', hash: sig.signature, from: address, to: '',
+                    value: '0', tokenSymbol: 'SOL', tokenName: 'Solana', tokenDecimal: 9,
+                    timestamp: new Date((sig.blockTime || 0) * 1000), fee: 0,
+                    status: sig.err ? 'failed' : 'success',
+                });
+            }
+        }
+
+        console.log(`[Wallet] Solana: Fetched details for ${trades.length} transactions`);
+        return trades;
     } catch (error) {
         console.error('[Wallet] Solana trades fetch error:', error.message);
         return [];
@@ -875,11 +912,15 @@ async function fetchSolanaBalances(address) {
                 balance: solBalance,
                 decimals: 9,
                 contractAddress: 'native',
+                isNative: true,
                 chain: 'Solana',
                 chainId: 'solana',
                 price: solPrice,
                 value: solBalance * solPrice
             });
+            console.log(`[Wallet] Solana balance: ${solBalance} SOL ($${(solBalance * solPrice).toFixed(2)})`);
+        } else {
+            console.log(`[Wallet] Solana balance: 0 lamports for ${address.slice(0,8)}...`);
         }
 
         // 2. Get SPL token accounts
