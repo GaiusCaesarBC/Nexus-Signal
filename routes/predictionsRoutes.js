@@ -1541,7 +1541,7 @@ router.get('/performance', async (req, res) => {
                 const currentPrice = t.resultPrice || t.livePrice || t.entryPrice;
                 const rawPct = t.entryPrice > 0 ? ((currentPrice - t.entryPrice) / t.entryPrice) * 100 : 0;
                 const changePct = isLong ? rawPct : -rawPct;
-                return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice, exitPrice: t.resultPrice || null };
+                return { ...t, changePct: Math.round(changePct * 100) / 100, confidence: Math.min(95, t.confidence || 50), currentPrice, exitPrice: t.resultPrice || null };
             })
         });
     } catch (e) {
@@ -1578,7 +1578,7 @@ router.get('/performance/archived', async (req, res) => {
             const rawPct = t.entryPrice > 0 ? ((currentPrice - t.entryPrice) / t.entryPrice) * 100 : 0;
             const changePct = isLong ? rawPct : -rawPct;
             totalReturn += changePct;
-            return { ...t, changePct: Math.round(changePct * 100) / 100, currentPrice, exitPrice: t.resultPrice || null };
+            return { ...t, changePct: Math.round(changePct * 100) / 100, confidence: Math.min(95, t.confidence || 50), currentPrice, exitPrice: t.resultPrice || null };
         });
 
         res.json({
