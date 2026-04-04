@@ -57,13 +57,13 @@ const PLAN_LIMITS = {
         hasEarlyAccess: false,
     },
     // ═══════════════════════════════════════════════════════
-    // STARTER — 5 signals/day, screener, news, watchlist
+    // STARTER — 5 signals/day, 3 predictions/day, screener, news, watchlist
     // ═══════════════════════════════════════════════════════
     starter: {
         dailySignals: 5,
         watchlists: 1,
         watchlistAssets: 10,
-        predictionsPerMonth: 3,
+        predictionsPerMonth: 90, // 3/day × 30 days
         // Free features
         hasGamification: true,
         hasPaperTrading: true,
@@ -109,13 +109,13 @@ const PLAN_LIMITS = {
         hasEarlyAccess: false,
     },
     // ═══════════════════════════════════════════════════════
-    // PRO — 15 signals, AI chat, heatmap, pattern scanner, alerts
+    // PRO — 15 signals/day, 10 predictions/day, AI chat, heatmap, alerts
     // ═══════════════════════════════════════════════════════
     pro: {
         dailySignals: 15,
         watchlists: 3,
         watchlistAssets: 30,
-        predictionsPerMonth: 10,
+        predictionsPerMonth: 300, // 10/day × 30 days
         // Free + Starter
         hasGamification: true,
         hasPaperTrading: true,
