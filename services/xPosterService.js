@@ -232,7 +232,7 @@ async function handleApprovalCallback(query) {
 
 async function postNewSignal(signal) {
     if (!ENABLED || !signal) return;
-    const conf = Math.round(signal.confidence || 0);
+    const conf = Math.min(95, Math.round(signal.confidence || 0));
     if (conf < MIN_CONFIDENCE) return;
     const sid = signal._id?.toString();
     if (sid && postedSignalIds.has(sid)) return;

@@ -54,7 +54,7 @@ async function getQualifiedSignals(limit = 20) {
 
             return signals.map(s => {
                 const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
-                const conf = Math.round(s.confidence || 0);
+                const conf = Math.min(95, Math.round(s.confidence || 0));
                 const long = s.direction === 'UP';
                 return {
                     id: s._id, symbol: sym, direction: long ? 'LONG' : 'SHORT', long,
@@ -284,7 +284,7 @@ async function postSignalTeaser(signal) {
     if (!bot) { console.log('[TGBot] Skipping teaser — bot is null'); return; }
     if (!channelId && !groupId) { console.log('[TGBot] Skipping teaser — no channel/group ID set'); return; }
     if (!canPost()) { console.log('[TGBot] Skipping teaser — rate limit'); return; }
-    const conf = Math.round(signal.confidence || 0);
+    const conf = Math.min(95, Math.round(signal.confidence || 0));
     if (conf < MIN_CONFIDENCE) return;
     if (lastPostedSignals.has(signal._id?.toString())) return;
 

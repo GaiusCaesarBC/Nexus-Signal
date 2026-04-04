@@ -476,7 +476,7 @@ class NotificationService {
         try {
             const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
             const dir = signal.direction === 'UP' ? 'LONG' : 'SHORT';
-            const conf = Math.round(signal.confidence || 0);
+            const conf = Math.min(95, Math.round(signal.confidence || 0));
             const tier = conf >= 70 ? 'Strong Setup' : 'Moderate Setup';
             const icon = signal.direction === 'UP' ? 'trending-up' : 'trending-down';
 
