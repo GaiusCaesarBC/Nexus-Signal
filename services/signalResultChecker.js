@@ -5,6 +5,7 @@ const cron = require('node-cron');
 const axios = require('axios');
 const Prediction = require('../models/Prediction');
 const { postResult } = require('./telegramBot');
+const { postSignalResultToDiscord } = require('./discordService');
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY;
@@ -219,11 +220,16 @@ async function runCheckCycle() {
 
                     console.log(`[SignalChecker] ${outcome.result === 'win' ? '✅' : '❌'} ${signal.symbol}: ${outcome.resultText} @ $${livePrice.toFixed(livePrice < 1 ? 6 : 2)} (${movePct >= 0 ? '+' : ''}${movePct.toFixed(1)}%)`);
 
-                    // Post result to Telegram
+                    // Post result to Telegram + Discord
                     try {
                         await postResult(signal, outcome.result === 'win', movePct);
                     } catch (tgErr) {
                         console.error(`[SignalChecker] Telegram post error: ${tgErr.message}`);
+                    }
+                    try {
+                        await postSignalResultToDiscord(signal, outcome.result);
+                    } catch (dcErr) {
+                        console.error(`[SignalChecker] Discord post error: ${dcErr.message}`);
                     }
 
                     if (outcome.result === 'win') wins++;

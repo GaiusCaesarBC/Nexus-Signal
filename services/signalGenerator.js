@@ -8,6 +8,7 @@ const { discoverAssets } = require('./assetDiscovery');
 const { postSignalTeaser } = require('./telegramBot');
 const { postNewSignal: postSignalToX } = require('./xPosterService');
 const NotificationService = require('./notificationService');
+const { postNewSignalToDiscord } = require('./discordService');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 const ML_API_KEY = process.env.ML_API_KEY;
@@ -230,6 +231,7 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             try { await NotificationService.createSignalNotification({ symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Notification error: ${e.message}`); }
             try { await postSignalTeaser({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Telegram error: ${e.message}`); }
             try { await postSignalToX({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] X post error: ${e.message}`); }
+            try { await postNewSignalToDiscord({ symbol, direction, confidence, entryPrice, stopLoss, takeProfit1, takeProfit2, takeProfit3, targetPrice, currentPrice: price }); } catch (e) { console.error(`[SignalGen] Discord error: ${e.message}`); }
         }
 
         return { status: 'generated' };

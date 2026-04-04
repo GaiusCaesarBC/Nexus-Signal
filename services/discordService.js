@@ -23,6 +23,7 @@ const initializeBot = async () => {
         client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.MessageContent
@@ -1009,6 +1010,185 @@ const isServerLinked = (guildId, channelId) => {
     return linkedServers.has(`${guildId}-${channelId}`);
 };
 
+// ═══════════════════════════════════════════════════════════
+// SIGNAL POSTING — Auto-post new signals and results to Discord
+// ═══════════════════════════════════════════════════════════
+
+const SIGNAL_CHANNEL_ID = process.env.DISCORD_SIGNAL_CHANNEL_ID;
+const RESULTS_CHANNEL_ID = process.env.DISCORD_RESULTS_CHANNEL_ID;
+const PREMIUM_ROLE_ID = process.env.DISCORD_PREMIUM_ROLE_ID;
+const GUILD_ID = process.env.DISCORD_GUILD_ID;
+
+const fmtPrice = (p) => {
+    if (!p) return '$0.00';
+    if (p >= 1000) return `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    if (p >= 1) return `$${p.toFixed(2)}`;
+    if (p >= 0.01) return `$${p.toFixed(4)}`;
+    return `$${p.toFixed(8)}`;
+};
+
+// Post a new signal to #live-signals
+const postNewSignalToDiscord = async (signal) => {
+    if (!client || !client.isReady()) return;
+    if (!SIGNAL_CHANNEL_ID) return;
+
+    try {
+        const channel = await client.channels.fetch(SIGNAL_CHANNEL_ID);
+        if (!channel) return;
+
+        const isLong = signal.direction === 'UP';
+        const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+        const conf = Math.min(95, Math.round(signal.confidence || 0));
+        const dir = isLong ? 'LONG' : 'SHORT';
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${isLong ? '📈' : '📉'} ${sym} ${dir}`)
+            .setColor(isLong ? 0x10b981 : 0xef4444)
+            .addFields(
+                { name: 'Entry', value: fmtPrice(signal.entryPrice || signal.currentPrice), inline: true },
+                { name: 'Stop Loss', value: fmtPrice(signal.stopLoss), inline: true },
+                { name: 'Target (TP3)', value: fmtPrice(signal.takeProfit3 || signal.targetPrice), inline: true },
+                { name: 'TP1', value: fmtPrice(signal.takeProfit1), inline: true },
+                { name: 'TP2', value: fmtPrice(signal.takeProfit2), inline: true },
+                { name: 'Confidence', value: `${conf}%`, inline: true },
+            )
+            .setFooter({ text: 'Nexus Signal AI · Tracked. Verified.' })
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log(`[Discord] Posted signal: ${sym} ${dir} ${conf}%`);
+    } catch (e) {
+        console.error('[Discord] Error posting signal:', e.message);
+    }
+};
+
+// Post signal result (TP hit, SL hit) to #signal-updates / #closed-trades
+const postSignalResultToDiscord = async (signal, result) => {
+    if (!client || !client.isReady()) return;
+    const channelId = RESULTS_CHANNEL_ID || SIGNAL_CHANNEL_ID;
+    if (!channelId) return;
+
+    try {
+        const channel = await client.channels.fetch(channelId);
+        if (!channel) return;
+
+        const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+        const isWin = result === 'win';
+        const isLong = signal.direction === 'UP';
+        const entry = signal.entryPrice || signal.currentPrice;
+        const exit = signal.resultPrice || signal.livePrice;
+        const rawPct = entry > 0 ? ((exit - entry) / entry) * 100 : 0;
+        const pct = isLong ? rawPct : -rawPct;
+        // Safety: if result contradicts math, trust result
+        const displayPct = isWin ? Math.abs(pct) : -Math.abs(pct);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${isWin ? '✅' : '❌'} ${sym} — ${signal.resultText || (isWin ? 'TARGET HIT' : 'STOP LOSS HIT')}`)
+            .setColor(isWin ? 0x10b981 : 0xef4444)
+            .addFields(
+                { name: 'Direction', value: isLong ? 'LONG' : 'SHORT', inline: true },
+                { name: 'Result', value: isWin ? 'WIN' : 'LOSS', inline: true },
+                { name: 'Return', value: `${displayPct >= 0 ? '+' : ''}${displayPct.toFixed(2)}%`, inline: true },
+                { name: 'Entry', value: fmtPrice(entry), inline: true },
+                { name: 'Exit', value: fmtPrice(exit), inline: true },
+            )
+            .setFooter({ text: 'Nexus Signal AI · Every trade tracked publicly.' })
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log(`[Discord] Posted result: ${sym} ${isWin ? 'WIN' : 'LOSS'} ${displayPct.toFixed(1)}%`);
+    } catch (e) {
+        console.error('[Discord] Error posting result:', e.message);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// PREMIUM ROLE MANAGEMENT — Stripe subscription → Discord role
+// ═══════════════════════════════════════════════════════════
+
+// Assign premium role to a user
+const assignPremiumRole = async (discordUserId) => {
+    if (!client || !client.isReady() || !GUILD_ID || !PREMIUM_ROLE_ID || !discordUserId) return false;
+
+    try {
+        const guild = await client.guilds.fetch(GUILD_ID);
+        if (!guild) { console.log('[Discord] Guild not found'); return false; }
+
+        const member = await guild.members.fetch(discordUserId).catch(() => null);
+        if (!member) { console.log(`[Discord] Member ${discordUserId} not in guild`); return false; }
+
+        if (member.roles.cache.has(PREMIUM_ROLE_ID)) {
+            console.log(`[Discord] ${member.user.tag} already has Premium role`);
+            return true;
+        }
+
+        await member.roles.add(PREMIUM_ROLE_ID);
+        console.log(`[Discord] ✅ Assigned Premium role to ${member.user.tag}`);
+
+        // DM the user
+        try {
+            await member.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('🎉 Premium Activated!')
+                    .setDescription('Your Nexus Signal AI premium subscription is now active. You have the Premium role in Discord.')
+                    .setColor(0x10b981)
+                    .setFooter({ text: 'Nexus Signal AI' })
+                ]
+            });
+        } catch (dmErr) { /* DMs might be disabled */ }
+
+        return true;
+    } catch (e) {
+        console.error(`[Discord] Error assigning Premium role to ${discordUserId}:`, e.message);
+        return false;
+    }
+};
+
+// Remove premium role from a user
+const removePremiumRole = async (discordUserId) => {
+    if (!client || !client.isReady() || !GUILD_ID || !PREMIUM_ROLE_ID || !discordUserId) return false;
+
+    try {
+        const guild = await client.guilds.fetch(GUILD_ID);
+        if (!guild) return false;
+
+        const member = await guild.members.fetch(discordUserId).catch(() => null);
+        if (!member) return false;
+
+        if (!member.roles.cache.has(PREMIUM_ROLE_ID)) {
+            console.log(`[Discord] ${member.user.tag} doesn't have Premium role`);
+            return true;
+        }
+
+        await member.roles.remove(PREMIUM_ROLE_ID);
+        console.log(`[Discord] Removed Premium role from ${member.user.tag}`);
+        return true;
+    } catch (e) {
+        console.error(`[Discord] Error removing Premium role from ${discordUserId}:`, e.message);
+        return false;
+    }
+};
+
+// Sync premium role based on user's current subscription
+const syncPremiumRole = async (userId) => {
+    try {
+        const user = await User.findById(userId);
+        if (!user || !user.discordUserId) return;
+
+        const paidPlans = ['starter', 'pro', 'premium', 'elite'];
+        const hasPaidPlan = paidPlans.includes(user.subscription?.status);
+        const hasTrial = user.subscription?.trialEndsAt && new Date(user.subscription.trialEndsAt) > new Date() && !user.subscription?.trialUsed === false;
+
+        if (hasPaidPlan || hasTrial) {
+            await assignPremiumRole(user.discordUserId);
+        } else {
+            await removePremiumRole(user.discordUserId);
+        }
+    } catch (e) {
+        console.error(`[Discord] Error syncing premium role for user ${userId}:`, e.message);
+    }
+};
+
 // Get bot instance
 const getBot = () => client;
 
@@ -1032,5 +1212,12 @@ module.exports = {
     broadcastAlert,
     getLinkedServers,
     isServerLinked,
-    createPredictionEmbed
+    createPredictionEmbed,
+    // New: Signal posting
+    postNewSignalToDiscord,
+    postSignalResultToDiscord,
+    // New: Premium role management
+    assignPremiumRole,
+    removePremiumRole,
+    syncPremiumRole
 };

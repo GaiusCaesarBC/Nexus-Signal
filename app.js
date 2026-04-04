@@ -118,6 +118,14 @@ app.post('/api/stripe/webhook',
 
                     console.log(`✅ Subscription created for user ${userId}: ${plan}`);
                     console.log(`[Stripe Webhook] Updated user subscription:`, updatedUser?.subscription);
+
+                    // Sync Discord premium role
+                    try {
+                        const { syncPremiumRole } = require('./services/discordService');
+                        await syncPremiumRole(userId);
+                    } catch (discordErr) {
+                        console.error('[Stripe Webhook] Discord role sync error:', discordErr.message);
+                    }
                     break;
                 }
 
@@ -158,6 +166,14 @@ app.post('/api/stripe/webhook',
                         await user.save();
 
                         console.log(`✅ Subscription canceled for user ${user._id}`);
+
+                        // Remove Discord premium role
+                        try {
+                            const { syncPremiumRole } = require('./services/discordService');
+                            await syncPremiumRole(user._id);
+                        } catch (discordErr) {
+                            console.error('[Stripe Webhook] Discord role removal error:', discordErr.message);
+                        }
                     }
                     break;
                 }
