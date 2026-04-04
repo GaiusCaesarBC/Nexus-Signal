@@ -1014,10 +1014,11 @@ const isServerLinked = (guildId, channelId) => {
 // SIGNAL POSTING — Auto-post new signals and results to Discord
 // ═══════════════════════════════════════════════════════════
 
-const SIGNAL_CHANNEL_ID = process.env.DISCORD_SIGNAL_CHANNEL_ID;
-const RESULTS_CHANNEL_ID = process.env.DISCORD_RESULTS_CHANNEL_ID;
-const PREMIUM_ROLE_ID = process.env.DISCORD_PREMIUM_ROLE_ID;
-const GUILD_ID = process.env.DISCORD_GUILD_ID;
+// Read at call time, not module load time (env vars may not be set yet at startup)
+const getSignalChannelId = () => process.env.DISCORD_SIGNAL_CHANNEL_ID;
+const getResultsChannelId = () => process.env.DISCORD_RESULTS_CHANNEL_ID;
+const getPremiumRoleId = () => process.env.DISCORD_PREMIUM_ROLE_ID;
+const getGuildId = () => process.env.DISCORD_GUILD_ID;
 
 const fmtPrice = (p) => {
     if (!p) return '$0.00';
@@ -1030,10 +1031,11 @@ const fmtPrice = (p) => {
 // Post a new signal to #live-signals
 const postNewSignalToDiscord = async (signal) => {
     if (!client || !client.isReady()) return;
-    if (!SIGNAL_CHANNEL_ID) return;
+    const channelId = getSignalChannelId();
+    if (!channelId) { console.log('[Discord] DISCORD_SIGNAL_CHANNEL_ID not set, skipping signal post'); return; }
 
     try {
-        const channel = await client.channels.fetch(SIGNAL_CHANNEL_ID);
+        const channel = await client.channels.fetch(channelId);
         if (!channel) return;
 
         const isLong = signal.direction === 'UP';
@@ -1065,8 +1067,8 @@ const postNewSignalToDiscord = async (signal) => {
 // Post signal result (TP hit, SL hit) to #signal-updates / #closed-trades
 const postSignalResultToDiscord = async (signal, result) => {
     if (!client || !client.isReady()) return;
-    const channelId = RESULTS_CHANNEL_ID || SIGNAL_CHANNEL_ID;
-    if (!channelId) return;
+    const channelId = getResultsChannelId() || getSignalChannelId();
+    if (!channelId) { console.log('[Discord] No results channel ID set, skipping result post'); return; }
 
     try {
         const channel = await client.channels.fetch(channelId);
@@ -1108,21 +1110,23 @@ const postSignalResultToDiscord = async (signal, result) => {
 
 // Assign premium role to a user
 const assignPremiumRole = async (discordUserId) => {
-    if (!client || !client.isReady() || !GUILD_ID || !PREMIUM_ROLE_ID || !discordUserId) return false;
+    const guildId = getGuildId();
+    const roleId = getPremiumRoleId();
+    if (!client || !client.isReady() || !guildId || !roleId || !discordUserId) return false;
 
     try {
-        const guild = await client.guilds.fetch(GUILD_ID);
+        const guild = await client.guilds.fetch(guildId);
         if (!guild) { console.log('[Discord] Guild not found'); return false; }
 
         const member = await guild.members.fetch(discordUserId).catch(() => null);
         if (!member) { console.log(`[Discord] Member ${discordUserId} not in guild`); return false; }
 
-        if (member.roles.cache.has(PREMIUM_ROLE_ID)) {
+        if (member.roles.cache.has(roleId)) {
             console.log(`[Discord] ${member.user.tag} already has Premium role`);
             return true;
         }
 
-        await member.roles.add(PREMIUM_ROLE_ID);
+        await member.roles.add(roleId);
         console.log(`[Discord] ✅ Assigned Premium role to ${member.user.tag}`);
 
         // DM the user
@@ -1146,21 +1150,23 @@ const assignPremiumRole = async (discordUserId) => {
 
 // Remove premium role from a user
 const removePremiumRole = async (discordUserId) => {
-    if (!client || !client.isReady() || !GUILD_ID || !PREMIUM_ROLE_ID || !discordUserId) return false;
+    const guildId = getGuildId();
+    const roleId = getPremiumRoleId();
+    if (!client || !client.isReady() || !guildId || !roleId || !discordUserId) return false;
 
     try {
-        const guild = await client.guilds.fetch(GUILD_ID);
+        const guild = await client.guilds.fetch(guildId);
         if (!guild) return false;
 
         const member = await guild.members.fetch(discordUserId).catch(() => null);
         if (!member) return false;
 
-        if (!member.roles.cache.has(PREMIUM_ROLE_ID)) {
+        if (!member.roles.cache.has(roleId)) {
             console.log(`[Discord] ${member.user.tag} doesn't have Premium role`);
             return true;
         }
 
-        await member.roles.remove(PREMIUM_ROLE_ID);
+        await member.roles.remove(roleId);
         console.log(`[Discord] Removed Premium role from ${member.user.tag}`);
         return true;
     } catch (e) {
