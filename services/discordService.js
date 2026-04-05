@@ -237,7 +237,8 @@ const handlePredictCommand = async (interaction) => {
         }
 
         // For 7-day predictions, try cache first
-        const cacheResponse = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/predictions/active/${symbol}`);
+        const apiBase = process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`;
+        const cacheResponse = await axios.get(`${apiBase}/api/predictions/active/${symbol}`);
 
         if (cacheResponse.data.success && cacheResponse.data.exists && cacheResponse.data.prediction) {
             // Use cached prediction
@@ -930,15 +931,17 @@ const broadcastAlert = async (preferenceKey, embed) => {
 
 // Create prediction embed
 const createPredictionEmbed = (prediction) => {
-    const isBullish = prediction.direction === 'bullish';
-    const confidenceEmoji = prediction.confidence >= 80 ? '🔥' : prediction.confidence >= 60 ? '✨' : '💡';
+    const dir = (prediction.direction || '').toUpperCase();
+    const isBullish = dir === 'BULLISH' || dir === 'UP';
+    const conf = Math.min(95, prediction.confidence || 0);
+    const confidenceEmoji = conf >= 80 ? '🔥' : conf >= 60 ? '✨' : '💡';
 
     const embed = new EmbedBuilder()
         .setTitle(`🤖 ML Prediction: ${prediction.symbol}`)
-        .setColor(isBullish ? 0x00ff00 : 0xff0000)
+        .setColor(isBullish ? 0x10b981 : 0xef4444)
         .addFields(
-            { name: '📊 Direction', value: prediction.direction.toUpperCase(), inline: true },
-            { name: `${confidenceEmoji} Confidence`, value: `${prediction.confidence.toFixed(1)}%`, inline: true },
+            { name: '📊 Direction', value: dir || 'NEUTRAL', inline: true },
+            { name: `${confidenceEmoji} Confidence`, value: `${conf.toFixed(1)}%`, inline: true },
             { name: '💵 Current Price', value: `$${formatNumber(prediction.currentPrice)}`, inline: true },
             { name: '🎯 Target', value: `$${formatNumber(prediction.targetPrice)}`, inline: true }
         );
@@ -1183,7 +1186,7 @@ const syncPremiumRole = async (userId) => {
 
         const paidPlans = ['starter', 'pro', 'premium', 'elite'];
         const hasPaidPlan = paidPlans.includes(user.subscription?.status);
-        const hasTrial = user.subscription?.trialEndsAt && new Date(user.subscription.trialEndsAt) > new Date() && !user.subscription?.trialUsed === false;
+        const hasTrial = user.subscription?.trialEndsAt && new Date(user.subscription.trialEndsAt) > new Date();
 
         if (hasPaidPlan || hasTrial) {
             await assignPremiumRole(user.discordUserId);
