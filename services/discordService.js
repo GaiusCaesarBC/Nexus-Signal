@@ -43,6 +43,9 @@ const initializeBot = async () => {
             await loadServersFromDB();
         });
 
+        // Member join — onboarding
+        client.on('guildMemberAdd', handleMemberJoin);
+
         // Error handling
         client.on('error', (error) => {
             console.error('[Discord] Client error:', error);
@@ -1011,6 +1014,78 @@ const getLinkedServers = () => {
 // Check if server is linked
 const isServerLinked = (guildId, channelId) => {
     return linkedServers.has(`${guildId}-${channelId}`);
+};
+
+// ═══════════════════════════════════════════════════════════
+// MEMBER ONBOARDING — Welcome message + DM + auto-role
+// ═══════════════════════════════════════════════════════════
+
+const getWelcomeChannelId = () => process.env.DISCORD_WELCOME_CHANNEL_ID;
+const getMemberRoleId = () => process.env.DISCORD_MEMBER_ROLE_ID;
+
+const handleMemberJoin = async (member) => {
+    console.log(`[Discord] New member joined: ${member.user.tag}`);
+
+    // 1. Auto-assign Member role
+    const memberRoleId = getMemberRoleId();
+    if (memberRoleId) {
+        try {
+            await member.roles.add(memberRoleId);
+            console.log(`[Discord] Assigned Member role to ${member.user.tag}`);
+        } catch (e) {
+            console.error(`[Discord] Failed to assign Member role to ${member.user.tag}:`, e.message);
+        }
+    }
+
+    // 2. Send welcome message in #welcome channel
+    const welcomeChannelId = getWelcomeChannelId();
+    if (welcomeChannelId) {
+        try {
+            const channel = await member.guild.channels.fetch(welcomeChannelId);
+            if (channel) {
+                const embed = new EmbedBuilder()
+                    .setTitle('Welcome to Nexus Signal AI!')
+                    .setDescription(`Hey ${member}, welcome to the community!\n\nThis is the transparent AI trading platform — **every trade is tracked publicly**. No edits. No deletions. No cherry-picked results.`)
+                    .setColor(0x10b981)
+                    .addFields(
+                        { name: 'Get Started', value:
+                            '📡 <#' + (getSignalChannelId() || '') + '> — Live AI trade signals\n' +
+                            '📊 <#' + (getResultsChannelId() || '') + '> — Trade results (wins & losses)\n' +
+                            '🔗 [View Full Track Record](https://nexussignal.ai/performance)'
+                        },
+                        { name: 'Every Trade Tracked', value: 'All signals include entry, stop loss, and take profit levels. Results are posted automatically — wins and losses.' }
+                    )
+                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                    .setFooter({ text: 'Nexus Signal AI · Tracked. Verified.' })
+                    .setTimestamp();
+
+                await channel.send({ content: `Welcome ${member}!`, embeds: [embed] });
+            }
+        } catch (e) {
+            console.error(`[Discord] Failed to send welcome message for ${member.user.tag}:`, e.message);
+        }
+    }
+
+    // 3. Send DM onboarding message (fail silently if DMs disabled)
+    try {
+        const dmEmbed = new EmbedBuilder()
+            .setTitle('Welcome to Nexus Signal AI!')
+            .setDescription("You just joined the most transparent AI trading community. Here's how to get started:")
+            .setColor(0x00adef)
+            .addFields(
+                { name: 'Step 1: Watch Live Signals', value: 'Head to **#live-signals** to see real-time AI trade setups with entry, stop loss, and targets.' },
+                { name: 'Step 2: Track Results', value: 'Check **#signal-updates** for live trade outcomes — every win and loss posted automatically.' },
+                { name: 'Step 3: See the Track Record', value: 'Visit [nexussignal.ai/performance](https://nexussignal.ai/performance) to see the full performance history with equity curve and stats.' },
+                { name: 'Go Premium', value: '🚀 Get unlimited signals, AI forecasts, whale alerts, and more:\n👉 [**nexussignal.ai/pricing**](https://nexussignal.ai/pricing)' }
+            )
+            .setFooter({ text: 'Every trade tracked publicly — win or lose. No edits.' });
+
+        await member.send({ embeds: [dmEmbed] });
+        console.log(`[Discord] Sent onboarding DM to ${member.user.tag}`);
+    } catch (e) {
+        // User has DMs disabled — fail silently
+        console.log(`[Discord] Could not DM ${member.user.tag} (DMs likely disabled)`);
+    }
 };
 
 // ═══════════════════════════════════════════════════════════
