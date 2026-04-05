@@ -379,6 +379,21 @@ const sendTechnicalAlertNotification = async (userId, alert) => {
 
 // ==================== INITIALIZE ALL SCHEDULERS ====================
 
+// ==================== DAILY CHANNEL RECAP ====================
+
+const startDailyChannelRecap = () => {
+    console.log('[Discord] Daily channel recap scheduler started (9 PM ET)');
+
+    // Post daily recap at 9 PM ET every day
+    cron.schedule('0 21 * * *', async () => {
+        try {
+            await discordService.postDailyRecap();
+        } catch (error) {
+            console.error('[Discord] Daily channel recap error:', error.message);
+        }
+    }, { timezone: 'America/New_York' });
+};
+
 const initializeSchedulers = () => {
     if (!discordService.isBotActive()) {
         console.log('[Discord] Bot not active, schedulers not started');
@@ -387,6 +402,7 @@ const initializeSchedulers = () => {
 
     startEconomicEventReminders();
     startDailySummaryScheduler();
+    startDailyChannelRecap();
 
     console.log('[Discord] All notification schedulers initialized');
 };

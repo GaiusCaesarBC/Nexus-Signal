@@ -114,6 +114,15 @@ const registerSlashCommands = async (token, clientId) => {
             .setDescription('Unsubscribe this channel from alerts (admin only)')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
         new SlashCommandBuilder()
+            .setName('signals')
+            .setDescription('View current active signals and platform stats'),
+        new SlashCommandBuilder()
+            .setName('performance')
+            .setDescription('View live win rate, total trades, and edge'),
+        new SlashCommandBuilder()
+            .setName('leaderboard')
+            .setDescription('View top paper traders'),
+        new SlashCommandBuilder()
             .setName('help')
             .setDescription('Show available Nexus Signal commands')
     ].map(command => command.toJSON());
@@ -166,6 +175,15 @@ const handleInteraction = async (interaction) => {
                 break;
             case 'unsubscribe':
                 await handleUnsubscribeCommand(interaction);
+                break;
+            case 'signals':
+                await handleSignalsCommand(interaction);
+                break;
+            case 'performance':
+                await handlePerformanceCommand(interaction);
+                break;
+            case 'leaderboard':
+                await handleLeaderboardCommand(interaction);
                 break;
             case 'help':
                 await handleHelpCommand(interaction);
@@ -623,6 +641,151 @@ const handleUnsubscribeCommand = async (interaction) => {
     }
 };
 
+// /signals — show active signal count + recent signals
+const handleSignalsCommand = async (interaction) => {
+    await interaction.deferReply();
+
+    try {
+        const Prediction = require('../models/Prediction');
+        const now = new Date();
+
+        const active = await Prediction.countDocuments({ user: null, isPublic: true, status: 'pending', expiresAt: { $gt: now } });
+        const totalTracked = await Prediction.countDocuments({ user: null, isPublic: true });
+        const wins = await Prediction.countDocuments({ user: null, isPublic: true, result: 'win' });
+        const losses = await Prediction.countDocuments({ user: null, isPublic: true, result: 'loss' });
+        const closed = wins + losses;
+        const winRate = closed > 0 ? Math.round((wins / closed) * 100) : 0;
+
+        // Get top 5 active signals
+        const topSignals = await Prediction.find({
+            user: null, isPublic: true, status: 'pending', expiresAt: { $gt: now }, confidence: { $gte: 55 }
+        }).sort({ confidence: -1 }).limit(5).select('symbol direction confidence').lean();
+
+        const signalsList = topSignals.length > 0
+            ? topSignals.map(s => {
+                const sym = s.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || s.symbol;
+                const dir = s.direction === 'UP' ? '📈 LONG' : '📉 SHORT';
+                return `${dir} **${sym}** — ${Math.min(95, Math.round(s.confidence))}%`;
+            }).join('\n')
+            : 'No active signals right now';
+
+        const embed = new EmbedBuilder()
+            .setTitle('📡 Live Signal Status')
+            .setColor(0x00adef)
+            .addFields(
+                { name: 'Active Signals', value: `${active}`, inline: true },
+                { name: 'Total Tracked', value: `${totalTracked}`, inline: true },
+                { name: 'Win Rate', value: `${winRate}% (${wins}W / ${losses}L)`, inline: true },
+                { name: 'Top Active Signals', value: signalsList }
+            )
+            .addFields({ name: 'View All Signals', value: '👉 [nexussignal.ai/signals](https://nexussignal.ai/signals)' })
+            .setFooter({ text: 'Nexus Signal AI · Every trade tracked publicly.' })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+        console.error('[Discord] Error in /signals:', error.message);
+        await interaction.editReply({ content: 'Failed to fetch signal data. Try again later.' });
+    }
+};
+
+// /performance — show live platform stats
+const handlePerformanceCommand = async (interaction) => {
+    await interaction.deferReply();
+
+    try {
+        const apiBase = process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`;
+        const res = await axios.get(`${apiBase}/api/predictions/performance?limit=1`);
+        const stats = res.data?.stats;
+
+        if (!stats) {
+            await interaction.editReply({ content: 'Performance data unavailable right now.' });
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('📊 Live Performance')
+            .setColor(stats.winRate >= 50 ? 0x10b981 : 0xf59e0b)
+            .addFields(
+                { name: 'Total Trades', value: `${stats.total}`, inline: true },
+                { name: 'Win Rate', value: `${stats.winRate}%`, inline: true },
+                { name: 'W / L', value: `${stats.wins}W / ${stats.losses}L`, inline: true },
+                { name: 'Avg Return', value: `${stats.avgReturn >= 0 ? '+' : ''}${stats.avgReturn}%`, inline: true },
+                { name: 'Total Return', value: `${stats.totalReturn >= 0 ? '+' : ''}${stats.totalReturn}%`, inline: true },
+                { name: 'Edge / Trade', value: `${stats.edge >= 0 ? '+' : ''}${stats.edge}%`, inline: true },
+                { name: 'Avg Win', value: `+${stats.avgWin}%`, inline: true },
+                { name: 'Avg Loss', value: `${stats.avgLoss}%`, inline: true },
+                { name: 'Active', value: `${stats.active}`, inline: true },
+            )
+            .addFields({ name: 'Full Dashboard', value: '👉 [nexussignal.ai/performance](https://nexussignal.ai/performance)' })
+            .setFooter({ text: 'Nexus Signal AI · Tracked. Verified. No edits.' })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+        console.error('[Discord] Error in /performance:', error.message);
+        await interaction.editReply({ content: 'Failed to fetch performance data. Try again later.' });
+    }
+};
+
+// /leaderboard — top paper traders
+const handleLeaderboardCommand = async (interaction) => {
+    await interaction.deferReply();
+
+    try {
+        const apiBase = process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`;
+        const res = await axios.get(`${apiBase}/api/paper-trading/leaderboard`, {
+            headers: { 'x-auth-token': 'internal-bot-request' }
+        }).catch(() => null);
+
+        // Fallback: query directly if API call fails
+        let leaders = res?.data;
+        if (!leaders || !Array.isArray(leaders)) {
+            const PaperTradingAccount = require('../models/PaperTradingAccount');
+            const accounts = await PaperTradingAccount.find({ totalTrades: { $gte: 3 } })
+                .sort({ winRate: -1 })
+                .limit(10)
+                .populate('user', 'username')
+                .lean();
+
+            leaders = accounts.map(a => ({
+                username: a.user?.username || 'Unknown',
+                winRate: a.winRate || 0,
+                totalTrades: a.totalTrades || 0,
+                totalReturn: a.totalPortfolioValue ? ((a.totalPortfolioValue - 100000) / 100000 * 100).toFixed(1) : '0'
+            }));
+        }
+
+        if (!leaders || leaders.length === 0) {
+            await interaction.editReply({ content: 'No leaderboard data yet. Start paper trading to compete!' });
+            return;
+        }
+
+        const medals = ['🥇', '🥈', '🥉'];
+        const leaderList = leaders.slice(0, 10).map((l, i) => {
+            const medal = medals[i] || `**${i + 1}.**`;
+            const name = l.username || l.displayName || 'Trader';
+            const wr = l.winRate || 0;
+            const trades = l.totalTrades || 0;
+            const ret = l.totalReturn || l.totalReturnPercent || 0;
+            return `${medal} **${name}** — ${wr}% WR · ${trades} trades · ${ret >= 0 ? '+' : ''}${ret}%`;
+        }).join('\n');
+
+        const embed = new EmbedBuilder()
+            .setTitle('🏆 Paper Trading Leaderboard')
+            .setColor(0xfbbf24)
+            .setDescription(leaderList)
+            .addFields({ name: 'Join the Competition', value: '👉 [Start Paper Trading](https://nexussignal.ai/paper-trading)' })
+            .setFooter({ text: 'Nexus Signal AI · Rankings update in real time' })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+        console.error('[Discord] Error in /leaderboard:', error.message);
+        await interaction.editReply({ content: 'Failed to fetch leaderboard. Try again later.' });
+    }
+};
+
 // /help
 const handleHelpCommand = async (interaction) => {
     const isGuild = !!interaction.guild;
@@ -633,7 +796,10 @@ const handleHelpCommand = async (interaction) => {
         .addFields(
             { name: '📊 Market Data', value:
                 '`/predict <symbol>` - Get ML prediction\n' +
-                '`/price <symbol>` - Get current price'
+                '`/price <symbol>` - Get current price\n' +
+                '`/signals` - View active signals & stats\n' +
+                '`/performance` - Live win rate, edge, returns\n' +
+                '`/leaderboard` - Top paper traders'
             },
             { name: '🔗 Account', value:
                 '`/link <token>` - Link your Nexus Signal account\n' +
@@ -650,16 +816,17 @@ const handleHelpCommand = async (interaction) => {
         });
     }
 
-    embed.addFields({
-        name: '🔔 Notifications You Can Receive', value:
-            '📅 Economic Calendar Reminders\n' +
-            '🐋 Whale Alerts\n' +
-            '📊 Daily Market Summaries\n' +
-            '🤖 ML Prediction Alerts\n' +
-            '🔔 Price Alerts'
-    });
+    embed.addFields(
+        { name: '📡 Auto Channels', value:
+            '**#live-signals** - Signal teasers (public)\n' +
+            '**#premium-signals** - Full trade levels (Premium)\n' +
+            '**#signal-updates** - Trade results (WIN/LOSS)\n' +
+            '**#whale-alerts** - Large trade alerts (Premium)\n' +
+            '**#announcements** - Platform updates'
+        }
+    );
 
-    embed.setFooter({ text: 'Get your link token from Nexus Signal app settings' });
+    embed.setFooter({ text: 'nexussignal.ai · Get your link token from Account Settings' });
 
     await interaction.reply({ embeds: [embed] });
 };
@@ -1305,6 +1472,133 @@ const syncPremiumRole = async (userId) => {
     }
 };
 
+// ═══════════════════════════════════════════════════════════
+// DAILY RECAP — Post daily performance summary to Discord
+// ═══════════════════════════════════════════════════════════
+
+const getAnnouncementsChannelId = () => process.env.DISCORD_ANNOUNCEMENTS_CHANNEL_ID;
+const getWhaleChannelId = () => process.env.DISCORD_WHALE_CHANNEL_ID;
+
+const postDailyRecap = async () => {
+    if (!client || !client.isReady()) return;
+    const channelId = getSignalChannelId();
+    if (!channelId) return;
+
+    try {
+        const Prediction = require('../models/Prediction');
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const recentResults = await Prediction.find({
+            user: null, isPublic: true,
+            result: { $in: ['win', 'loss'] },
+            resultAt: { $gte: oneDayAgo }
+        }).sort({ resultAt: -1 }).lean();
+
+        if (recentResults.length === 0) return;
+
+        const wins = recentResults.filter(r => r.result === 'win');
+        const losses = recentResults.filter(r => r.result === 'loss');
+        const winRate = recentResults.length > 0 ? Math.round((wins.length / recentResults.length) * 100) : 0;
+
+        // Top win
+        let topWinText = 'None';
+        if (wins.length > 0) {
+            const topWin = wins.reduce((best, w) => {
+                const pct = Math.abs(((w.resultPrice - w.entryPrice) / w.entryPrice) * 100);
+                return pct > best.pct ? { sym: w.symbol, pct, dir: w.direction } : best;
+            }, { pct: 0 });
+            if (topWin.pct > 0) {
+                const sym = topWin.sym?.split(':')[0]?.replace(/USDT|USD/i, '') || topWin.sym;
+                topWinText = `${sym} ${topWin.dir === 'UP' ? 'LONG' : 'SHORT'} +${topWin.pct.toFixed(1)}%`;
+            }
+        }
+
+        const channel = await client.channels.fetch(channelId);
+        if (!channel) return;
+
+        const embed = new EmbedBuilder()
+            .setTitle('📊 Daily Recap')
+            .setColor(winRate >= 50 ? 0x10b981 : 0xf59e0b)
+            .addFields(
+                { name: 'Trades Closed (24h)', value: `${recentResults.length}`, inline: true },
+                { name: 'Win Rate', value: `${winRate}%`, inline: true },
+                { name: 'W / L', value: `${wins.length}W / ${losses.length}L`, inline: true },
+                { name: 'Top Trade', value: topWinText, inline: false },
+            )
+            .addFields({ name: 'Full Performance', value: '👉 [nexussignal.ai/performance](https://nexussignal.ai/performance)' })
+            .setFooter({ text: 'Nexus Signal AI · Every trade tracked publicly.' })
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log(`[Discord] Posted daily recap: ${wins.length}W/${losses.length}L`);
+    } catch (e) {
+        console.error('[Discord] Error posting daily recap:', e.message);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// WHALE ALERTS — Post to #whale-alerts channel (premium only)
+// ═══════════════════════════════════════════════════════════
+
+const postWhaleAlertToChannel = async (alert) => {
+    if (!client || !client.isReady()) return;
+    const channelId = getWhaleChannelId();
+    if (!channelId) return;
+
+    try {
+        const channel = await client.channels.fetch(channelId);
+        if (!channel) return;
+
+        const isBuy = alert.type === 'buy' || alert.action === 'BUY';
+        const embed = new EmbedBuilder()
+            .setTitle(`🐋 Whale Alert — ${alert.symbol || 'Unknown'}`)
+            .setColor(isBuy ? 0x10b981 : 0xef4444)
+            .setDescription(`${isBuy ? '🟢 Large BUY' : '🔴 Large SELL'} detected`)
+            .addFields(
+                { name: 'Asset', value: alert.symbol || 'Unknown', inline: true },
+                { name: 'Amount', value: `$${formatNumber(alert.amount || alert.value || 0)}`, inline: true },
+                { name: 'Action', value: isBuy ? 'BOUGHT' : 'SOLD', inline: true },
+            );
+
+        if (alert.exchange) embed.addFields({ name: 'Exchange', value: alert.exchange, inline: true });
+        if (alert.price) embed.addFields({ name: 'Price', value: `$${formatNumber(alert.price)}`, inline: true });
+
+        embed.setFooter({ text: 'Nexus Signal AI · Whale Intelligence' }).setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log(`[Discord] Posted whale alert: ${alert.symbol} ${isBuy ? 'BUY' : 'SELL'}`);
+    } catch (e) {
+        console.error('[Discord] Error posting whale alert:', e.message);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// ANNOUNCEMENTS — Post platform updates to #announcements
+// ═══════════════════════════════════════════════════════════
+
+const postAnnouncement = async (title, message, color = 0x00adef) => {
+    if (!client || !client.isReady()) return;
+    const channelId = getAnnouncementsChannelId();
+    if (!channelId) return;
+
+    try {
+        const channel = await client.channels.fetch(channelId);
+        if (!channel) return;
+
+        const embed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(message)
+            .setColor(color)
+            .setFooter({ text: 'Nexus Signal AI' })
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log(`[Discord] Posted announcement: ${title}`);
+    } catch (e) {
+        console.error('[Discord] Error posting announcement:', e.message);
+    }
+};
+
 // Get bot instance
 const getBot = () => client;
 
@@ -1329,11 +1623,15 @@ module.exports = {
     getLinkedServers,
     isServerLinked,
     createPredictionEmbed,
-    // New: Signal posting
+    // Signal posting
     postNewSignalToDiscord,
     postSignalResultToDiscord,
-    // New: Premium role management
+    // Premium role management
     assignPremiumRole,
     removePremiumRole,
-    syncPremiumRole
+    syncPremiumRole,
+    // New: channels
+    postDailyRecap,
+    postWhaleAlertToChannel,
+    postAnnouncement
 };
