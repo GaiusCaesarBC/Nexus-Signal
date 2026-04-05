@@ -1095,6 +1095,7 @@ const handleMemberJoin = async (member) => {
 // Read at call time, not module load time (env vars may not be set yet at startup)
 const getSignalChannelId = () => process.env.DISCORD_SIGNAL_CHANNEL_ID;
 const getResultsChannelId = () => process.env.DISCORD_RESULTS_CHANNEL_ID;
+const getPremiumSignalChannelId = () => process.env.DISCORD_PREMIUM_SIGNAL_CHANNEL_ID;
 const getPremiumRoleId = () => process.env.DISCORD_PREMIUM_ROLE_ID;
 const getGuildId = () => process.env.DISCORD_GUILD_ID;
 
@@ -1106,39 +1107,70 @@ const fmtPrice = (p) => {
     return `$${p.toFixed(8)}`;
 };
 
-// Post a new signal to #live-signals
+// Post a new signal — teaser to public #live-signals, full details to premium-only channel
 const postNewSignalToDiscord = async (signal) => {
     if (!client || !client.isReady()) return;
-    const channelId = getSignalChannelId();
-    if (!channelId) { console.log('[Discord] DISCORD_SIGNAL_CHANNEL_ID not set, skipping signal post'); return; }
 
-    try {
-        const channel = await client.channels.fetch(channelId);
-        if (!channel) return;
+    const isLong = signal.direction === 'UP';
+    const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
+    const conf = Math.min(95, Math.round(signal.confidence || 0));
+    const dir = isLong ? 'LONG' : 'SHORT';
 
-        const isLong = signal.direction === 'UP';
-        const sym = signal.symbol?.split(':')[0]?.replace(/USDT|USD/i, '') || signal.symbol;
-        const conf = Math.min(95, Math.round(signal.confidence || 0));
-        const dir = isLong ? 'LONG' : 'SHORT';
+    // ── PUBLIC TEASER → #live-signals (no trade levels) ──
+    const publicChannelId = getSignalChannelId();
+    if (publicChannelId) {
+        try {
+            const channel = await client.channels.fetch(publicChannelId);
+            if (channel) {
+                const teaserEmbed = new EmbedBuilder()
+                    .setTitle(`${isLong ? '📈' : '📉'} ${sym} ${dir}`)
+                    .setColor(isLong ? 0x10b981 : 0xef4444)
+                    .addFields(
+                        { name: 'Direction', value: dir, inline: true },
+                        { name: 'Confidence', value: `${conf}%`, inline: true },
+                        { name: 'Timeframe', value: '7D Swing', inline: true },
+                    )
+                    .addFields({
+                        name: '🔒 Entry, SL & TP Levels',
+                        value: 'Full trade levels available for **Premium** members.\n👉 [Unlock full signals](https://nexussignal.ai/pricing)'
+                    })
+                    .setFooter({ text: 'Nexus Signal AI · Tracked. Verified.' })
+                    .setTimestamp();
 
-        const embed = new EmbedBuilder()
-            .setTitle(`${isLong ? '📈' : '📉'} ${sym} ${dir}`)
-            .setColor(isLong ? 0x10b981 : 0xef4444)
-            .addFields(
-                { name: 'Entry', value: fmtPrice(signal.entryPrice || signal.currentPrice), inline: true },
-                { name: 'Stop Loss', value: fmtPrice(signal.stopLoss), inline: true },
-                { name: 'Target (TP3)', value: fmtPrice(signal.takeProfit3 || signal.targetPrice), inline: true },
-                { name: 'TP1', value: fmtPrice(signal.takeProfit1), inline: true },
-                { name: 'TP2', value: fmtPrice(signal.takeProfit2), inline: true },
-                { name: 'Confidence', value: `${conf}%`, inline: true },
-            )
-            .setFooter({ text: 'Nexus Signal AI · Tracked. Verified.' })
-            .setTimestamp();
+                await channel.send({ embeds: [teaserEmbed] });
+                console.log(`[Discord] Posted teaser: ${sym} ${dir} ${conf}%`);
+            }
+        } catch (e) {
+            console.error('[Discord] Error posting teaser:', e.message);
+        }
+    }
 
-        await channel.send({ embeds: [embed] });
-        console.log(`[Discord] Posted signal: ${sym} ${dir} ${conf}%`);
-    } catch (e) {
-        console.error('[Discord] Error posting signal:', e.message);
+    // ── FULL DETAILS → #premium-signals (premium-only channel) ──
+    const premiumChannelId = getPremiumSignalChannelId();
+    if (premiumChannelId) {
+        try {
+            const channel = await client.channels.fetch(premiumChannelId);
+            if (channel) {
+                const fullEmbed = new EmbedBuilder()
+                    .setTitle(`${isLong ? '📈' : '📉'} ${sym} ${dir}`)
+                    .setColor(isLong ? 0x10b981 : 0xef4444)
+                    .addFields(
+                        { name: 'Entry', value: fmtPrice(signal.entryPrice || signal.currentPrice), inline: true },
+                        { name: 'Stop Loss', value: fmtPrice(signal.stopLoss), inline: true },
+                        { name: 'Target (TP3)', value: fmtPrice(signal.takeProfit3 || signal.targetPrice), inline: true },
+                        { name: 'TP1', value: fmtPrice(signal.takeProfit1), inline: true },
+                        { name: 'TP2', value: fmtPrice(signal.takeProfit2), inline: true },
+                        { name: 'Confidence', value: `${conf}%`, inline: true },
+                    )
+                    .setFooter({ text: 'Nexus Signal AI · Premium Signal' })
+                    .setTimestamp();
+
+                await channel.send({ embeds: [fullEmbed] });
+                console.log(`[Discord] Posted full signal: ${sym} ${dir} ${conf}%`);
+            }
+        } catch (e) {
+            console.error('[Discord] Error posting full signal:', e.message);
+        }
     }
 };
 
