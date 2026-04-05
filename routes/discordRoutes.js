@@ -229,4 +229,75 @@ router.get('/servers', auth, async (req, res) => {
     }
 });
 
+// Test signal post to Discord (admin/dev only)
+router.post('/test-signal', auth, async (req, res) => {
+    try {
+        const { postNewSignalToDiscord, isBotActive } = discordService;
+
+        if (!isBotActive()) {
+            return res.status(503).json({ success: false, error: 'Discord bot is not connected' });
+        }
+
+        // Post a test signal
+        await postNewSignalToDiscord({
+            symbol: 'TEST',
+            direction: 'UP',
+            confidence: 82,
+            entryPrice: 100,
+            stopLoss: 95,
+            takeProfit1: 103,
+            takeProfit2: 108,
+            takeProfit3: 112,
+            targetPrice: 112,
+            currentPrice: 100
+        });
+
+        res.json({ success: true, message: 'Test signal posted to Discord' });
+    } catch (error) {
+        console.error('Discord test error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Test result post to Discord
+router.post('/test-result', auth, async (req, res) => {
+    try {
+        const { postSignalResultToDiscord, isBotActive } = discordService;
+
+        if (!isBotActive()) {
+            return res.status(503).json({ success: false, error: 'Discord bot is not connected' });
+        }
+
+        await postSignalResultToDiscord({
+            symbol: 'TEST',
+            direction: 'UP',
+            entryPrice: 100,
+            resultPrice: 108,
+            currentPrice: 108,
+            resultText: 'TP2 Hit',
+            livePrice: 108
+        }, 'win');
+
+        res.json({ success: true, message: 'Test result posted to Discord' });
+    } catch (error) {
+        console.error('Discord test error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Check bot status
+router.get('/bot-status', auth, async (req, res) => {
+    const { isBotActive, getBot } = discordService;
+    const bot = getBot();
+    res.json({
+        active: isBotActive(),
+        username: bot?.user?.tag || null,
+        guilds: bot?.guilds?.cache?.size || 0,
+        signalChannelId: process.env.DISCORD_SIGNAL_CHANNEL_ID || 'NOT SET',
+        resultsChannelId: process.env.DISCORD_RESULTS_CHANNEL_ID || 'NOT SET',
+        guildId: process.env.DISCORD_GUILD_ID || 'NOT SET',
+        premiumRoleId: process.env.DISCORD_PREMIUM_ROLE_ID || 'NOT SET'
+    });
+});
+
 module.exports = router;
