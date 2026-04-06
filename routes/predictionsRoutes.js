@@ -1443,7 +1443,12 @@ router.get('/recent', predictionLimiter, async (req, res) => {
             entries.slice(0, 100).forEach(([key]) => recentPriceCache.delete(key));
         }
 
-        res.json(predictionsWithLivePrices);
+        // Cap confidence at 95% on all responses
+        const capped = predictionsWithLivePrices.map(p => ({
+            ...p,
+            confidence: Math.min(95, p.confidence || 0)
+        }));
+        res.json(capped);
     } catch (error) {
         console.error('[Predictions] Error fetching recent:', error.message);
         res.status(500).json({ error: 'Failed to fetch recent predictions' });

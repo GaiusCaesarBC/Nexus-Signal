@@ -139,6 +139,9 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             return { status: 'skipped', reason: 'ml unavailable' };
         }
 
+        // Cap confidence at 95% — never show 100% (damages credibility)
+        confidence = Math.min(95, confidence);
+
         if (confidence < MIN_CONFIDENCE) return { status: 'skipped', reason: 'low confidence' };
 
         const priceChange = targetPrice - price;
