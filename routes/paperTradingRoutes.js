@@ -1443,16 +1443,58 @@ router.post('/refresh-prices', auth, async (req, res) => {
         const triggeredPositions = [];
         const positionsToRemove = [];
         
-        // Fetch all prices — batch first, then individual fallback for any missing
-        const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
-        const batchPrices = await priceService.getBatchPrices(allSymbols);
+        // Fetch all prices — split by STORED position type (not guessed)
+        // This prevents symbol collisions (e.g. "D" crypto vs "D" stock)
+        const cryptoPositions = [];
+        const stockPositions = [];
+        account.positions.forEach(p => {
+            const sym = p.symbol.toUpperCase();
+            const posType = p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock');
+            if (posType === 'crypto') cryptoPositions.push(sym);
+            else stockPositions.push(sym);
+        });
 
-        // Individual fallback for any symbols the batch missed
+        // Fetch crypto and stock prices separately using correct APIs
+        const batchPrices = new Map();
+
+        // Crypto batch via CryptoCompare
+        if (cryptoPositions.length > 0) {
+            try {
+                const axios = require('axios');
+                const fsyms = cryptoPositions.join(',');
+                const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`, { timeout: 8000 });
+                for (const sym of cryptoPositions) {
+                    if (ccRes.data?.[sym]?.USD > 0) batchPrices.set(sym, ccRes.data[sym].USD);
+                }
+            } catch (e) { console.log('[Paper Trading] Crypto batch failed:', e.message); }
+        }
+
+        // Stock batch via Finnhub
+        if (stockPositions.length > 0) {
+            const FKEY = process.env.FINNHUB_API_KEY;
+            if (FKEY) {
+                const axios = require('axios');
+                for (const sym of stockPositions) {
+                    try {
+                        const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
+                        if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
+                    } catch (e) { /* skip */ }
+                }
+            }
+        }
+
+        // Build type map for individual fallback
+        const positionTypeMap = new Map();
+        account.positions.forEach(p => positionTypeMap.set(p.symbol.toUpperCase(), p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock')));
+
+        const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
+
+        // Individual fallback for any symbols still missing
         for (const sym of allSymbols) {
             if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
                 try {
-                    const isCrypto = priceService.isCryptoSymbol(sym);
-                    if (isCrypto) {
+                    // Use the STORED position type, not isCryptoSymbol() guess
+                    const isCrypto = positionTypeMap.get(sym) === 'crypto';
                         // CryptoCompare individual fallback
                         const axios = require('axios');
                         const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
