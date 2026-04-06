@@ -408,6 +408,62 @@ const connectDB = async () => {
             }
         });
 
+        // Signal checker diagnostic endpoint
+        app.get('/api/admin/checker-status', async (req, res) => {
+            try {
+                const { getCheckerStats, runCheckCycle } = require('./services/signalResultChecker');
+                const Prediction = require('./models/Prediction');
+
+                const stats = getCheckerStats();
+
+                // Get sample of pending signals
+                const pendingSignals = await Prediction.find({
+                    status: 'pending',
+                    result: null,
+                    entryPrice: { $exists: true, $ne: null },
+                    expiresAt: { $gt: new Date() }
+                }).limit(5).select('symbol assetType entryPrice livePrice livePriceUpdatedAt stopLoss').lean();
+
+                // Count signals that would be checked
+                const totalPending = await Prediction.countDocuments({
+                    status: 'pending',
+                    result: null,
+                    entryPrice: { $exists: true, $ne: null },
+                    expiresAt: { $gt: new Date() }
+                });
+
+                res.json({
+                    success: true,
+                    checkerStats: stats,
+                    totalPendingSignals: totalPending,
+                    sampleSignals: pendingSignals.map(s => ({
+                        symbol: s.symbol,
+                        assetType: s.assetType,
+                        entryPrice: s.entryPrice,
+                        livePrice: s.livePrice,
+                        livePriceUpdatedAt: s.livePriceUpdatedAt,
+                        stopLoss: s.stopLoss,
+                        priceAge: s.livePriceUpdatedAt ? `${Math.round((Date.now() - new Date(s.livePriceUpdatedAt).getTime()) / 60000)} min ago` : 'never'
+                    }))
+                });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
+        // Manually trigger checker cycle
+        app.get('/api/admin/run-checker', async (req, res) => {
+            try {
+                const { runCheckCycle, getCheckerStats } = require('./services/signalResultChecker');
+                console.log('[Admin] Manually triggering signal checker...');
+                await runCheckCycle();
+                const stats = getCheckerStats();
+                res.json({ success: true, message: 'Check cycle completed', stats });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
         // Admin: expire stale predictions that are still "pending" past their expiresAt or older than 14 days
         app.get('/api/admin/expire-stale', async (req, res) => {
             try {
