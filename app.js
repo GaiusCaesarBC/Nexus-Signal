@@ -24,6 +24,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const journalRoutes = require('./routes/journalRoutes');
 const screenerRoutes = require('./routes/screenerRoutes');
+const opportunitiesRoutes = require('./routes/opportunitiesRoutes');
 const heatmapRoutes = require('./routes/heatmapRoutes');
 const gamificationRoutes = require('./routes/gamificationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
@@ -751,6 +752,7 @@ app.use('/api/predictions', predictionsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/journal', journalRoutes);
 app.use('/api/screener', screenerRoutes);
+app.use('/api/opportunities', opportunitiesRoutes); // 🎯 Opportunity Engine
 app.use('/api/heatmap', heatmapRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/social', socialRoutes);
