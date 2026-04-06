@@ -1495,6 +1495,7 @@ router.post('/refresh-prices', auth, async (req, res) => {
                 try {
                     // Use the STORED position type, not isCryptoSymbol() guess
                     const isCrypto = positionTypeMap.get(sym) === 'crypto';
+                    if (isCrypto) {
                         // CryptoCompare individual fallback
                         const axios = require('axios');
                         const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
