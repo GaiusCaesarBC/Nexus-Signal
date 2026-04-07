@@ -825,31 +825,36 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     console.log(`[Chart] ⚠️ CoinGecko failed: ${cgError.message}`);
                 }
 
-                // Try Gecko Terminal without specific network (searches all networks)
-                try {
-                    console.log(`[Chart] 🦎 Trying Gecko Terminal (any network) for ${crypto}...`);
-                    const chartData = await fetchGeckoTerminalOHLC(crypto, interval);
+                // For known centralized cryptos, try Binance BEFORE Gecko Terminal —
+                // GT's DEX search returns wrong-token scam pools when ticker collides
+                // (e.g. "BNB" matches a $5 wrapped DEX token instead of real BNB).
+                const isKnownCentralized = KNOWN_CRYPTOS.includes(crypto.toUpperCase());
+                if (!isKnownCentralized) {
+                    // Unknown / DEX-only token: try Gecko Terminal (any network)
+                    try {
+                        console.log(`[Chart] 🦎 Trying Gecko Terminal (any network) for ${crypto}...`);
+                        const chartData = await fetchGeckoTerminalOHLC(crypto, interval);
 
-                    // Cache the data
-                    chartDataCache.set(cacheKey, {
-                        data: chartData,
-                        timestamp: Date.now()
-                    });
+                        chartDataCache.set(cacheKey, {
+                            data: chartData,
+                            timestamp: Date.now()
+                        });
 
-                    console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto}`);
+                        console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto}`);
 
-                    return res.json({
-                        success: true,
-                        data: chartData,
-                        symbol: `${crypto}-USD`,
-                        interval,
-                        source: 'geckoterminal'
-                    });
-                } catch (gtError) {
-                    console.log(`[Chart] ⚠️ Gecko Terminal failed: ${gtError.message}`);
+                        return res.json({
+                            success: true,
+                            data: chartData,
+                            symbol: `${crypto}-USD`,
+                            interval,
+                            source: 'geckoterminal'
+                        });
+                    } catch (gtError) {
+                        console.log(`[Chart] ⚠️ Gecko Terminal failed: ${gtError.message}`);
+                    }
                 }
 
-                // Fallback to Binance
+                // Fallback to Binance (always tried for known centralized cryptos)
                 console.log(`[Chart] 🔄 Falling back to Binance for ${crypto}...`);
 
                 // Map interval to Binance format (Binance supports real 1m and 5m)
