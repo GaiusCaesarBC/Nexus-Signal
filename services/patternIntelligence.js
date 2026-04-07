@@ -284,8 +284,11 @@ async function rankPatterns(filters = {}) {
     }
 
     // Sort by pattern score
-    const sortDir = filters.sortDir === 'asc' ? 1 : -1;
-    results.sort((a, b) => (b.patternScore - a.patternScore) * sortDir);
+    // Descending by default (highest pattern score first)
+    const ascending = filters.sortDir === 'asc';
+    results.sort((a, b) => ascending
+        ? (a.patternScore - b.patternScore)
+        : (b.patternScore - a.patternScore));
 
     return results;
 }

@@ -303,20 +303,20 @@ async function getOpportunities(filters = {}) {
         opportunities = opportunities.filter(o => o.aiScore >= min);
     }
 
-    // Sort
+    // Sort — descending by default (highest AI score first)
     const sortBy = filters.sortBy || 'ai_score';
-    const sortDir = filters.sortDir === 'asc' ? 1 : -1;
+    const ascending = filters.sortDir === 'asc';
     opportunities.sort((a, b) => {
         let av, bv;
         switch (sortBy) {
-            case 'confidence': av = a.confidence; bv = b.confidence; break;
+            case 'confidence': av = a.confidence || 0; bv = b.confidence || 0; break;
             case 'rr': av = a.rr || 0; bv = b.rr || 0; break;
-            case 'change': av = a.changePct; bv = b.changePct; break;
+            case 'change': av = a.changePct || 0; bv = b.changePct || 0; break;
             case 'created': av = new Date(a.createdAt).getTime(); bv = new Date(b.createdAt).getTime(); break;
             case 'ai_score':
-            default: av = a.aiScore; bv = b.aiScore; break;
+            default: av = a.aiScore || 0; bv = b.aiScore || 0; break;
         }
-        return (bv - av) * sortDir;
+        return ascending ? (av - bv) : (bv - av);
     });
 
     return opportunities;
