@@ -667,6 +667,16 @@ class BacktestEngine {
         // Execute strategy
         const signals = this.executeStrategy(strategy, data, indicators, parameters);
 
+        // Debug: count signal types so we can diagnose 0-trade cases
+        const sigCounts = { buy: 0, sell: 0, hold: 0, other: 0 };
+        signals.forEach(s => {
+            if (s?.signal === 'buy') sigCounts.buy++;
+            else if (s?.signal === 'sell') sigCounts.sell++;
+            else if (s?.signal === 'hold') sigCounts.hold++;
+            else sigCounts.other++;
+        });
+        console.log(`[Backtest] Signals for ${strategy} on ${symbol}: buy=${sigCounts.buy}, sell=${sigCounts.sell}, hold=${sigCounts.hold}, dataPoints=${data.length}`);
+
         // Simulate trades
         const simulation = this.simulateTrades(data, signals, initialCapital);
 
