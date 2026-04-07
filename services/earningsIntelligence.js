@@ -8,6 +8,7 @@ const axios = require('axios');
 const opportunityEngine = require('./opportunityEngine');
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
+const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
 // ═══════════════════════════════════════════════════════════
 // SECTOR MAPPING — coarse, used for filters + summary
@@ -84,28 +85,104 @@ function estimateExpectedMove(symbol) {
 const earningsCache = new Map();
 const EARNINGS_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-async function fetchEarningsCalendar(fromDate, toDate) {
-    const key = `${fromDate}-${toDate}`;
-    const hit = earningsCache.get(key);
-    if (hit && Date.now() - hit.t < EARNINGS_TTL_MS) return hit.v;
+// Parse Alpha Vantage CSV response (their EARNINGS_CALENDAR endpoint
+// returns CSV, not JSON, even though every other endpoint is JSON)
+function parseAlphaVantageCsv(csv) {
+    if (!csv || typeof csv !== 'string' || csv.indexOf('\n') === -1) return [];
+    const lines = csv.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        if (cols.length < headers.length) continue;
+        const row = {};
+        headers.forEach((h, j) => { row[h] = (cols[j] || '').trim(); });
+        rows.push(row);
+    }
+    return rows;
+}
 
-    if (!FINNHUB_API_KEY) {
-        console.warn('[EarningsIntel] FINNHUB_API_KEY not configured');
+async function fetchFromAlphaVantage(fromDate, toDate) {
+    if (!ALPHA_VANTAGE_API_KEY) return [];
+    try {
+        // AV's EARNINGS_CALENDAR supports `horizon=3month` (default), `6month`, `12month`
+        const url = 'https://www.alphavantage.co/query';
+        const response = await axios.get(url, {
+            params: {
+                function: 'EARNINGS_CALENDAR',
+                horizon: '3month',
+                apikey: ALPHA_VANTAGE_API_KEY
+            },
+            timeout: 15000,
+            responseType: 'text'
+        });
+        const rows = parseAlphaVantageCsv(response.data);
+        // Map to the same shape as Finnhub
+        const fromTs = new Date(fromDate).getTime();
+        const toTs = new Date(toDate).getTime();
+        const earnings = rows
+            .filter(r => r.symbol && r.reportDate)
+            .filter(r => {
+                const ts = new Date(r.reportDate).getTime();
+                return !isNaN(ts) && ts >= fromTs && ts <= toTs;
+            })
+            .map(r => ({
+                symbol: r.symbol,
+                date: r.reportDate,
+                hour: '', // AV doesn't expose BMO/AMC
+                epsEstimate: r.estimate ? parseFloat(r.estimate) : null,
+                epsActual: null, // AV calendar is forward-only, no actuals
+                revenueEstimate: null,
+                revenueActual: null,
+                year: new Date(r.reportDate).getFullYear(),
+                quarter: Math.ceil((new Date(r.reportDate).getMonth() + 1) / 3),
+                fiscalDateEnding: r.fiscalDateEnding
+            }));
+        console.log(`[EarningsIntel] AlphaVantage returned ${earnings.length} earnings (from ${rows.length} total rows)`);
+        return earnings;
+    } catch (e) {
+        console.error('[EarningsIntel] AlphaVantage fetch failed:', e.message);
         return [];
     }
+}
 
+async function fetchFromFinnhub(fromDate, toDate) {
+    if (!FINNHUB_API_KEY) return [];
     try {
         const response = await axios.get('https://finnhub.io/api/v1/calendar/earnings', {
             params: { from: fromDate, to: toDate, token: FINNHUB_API_KEY },
             timeout: 12000
         });
         const earnings = response.data?.earningsCalendar || [];
-        earningsCache.set(key, { t: Date.now(), v: earnings });
+        console.log(`[EarningsIntel] Finnhub returned ${earnings.length} earnings`);
         return earnings;
     } catch (e) {
         console.error('[EarningsIntel] Finnhub fetch failed:', e.message);
         return [];
     }
+}
+
+async function fetchEarningsCalendar(fromDate, toDate) {
+    const key = `${fromDate}-${toDate}`;
+    const hit = earningsCache.get(key);
+    if (hit && Date.now() - hit.t < EARNINGS_TTL_MS) return hit.v;
+
+    // Try Alpha Vantage first (free tier supports earnings calendar)
+    let earnings = await fetchFromAlphaVantage(fromDate, toDate);
+
+    // Fallback to Finnhub if Alpha Vantage returned nothing
+    if (!earnings || earnings.length === 0) {
+        console.log('[EarningsIntel] AlphaVantage empty, trying Finnhub fallback');
+        earnings = await fetchFromFinnhub(fromDate, toDate);
+    }
+
+    if (!earnings || earnings.length === 0) {
+        console.warn(`[EarningsIntel] No earnings data from any source for ${fromDate} -> ${toDate}`);
+    }
+
+    earningsCache.set(key, { t: Date.now(), v: earnings || [] });
+    return earnings || [];
 }
 
 // ═══════════════════════════════════════════════════════════
