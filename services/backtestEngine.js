@@ -478,19 +478,41 @@ class BacktestEngine {
         const fastMA = this.calculateSMA(data.map(d => d.close), fastPeriod);
         const slowMA = this.calculateSMA(data.map(d => d.close), slowPeriod);
 
-        const signals = [];
+        const signals = [{ signal: 'hold', reason: 'Initial' }];
+        let initialized = false;
+
         for (let i = 1; i < data.length; i++) {
-            if (fastMA[i] === null || slowMA[i] === null || fastMA[i-1] === null || slowMA[i-1] === null) {
+            const f = fastMA[i], s = slowMA[i];
+            const fp = fastMA[i - 1], sp = slowMA[i - 1];
+
+            if (f === null || s === null) {
                 signals.push({ signal: 'hold', reason: 'Waiting for MA' });
-            } else if (fastMA[i-1] <= slowMA[i-1] && fastMA[i] > slowMA[i]) {
-                signals.push({ signal: 'buy', reason: `Fast MA crossed above Slow MA` });
-            } else if (fastMA[i-1] >= slowMA[i-1] && fastMA[i] < slowMA[i]) {
-                signals.push({ signal: 'sell', reason: `Fast MA crossed below Slow MA` });
+                continue;
+            }
+
+            // First bar where both MAs are valid — establish initial position
+            // (avoids missing the entry when fast is already above slow at warmup end)
+            if (!initialized) {
+                initialized = true;
+                if (f > s) {
+                    signals.push({ signal: 'buy', reason: 'Fast MA above Slow MA — initial entry' });
+                } else {
+                    signals.push({ signal: 'hold', reason: 'Fast MA below Slow MA at warmup' });
+                }
+                continue;
+            }
+
+            if (fp === null || sp === null) {
+                signals.push({ signal: 'hold', reason: 'Waiting for prior MA' });
+            } else if (fp <= sp && f > s) {
+                signals.push({ signal: 'buy', reason: 'Fast MA crossed above Slow MA' });
+            } else if (fp >= sp && f < s) {
+                signals.push({ signal: 'sell', reason: 'Fast MA crossed below Slow MA' });
             } else {
                 signals.push({ signal: 'hold', reason: 'No crossover' });
             }
         }
-        return [{ signal: 'hold', reason: 'Initial' }, ...signals];
+        return signals;
     }
 
     rsiReversalStrategy(data, indicators, params = {}) {
@@ -515,20 +537,40 @@ class BacktestEngine {
 
     macdCrossoverStrategy(data, indicators, params = {}) {
         const { line, signal } = indicators.macd;
-        const signals = [];
+        const signals = [{ signal: 'hold', reason: 'Initial' }];
+        let initialized = false;
 
         for (let i = 1; i < data.length; i++) {
-            if (line[i] === null || signal[i] === null || line[i-1] === null || signal[i-1] === null) {
+            const l = line[i], sg = signal[i];
+            const lp = line[i - 1], sgp = signal[i - 1];
+
+            if (l === null || sg === null) {
                 signals.push({ signal: 'hold', reason: 'Waiting for MACD' });
-            } else if (line[i-1] <= signal[i-1] && line[i] > signal[i]) {
+                continue;
+            }
+
+            // Initial-state entry
+            if (!initialized) {
+                initialized = true;
+                if (l > sg) {
+                    signals.push({ signal: 'buy', reason: 'MACD line above signal — initial entry' });
+                } else {
+                    signals.push({ signal: 'hold', reason: 'MACD below signal at warmup' });
+                }
+                continue;
+            }
+
+            if (lp === null || sgp === null) {
+                signals.push({ signal: 'hold', reason: 'Waiting for prior MACD' });
+            } else if (lp <= sgp && l > sg) {
                 signals.push({ signal: 'buy', reason: 'MACD bullish crossover' });
-            } else if (line[i-1] >= signal[i-1] && line[i] < signal[i]) {
+            } else if (lp >= sgp && l < sg) {
                 signals.push({ signal: 'sell', reason: 'MACD bearish crossover' });
             } else {
                 signals.push({ signal: 'hold', reason: 'No MACD crossover' });
             }
         }
-        return [{ signal: 'hold', reason: 'Initial' }, ...signals];
+        return signals;
     }
 
     bollingerBandsStrategy(data, indicators, params = {}) {
