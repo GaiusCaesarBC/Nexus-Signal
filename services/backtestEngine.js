@@ -84,22 +84,33 @@ class BacktestEngine {
     // Fetch crypto data with fallbacks
     async fetchCryptoData(symbol, startDate, endDate) {
         const cleanSymbol = symbol.replace('-USD', '').replace('USDT', '').replace('USD', '');
+        const isMajor = !!CRYPTO_ID_MAP[cleanSymbol.toUpperCase()];
 
-        const sources = [
-            () => this.fetchFromCoinGecko(cleanSymbol, startDate, endDate),
-            () => this.fetchFromGeckoTerminal(cleanSymbol, startDate, endDate),
-            () => this.fetchFromYahoo(`${cleanSymbol}-USD`, startDate, endDate)
-        ];
+        // For major coins (BTC, ETH, etc.) skip GeckoTerminal entirely.
+        // GeckoTerminal returns DEX pool data for "BTC" search results — wrapped
+        // BTC variants and DEX pair swap prices — which are NOT Bitcoin spot price
+        // and can produce garbage signals. CoinGecko + Yahoo are reliable for majors.
+        const sources = isMajor
+            ? [
+                { name: 'coingecko', fn: () => this.fetchFromCoinGecko(cleanSymbol, startDate, endDate) },
+                { name: 'yahoo',     fn: () => this.fetchFromYahoo(`${cleanSymbol}-USD`, startDate, endDate) }
+            ]
+            : [
+                { name: 'coingecko', fn: () => this.fetchFromCoinGecko(cleanSymbol, startDate, endDate) },
+                { name: 'yahoo',     fn: () => this.fetchFromYahoo(`${cleanSymbol}-USD`, startDate, endDate) },
+                { name: 'gecko-terminal', fn: () => this.fetchFromGeckoTerminal(cleanSymbol, startDate, endDate) }
+            ];
 
-        for (const fetchFn of sources) {
+        for (const { name, fn } of sources) {
             try {
-                const data = await fetchFn();
+                const data = await fn();
                 if (data && data.length >= 30) {
-                    console.log(`[Backtest] Got ${data.length} data points for ${symbol}`);
+                    console.log(`[Backtest] Got ${data.length} data points for ${symbol} from ${name}`);
                     return data;
                 }
+                console.log(`[Backtest] ${name} returned only ${data?.length || 0} points for ${symbol}, trying next source`);
             } catch (error) {
-                console.log('[Backtest] Source failed for %s:', symbol, error.message);
+                console.log(`[Backtest] ${name} failed for ${symbol}:`, error.message);
             }
         }
 
@@ -660,6 +671,14 @@ class BacktestEngine {
         if (data.length < 50) {
             throw new Error(`Insufficient data for backtesting (got ${data.length}, need at least 50 data points)`);
         }
+
+        // Sanity check: log the price range so we can spot garbage data sources
+        const closes = data.map(d => d.close).filter(c => typeof c === 'number' && !isNaN(c));
+        const firstClose = closes[0];
+        const lastClose = closes[closes.length - 1];
+        const minClose = Math.min(...closes);
+        const maxClose = Math.max(...closes);
+        console.log(`[Backtest] ${symbol} price range: first=$${firstClose?.toFixed(2)}, last=$${lastClose?.toFixed(2)}, min=$${minClose?.toFixed(2)}, max=$${maxClose?.toFixed(2)}, validCloses=${closes.length}/${data.length}`);
 
         // Calculate indicators
         const indicators = this.calculateIndicators(data, parameters);
