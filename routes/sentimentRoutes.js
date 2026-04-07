@@ -5,6 +5,24 @@ const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const stocktwitsService = require('../services/stocktwitsService');
 const sentimentTracker = require('../utils/sentimentTracker');
+const sentimentPulse = require('../services/sentimentPulse');
+
+// In-memory cache for pulse snapshots (60s TTL)
+const pulseCache = new Map();
+const PULSE_TTL_MS = 60 * 1000;
+function pulseGet(key) {
+    const hit = pulseCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.t > PULSE_TTL_MS) { pulseCache.delete(key); return null; }
+    return hit.v;
+}
+function pulseSet(key, value) {
+    if (pulseCache.size > 20) {
+        const first = pulseCache.keys().next().value;
+        pulseCache.delete(first);
+    }
+    pulseCache.set(key, { t: Date.now(), v: value });
+}
 const priceService = require('../services/priceService');
 const axios = require('axios');
 const { sanitizeSymbol } = require('../utils/symbolValidation');
@@ -331,6 +349,53 @@ router.get('/health', auth, async (req, res) => {
             success: false,
             error: 'Health check failed'
         });
+    }
+});
+
+// ─────────────────────────────────────────────────────────
+// SENTIMENT PULSE — full snapshot endpoint
+// ─────────────────────────────────────────────────────────
+
+// @route   GET /api/sentiment/pulse
+// @desc    Full Sentiment Pulse snapshot
+// @access  Private
+router.get('/pulse', auth, async (req, res) => {
+    try {
+        const assetType = req.query.asset === 'crypto' ? 'crypto' : 'stocks';
+        const timeframe = req.query.tf || '1h';
+        const filters = {
+            direction: req.query.direction || 'all',
+            spikesOnly: req.query.spikes === '1' || req.query.spikes === 'true',
+            hasLiveSignal: req.query.aligned === '1' || req.query.aligned === 'true'
+        };
+        const cacheKey = `pulse:${assetType}:${timeframe}:${JSON.stringify(filters)}`;
+        let snapshot = pulseGet(cacheKey);
+        if (!snapshot) {
+            snapshot = await sentimentPulse.getPulseSnapshot({ assetType, timeframe, filters });
+            pulseSet(cacheKey, snapshot);
+        }
+        res.json(snapshot);
+    } catch (err) {
+        console.error('[SentimentPulse] Snapshot error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load sentiment pulse' });
+    }
+});
+
+// @route   GET /api/sentiment/pulse/by-symbol/:symbol
+// @desc    Inline detail panel data for a specific symbol
+// @access  Private
+router.get('/pulse/by-symbol/:symbol', auth, async (req, res) => {
+    try {
+        const cacheKey = `pulseSym:${req.params.symbol.toUpperCase()}`;
+        let data = pulseGet(cacheKey);
+        if (!data) {
+            data = await sentimentPulse.getBySymbol(req.params.symbol);
+            if (data) pulseSet(cacheKey, data);
+        }
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[SentimentPulse] By symbol error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load symbol sentiment' });
     }
 });
 
