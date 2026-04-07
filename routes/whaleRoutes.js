@@ -6,6 +6,24 @@ const router = express.Router();
 const auth = require('../middleware/authMiddleware');
 const { requireSubscription } = require('../middleware/subscriptionMiddleware');
 const whaleService = require('../services/whaleService');
+const smartMoneyService = require('../services/smartMoneyService');
+
+// Smart Money snapshot cache (60s TTL)
+const smCache = new Map();
+const SM_TTL = 60 * 1000;
+function smGet(key) {
+    const hit = smCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.t > SM_TTL) { smCache.delete(key); return null; }
+    return hit.v;
+}
+function smSet(key, value) {
+    if (smCache.size > 20) {
+        const first = smCache.keys().next().value;
+        smCache.delete(first);
+    }
+    smCache.set(key, { t: Date.now(), v: value });
+}
 
 // @route   GET /api/whale/alerts
 // @desc    Get all whale/insider alerts (combined feed)
@@ -502,5 +520,51 @@ function getRecentHighlights(insider, crypto, options) {
     
     return highlights.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
+
+// ─────────────────────────────────────────────────────────
+// SMART MONEY — full snapshot endpoint
+// ─────────────────────────────────────────────────────────
+
+// @route   GET /api/whale/smart-money
+// @desc    Smart Money intelligence snapshot
+// @access  Private (Premium+)
+router.get('/smart-money', auth, requireSubscription('premium'), async (req, res) => {
+    try {
+        const filters = {
+            sourceType: req.query.type || 'all',
+            direction: req.query.direction || 'all',
+            minDollar: req.query.minDollar ? Number(req.query.minDollar) : null,
+            recency: req.query.recency || '24h'
+        };
+        const cacheKey = `sm:${JSON.stringify(filters)}`;
+        let snapshot = smGet(cacheKey);
+        if (!snapshot) {
+            snapshot = await smartMoneyService.getSmartMoneySnapshot({ filters });
+            smSet(cacheKey, snapshot);
+        }
+        res.json(snapshot);
+    } catch (err) {
+        console.error('[SmartMoney] Snapshot error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load smart money snapshot' });
+    }
+});
+
+// @route   GET /api/whale/smart-money/by-symbol/:symbol
+// @desc    Smart money detail for a specific symbol
+// @access  Private (Premium+)
+router.get('/smart-money/by-symbol/:symbol', auth, requireSubscription('premium'), async (req, res) => {
+    try {
+        const cacheKey = `smSym:${req.params.symbol.toUpperCase()}`;
+        let data = smGet(cacheKey);
+        if (!data) {
+            data = await smartMoneyService.getBySymbol(req.params.symbol);
+            if (data) smSet(cacheKey, data);
+        }
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[SmartMoney] By symbol error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load symbol smart money' });
+    }
+});
 
 module.exports = router;
