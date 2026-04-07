@@ -9,6 +9,176 @@ const { getChartData } = require('../services/chartService');
 // Temporary no-auth
 const auth = (req, res, next) => next();
 
+// Pattern Intelligence layer (ranking, stages, score, market insight)
+const patternIntelligence = require('../services/patternIntelligence');
+
+// Simple in-memory cache (90s TTL) — pattern scans are very expensive
+const intelCache = new Map();
+const INTEL_CACHE_TTL_MS = 90 * 1000;
+function intelGet(key) {
+    const hit = intelCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.t > INTEL_CACHE_TTL_MS) { intelCache.delete(key); return null; }
+    return hit.v;
+}
+function intelSet(key, value) {
+    if (intelCache.size > 30) {
+        const firstKey = intelCache.keys().next().value;
+        intelCache.delete(firstKey);
+    }
+    intelCache.set(key, { t: Date.now(), v: value });
+}
+
+function parseIntelFilters(req) {
+    const { asset, bias, confMin, stage, patternTypes, minScore, preset, sortDir } = req.query;
+    const filters = {
+        assetType: asset || 'all',
+        bias: bias || 'all',
+        confidenceMin: confMin ? Number(confMin) : null,
+        stages: stage ? String(stage).split(',').map(s => s.trim()).filter(Boolean) : [],
+        patternTypes: patternTypes ? String(patternTypes).split(',').map(s => s.trim()).filter(Boolean) : [],
+        minScore: minScore ? Number(minScore) : null,
+        sortDir: sortDir || 'desc'
+    };
+    if (preset) {
+        switch (preset) {
+            case 'confirmed': filters.stages = ['confirmed']; break;
+            case 'near_breakout': filters.stages = ['near_breakout']; break;
+            case 'forming': filters.stages = ['forming']; break;
+            case 'high_probability': filters.minScore = 80; break;
+            case 'bullish_reversal':
+                filters.bias = 'long';
+                filters.patternTypes = ['DOUBLE_BOTTOM', 'HEAD_SHOULDERS_INVERSE', 'FALLING_WEDGE', 'CUP_HANDLE'];
+                break;
+            case 'bearish_reversal':
+                filters.bias = 'short';
+                filters.patternTypes = ['DOUBLE_TOP', 'HEAD_SHOULDERS', 'RISING_WEDGE'];
+                break;
+            case 'continuation':
+                filters.patternTypes = ['BULL_FLAG', 'BEAR_FLAG', 'ASCENDING_TRIANGLE', 'DESCENDING_TRIANGLE'];
+                break;
+            case 'long': filters.bias = 'long'; break;
+            case 'short': filters.bias = 'short'; break;
+        }
+    }
+    return filters;
+}
+
+// ─────────────────────────────────────────────────────────
+// PATTERN INTELLIGENCE ENDPOINTS — must come before /:symbol
+// ─────────────────────────────────────────────────────────
+
+// @route   GET /api/patterns/intelligence
+// @desc    Ranked patterns across the active universe with filters
+router.get('/intelligence', async (req, res) => {
+    try {
+        const filters = parseIntelFilters(req);
+        const limit = Math.min(100, Number(req.query.limit) || 50);
+        const offset = Math.max(0, Number(req.query.offset) || 0);
+
+        const cacheKey = `intel:${JSON.stringify(filters)}`;
+        let results = intelGet(cacheKey);
+        if (!results) {
+            results = await patternIntelligence.rankPatterns(filters);
+            intelSet(cacheKey, results);
+        }
+
+        const sliced = results.slice(offset, offset + limit);
+        res.json({
+            success: true,
+            count: results.length,
+            returned: sliced.length,
+            offset,
+            limit,
+            patterns: sliced
+        });
+    } catch (err) {
+        console.error('[Pattern Intelligence] Rank error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to rank patterns' });
+    }
+});
+
+// @route   GET /api/patterns/intelligence/featured
+// @desc    Top N high-probability patterns for hero cards
+router.get('/intelligence/featured', async (req, res) => {
+    try {
+        const limit = Math.min(10, Number(req.query.limit) || 5);
+        const cacheKey = `featured:${limit}`;
+        let featured = intelGet(cacheKey);
+        if (!featured) {
+            featured = await patternIntelligence.getFeaturedPatterns(limit);
+            intelSet(cacheKey, featured);
+        }
+        res.json({ success: true, count: featured.length, patterns: featured });
+    } catch (err) {
+        console.error('[Pattern Intelligence] Featured error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch featured patterns' });
+    }
+});
+
+// @route   GET /api/patterns/intelligence/presets
+// @desc    Preset definitions + live counts for tabs
+router.get('/intelligence/presets', async (req, res) => {
+    try {
+        const cacheKey = 'pat:presets';
+        let counts = intelGet(cacheKey);
+        if (!counts) {
+            counts = await patternIntelligence.getPresetCounts();
+            intelSet(cacheKey, counts);
+        }
+        const presets = [
+            { id: 'all', label: 'All Patterns', count: counts.all },
+            { id: 'high_probability', label: 'High Probability', count: counts.high_probability },
+            { id: 'confirmed', label: 'Confirmed', count: counts.confirmed },
+            { id: 'near_breakout', label: 'Near Breakout', count: counts.near_breakout },
+            { id: 'bullish_reversal', label: 'Bullish Reversals', count: counts.bullish_reversal },
+            { id: 'bearish_reversal', label: 'Bearish Reversals', count: counts.bearish_reversal },
+            { id: 'continuation', label: 'Continuation', count: counts.continuation },
+            { id: 'forming', label: 'Forming', count: counts.forming },
+            { id: 'long', label: 'Long Bias', count: counts.long },
+            { id: 'short', label: 'Short Bias', count: counts.short }
+        ];
+        res.json({ success: true, presets, counts });
+    } catch (err) {
+        console.error('[Pattern Intelligence] Presets error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch presets' });
+    }
+});
+
+// @route   GET /api/patterns/intelligence/insight
+// @desc    AI Market Insight strip narrative
+router.get('/intelligence/insight', async (req, res) => {
+    try {
+        const cacheKey = 'pat:insight';
+        let insight = intelGet(cacheKey);
+        if (!insight) {
+            insight = await patternIntelligence.getMarketInsight();
+            intelSet(cacheKey, insight);
+        }
+        res.json({ success: true, ...insight });
+    } catch (err) {
+        console.error('[Pattern Intelligence] Insight error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch market insight' });
+    }
+});
+
+// @route   GET /api/patterns/intelligence/by-symbol/:symbol
+// @desc    All patterns on a specific ticker, ranked
+router.get('/intelligence/by-symbol/:symbol', async (req, res) => {
+    try {
+        const cacheKey = `bySym:${req.params.symbol.toUpperCase()}`;
+        let patterns = intelGet(cacheKey);
+        if (!patterns) {
+            patterns = await patternIntelligence.getPatternsBySymbol(req.params.symbol);
+            intelSet(cacheKey, patterns);
+        }
+        res.json({ success: true, count: patterns.length, patterns });
+    } catch (err) {
+        console.error('[Pattern Intelligence] By symbol error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch patterns by symbol' });
+    }
+});
+
 // Import pattern detection service
 let scanForPatterns, PATTERNS;
 try {
