@@ -4,9 +4,27 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
+const earningsIntelligence = require('../services/earningsIntelligence');
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
+
+// In-memory cache for /intelligence (60s)
+const intelCache = new Map();
+const INTEL_TTL_MS = 60 * 1000;
+function intelGet(key) {
+    const hit = intelCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.t > INTEL_TTL_MS) { intelCache.delete(key); return null; }
+    return hit.v;
+}
+function intelSet(key, value) {
+    if (intelCache.size > 20) {
+        const first = intelCache.keys().next().value;
+        intelCache.delete(first);
+    }
+    intelCache.set(key, { t: Date.now(), v: value });
+}
 
 // Cache for earnings data
 const earningsCache = {};
@@ -426,5 +444,35 @@ function calculateExpectedMove(earning) {
     }
     return null;
 }
+
+// ─────────────────────────────────────────────────────────
+// EARNINGS INTELLIGENCE — full snapshot endpoint
+// ─────────────────────────────────────────────────────────
+
+// @route   GET /api/earnings/intelligence
+// @desc    Earnings calendar enriched with trade impact, pre/post
+//          setup interpretation, week stats, volatility insight, etc.
+// @access  Private
+router.get('/intelligence', auth, async (req, res) => {
+    try {
+        const filters = {
+            sector: req.query.sector || 'all',
+            marketCap: req.query.marketCap || 'all',
+            minMove: req.query.minMove || null,
+            highImpactOnly: req.query.highImpactOnly === '1' || req.query.highImpactOnly === 'true',
+            hasLiveSetup: req.query.hasLiveSetup === '1' || req.query.hasLiveSetup === 'true'
+        };
+        const cacheKey = `intel:${JSON.stringify(filters)}`;
+        let snapshot = intelGet(cacheKey);
+        if (!snapshot) {
+            snapshot = await earningsIntelligence.getEarningsSnapshot({ filters });
+            intelSet(cacheKey, snapshot);
+        }
+        res.json(snapshot);
+    } catch (err) {
+        console.error('[Earnings Intelligence] Error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load earnings intelligence' });
+    }
+});
 
 module.exports = router;
