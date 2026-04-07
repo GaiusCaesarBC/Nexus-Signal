@@ -409,17 +409,19 @@ const fetchKrakenOHLC = async (symbol, interval) => {
 
 // Helper: Fetch price data from CoinGecko market_chart and synthesize OHLC
 const fetchCoinGeckoOHLC = async (symbol, interval) => {
+    // CoinGecko free /market_chart minimum granularity is ~5 minutes for days=1.
+    // Refuse 1m so the caller falls through to a source that provides true 1-minute data
+    // (Kraken, Gecko Terminal, or Binance).
+    if (interval === '1m' || interval === 'LIVE') {
+        throw new Error('CoinGecko cannot provide true 1-minute candles');
+    }
+
     const cgId = getCoinGeckoId(symbol);
 
     // Map interval to CoinGecko days parameter and candle size
     // /market_chart returns: 1 day = 5-minute data, 2-90 days = hourly, 90+ = daily
     let days, candleMinutes;
     switch(interval) {
-        case 'LIVE':
-        case '1m':
-            days = 1;        // Get 5-min data points
-            candleMinutes = 5; // Synthesize 5-min candles (finest available)
-            break;
         case '5m':
             days = 1;
             candleMinutes = 5;
@@ -850,12 +852,12 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 // Fallback to Binance
                 console.log(`[Chart] 🔄 Falling back to Binance for ${crypto}...`);
 
-                // Map interval to Binance format
+                // Map interval to Binance format (Binance supports real 1m and 5m)
                 let binanceInterval;
                 switch(interval) {
-                    case 'LIVE': binanceInterval = '1h'; break;
-                    case '1m': binanceInterval = '15m'; break;
-                    case '5m': binanceInterval = '15m'; break;
+                    case 'LIVE': binanceInterval = '1m'; break;
+                    case '1m': binanceInterval = '1m'; break;
+                    case '5m': binanceInterval = '5m'; break;
                     case '15m': binanceInterval = '15m'; break;
                     case '30m': binanceInterval = '30m'; break;
                     case '1h': binanceInterval = '1h'; break;
