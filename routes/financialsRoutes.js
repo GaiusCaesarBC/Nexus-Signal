@@ -404,4 +404,54 @@ function calculateFreeCashFlow(operatingCashflow, capex) {
     return ocf + (ce || 0);
 }
 
+// ─────────────────────────────────────────────────────────
+// FINANCIAL VERDICT — full snapshot endpoint
+// ─────────────────────────────────────────────────────────
+const financialVerdict = require('../services/financialVerdict');
+
+// 30-min snapshot cache (financials don't change minute-to-minute)
+const verdictCache = new Map();
+const VERDICT_TTL_MS = 30 * 60 * 1000;
+function verdictGet(key) {
+    const hit = verdictCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.t > VERDICT_TTL_MS) { verdictCache.delete(key); return null; }
+    return hit.v;
+}
+function verdictSet(key, value) {
+    if (verdictCache.size > 50) {
+        const first = verdictCache.keys().next().value;
+        verdictCache.delete(first);
+    }
+    verdictCache.set(key, { t: Date.now(), v: value });
+}
+
+// @route   GET /api/financials/verdict/:symbol
+// @desc    Full financial verdict snapshot — health score, valuation,
+//          BUY/HOLD/AVOID rating, key insights, risk flags, sector
+//          comparison, trade bridge
+// @access  Private
+router.get('/verdict/:symbol', auth, async (req, res) => {
+    try {
+        let symbol;
+        try {
+            symbol = sanitizeSymbol(req.params.symbol);
+        } catch (validationError) {
+            return res.status(400).json({ success: false, message: validationError.message });
+        }
+
+        const cacheKey = `verdict-${symbol}`;
+        let snapshot = verdictGet(cacheKey);
+        if (!snapshot) {
+            snapshot = await financialVerdict.getVerdictSnapshot(symbol);
+            if (snapshot.success) verdictSet(cacheKey, snapshot);
+        }
+
+        res.json(snapshot);
+    } catch (err) {
+        console.error('[Financial Verdict] Error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to load financial verdict' });
+    }
+});
+
 module.exports = router;
