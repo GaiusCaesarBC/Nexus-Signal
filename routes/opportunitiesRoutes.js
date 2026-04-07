@@ -180,4 +180,67 @@ router.get('/status', limiter, async (req, res) => {
     }
 });
 
+// @route   GET /api/opportunities/by-symbol/:symbol
+// @desc    Active opportunity for a specific symbol (or null)
+// @access  Public
+router.get('/by-symbol/:symbol', limiter, async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const cacheKey = `bySym:${symbol.toUpperCase()}`;
+        let opp = cacheGet(cacheKey);
+        if (opp === null || opp === undefined) {
+            opp = await opportunityEngine.getOpportunityBySymbol(symbol);
+            cacheSet(cacheKey, opp || false);
+        }
+        res.json({ success: true, opportunity: opp || null });
+    } catch (err) {
+        console.error('[Opportunities] By symbol error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch opportunity' });
+    }
+});
+
+// @route   GET /api/opportunities/related
+// @desc    Related opportunities to a given symbol
+// @access  Public
+router.get('/related', limiter, async (req, res) => {
+    try {
+        const { symbol } = req.query;
+        const limit = Math.min(8, Number(req.query.limit) || 4);
+        if (!symbol) return res.status(400).json({ success: false, error: 'symbol required' });
+
+        const cacheKey = `related:${String(symbol).toUpperCase()}:${limit}`;
+        let related = cacheGet(cacheKey);
+        if (!related) {
+            related = await opportunityEngine.getRelatedOpportunities(symbol, limit);
+            cacheSet(cacheKey, related);
+        }
+        res.json({ success: true, count: related.length, opportunities: related });
+    } catch (err) {
+        console.error('[Opportunities] Related error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch related opportunities' });
+    }
+});
+
+// @route   GET /api/opportunities/setup-stats
+// @desc    Historical performance for a setup type (win rate, avg return)
+// @access  Public
+router.get('/setup-stats', limiter, async (req, res) => {
+    try {
+        const setupType = req.query.setupType || req.query.type;
+        const days = Math.min(365, Number(req.query.days) || 90);
+        if (!setupType) return res.status(400).json({ success: false, error: 'setupType required' });
+
+        const cacheKey = `stats:${setupType}:${days}`;
+        let stats = cacheGet(cacheKey);
+        if (!stats) {
+            stats = await opportunityEngine.getSetupStats(setupType, days);
+            cacheSet(cacheKey, stats);
+        }
+        res.json({ success: true, ...stats });
+    } catch (err) {
+        console.error('[Opportunities] Setup stats error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch setup stats' });
+    }
+});
+
 module.exports = router;

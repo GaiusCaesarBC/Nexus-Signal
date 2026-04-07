@@ -331,6 +331,49 @@ async function getFeaturedOpportunities(limit = 5) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// BY SYMBOL — fetch active opportunity for a specific ticker
+// Returns null if no active setup detected
+// ═══════════════════════════════════════════════════════════
+async function getOpportunityBySymbol(symbol) {
+    if (!symbol) return null;
+    const sym = String(symbol).toUpperCase();
+    const all = await getOpportunities({});
+    return all.find(o => o.symbol === sym || o.fullSymbol?.toUpperCase() === sym) || null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// RELATED — opportunities similar to a source symbol
+// Same setup type, similar AI Score band, exclude self
+// ═══════════════════════════════════════════════════════════
+async function getRelatedOpportunities(symbol, limit = 4) {
+    const source = await getOpportunityBySymbol(symbol);
+    const all = await getOpportunities({});
+    if (!source) {
+        // No source — return top opportunities
+        return all.filter(o => o.symbol !== String(symbol).toUpperCase()).slice(0, limit);
+    }
+
+    const symUpper = String(symbol).toUpperCase();
+    // Score each candidate by similarity
+    const scored = all
+        .filter(o => o.symbol !== symUpper)
+        .map(o => {
+            let sim = 0;
+            if (o.setupType === source.setupType) sim += 50;
+            if (o.bias === source.bias) sim += 20;
+            if (o.assetType === source.assetType) sim += 15;
+            sim += Math.max(0, 15 - Math.abs(o.aiScore - source.aiScore));
+            return { ...o, _similarity: sim };
+        })
+        .sort((a, b) => b._similarity - a._similarity);
+
+    return scored.slice(0, limit).map(o => {
+        const { _similarity, ...rest } = o;
+        return rest;
+    });
+}
+
+// ═══════════════════════════════════════════════════════════
 // PRESET COUNTS — for tab badges
 // ═══════════════════════════════════════════════════════════
 async function getPresetCounts() {
@@ -380,11 +423,63 @@ async function getEngineStatus() {
     };
 }
 
+// ═══════════════════════════════════════════════════════════
+// SETUP STATS — historical performance grouped by setup type
+// Powers the "Track Record" trust strip on the asset detail page
+// ═══════════════════════════════════════════════════════════
+async function getSetupStats(setupType, days = 90) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const closed = await Prediction.find({
+        status: { $in: ['correct', 'incorrect'] },
+        createdAt: { $gte: since }
+    }).lean();
+
+    // Classify each closed prediction and filter by setupType
+    const matching = closed.filter(p => {
+        try {
+            return classifySetup(p) === setupType;
+        } catch {
+            return false;
+        }
+    });
+
+    if (matching.length === 0) {
+        return { setupType, count: 0, winRate: null, avgReturn: null, days };
+    }
+
+    let wins = 0;
+    let totalReturnPct = 0;
+    matching.forEach(p => {
+        const long = p.direction === 'UP';
+        const entry = p.entryPrice || p.currentPrice;
+        const exit = p.resultPrice || p.outcome?.actualPrice || entry;
+        const isWin = p.status === 'correct' || p.result === 'win';
+        if (isWin) wins++;
+        if (entry && exit) {
+            const rawPct = ((exit - entry) / entry) * 100;
+            totalReturnPct += long ? rawPct : -rawPct;
+        }
+    });
+
+    return {
+        setupType,
+        count: matching.length,
+        winRate: Math.round((wins / matching.length) * 100),
+        avgReturn: Math.round((totalReturnPct / matching.length) * 10) / 10,
+        days
+    };
+}
+
 module.exports = {
     getOpportunities,
     getFeaturedOpportunities,
+    getOpportunityBySymbol,
+    getRelatedOpportunities,
     getPresetCounts,
     getEngineStatus,
+    getSetupStats,
     classifySetup,
     computeAiScore,
     SETUP_TYPES,
