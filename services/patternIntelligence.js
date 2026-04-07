@@ -329,6 +329,34 @@ async function getPresetCounts() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PRESET RELIABILITIES — historical reliability per preset
+// Pulled from PATTERNS reliability scores (literature-derived)
+// ═══════════════════════════════════════════════════════════
+const PRESET_PATTERN_MAP = {
+    bullish_reversal: ['DOUBLE_BOTTOM', 'HEAD_SHOULDERS_INVERSE', 'FALLING_WEDGE', 'CUP_HANDLE', 'TRIPLE_BOTTOM', 'ROUNDING_BOTTOM', 'BROADENING_BOTTOM'],
+    bearish_reversal: ['DOUBLE_TOP', 'HEAD_SHOULDERS', 'RISING_WEDGE', 'TRIPLE_TOP', 'ROUNDING_TOP', 'BROADENING_TOP'],
+    continuation: ['BULL_FLAG', 'BEAR_FLAG', 'ASCENDING_TRIANGLE', 'DESCENDING_TRIANGLE', 'BULL_PENNANT', 'BEAR_PENNANT'],
+    high_probability: ['HEAD_SHOULDERS', 'HEAD_SHOULDERS_INVERSE', 'TRIPLE_BOTTOM', 'TRIPLE_TOP', 'CUP_HANDLE', 'DOUBLE_BOTTOM', 'DOUBLE_TOP']
+};
+
+function getPresetReliabilities() {
+    if (!PATTERNS) return {};
+    const out = {};
+    for (const [presetId, patternKeys] of Object.entries(PRESET_PATTERN_MAP)) {
+        const reliabilities = patternKeys
+            .map(k => PATTERNS[k]?.reliability)
+            .filter(r => typeof r === 'number');
+        if (reliabilities.length === 0) {
+            out[presetId] = null;
+            continue;
+        }
+        const avg = reliabilities.reduce((a, b) => a + b, 0) / reliabilities.length;
+        out[presetId] = Math.round(avg * 100);
+    }
+    return out;
+}
+
+// ═══════════════════════════════════════════════════════════
 // MARKET INSIGHT — narrative strip
 // ═══════════════════════════════════════════════════════════
 async function getMarketInsight() {
@@ -383,6 +411,7 @@ module.exports = {
     getPresetCounts,
     getMarketInsight,
     getPatternsBySymbol,
+    getPresetReliabilities,
     detectStage,
     computePatternScore,
     STAGE

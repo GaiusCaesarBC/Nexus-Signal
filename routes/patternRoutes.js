@@ -126,19 +126,20 @@ router.get('/intelligence/presets', async (req, res) => {
             counts = await patternIntelligence.getPresetCounts();
             intelSet(cacheKey, counts);
         }
+        const reliabilities = patternIntelligence.getPresetReliabilities() || {};
         const presets = [
             { id: 'all', label: 'All Patterns', count: counts.all },
-            { id: 'high_probability', label: 'High Probability', count: counts.high_probability },
+            { id: 'high_probability', label: 'High Probability', count: counts.high_probability, reliability: reliabilities.high_probability },
             { id: 'confirmed', label: 'Confirmed', count: counts.confirmed },
             { id: 'near_breakout', label: 'Near Breakout', count: counts.near_breakout },
-            { id: 'bullish_reversal', label: 'Bullish Reversals', count: counts.bullish_reversal },
-            { id: 'bearish_reversal', label: 'Bearish Reversals', count: counts.bearish_reversal },
-            { id: 'continuation', label: 'Continuation', count: counts.continuation },
+            { id: 'bullish_reversal', label: 'Bullish Reversals', count: counts.bullish_reversal, reliability: reliabilities.bullish_reversal },
+            { id: 'bearish_reversal', label: 'Bearish Reversals', count: counts.bearish_reversal, reliability: reliabilities.bearish_reversal },
+            { id: 'continuation', label: 'Continuation', count: counts.continuation, reliability: reliabilities.continuation },
             { id: 'forming', label: 'Forming', count: counts.forming },
             { id: 'long', label: 'Long Bias', count: counts.long },
             { id: 'short', label: 'Short Bias', count: counts.short }
         ];
-        res.json({ success: true, presets, counts });
+        res.json({ success: true, presets, counts, reliabilities });
     } catch (err) {
         console.error('[Pattern Intelligence] Presets error:', err.message);
         res.status(500).json({ success: false, error: 'Failed to fetch presets' });
