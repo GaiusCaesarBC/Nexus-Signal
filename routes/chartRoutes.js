@@ -339,6 +339,48 @@ const KRAKEN_SYMBOL_MAP = {
     'MATIC': 'MATICUSD'
 };
 
+// Helper: Fetch intraday OHLC from CryptoCompare histominute (works in US,
+// has every major coin including BNB, gives true 1-minute candles).
+// Supports aggregation for 1m / 5m / 15m / 30m timeframes.
+const fetchCryptoCompareIntraday = async (symbol, interval) => {
+    let aggregate = 1;
+    let limit = 1500;
+    switch (interval) {
+        case 'LIVE':
+        case '1m': aggregate = 1; limit = 1500; break;
+        case '5m': aggregate = 5; limit = 1500; break;
+        case '15m': aggregate = 15; limit = 1500; break;
+        case '30m': aggregate = 30; limit = 1500; break;
+        case '1h': aggregate = 60; limit = 1500; break;
+        case '4h': aggregate = 240; limit = 720; break;
+        default: throw new Error(`CryptoCompare histominute does not handle interval ${interval}`);
+    }
+    const url = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${encodeURIComponent(symbol)}&tsym=USD&limit=${limit}&aggregate=${aggregate}`;
+    console.log(`[Chart] 💿 CryptoCompare histominute: ${url}`);
+    const response = await axios.get(url, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000
+    });
+    const bars = response?.data?.Data?.Data;
+    if (!Array.isArray(bars) || bars.length === 0) {
+        throw new Error(`No CryptoCompare data for ${symbol}`);
+    }
+    const chartData = bars
+        .filter(b => b && b.close > 0 && b.open > 0)
+        .map(b => ({
+            time: b.time,
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+            volume: b.volumeto || 0
+        }))
+        .sort((a, b) => a.time - b.time);
+    if (chartData.length === 0) throw new Error(`CryptoCompare returned no valid candles for ${symbol}`);
+    console.log(`[Chart] 💿 CryptoCompare returned ${chartData.length} candles for ${symbol} (${interval})`);
+    return chartData;
+};
+
 // Helper: Fetch OHLC from Kraken (good for XRP and others not on Binance US)
 const fetchKrakenOHLC = async (symbol, interval) => {
     const krakenSymbol = KRAKEN_SYMBOL_MAP[symbol.toUpperCase()];
@@ -775,7 +817,29 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     }
                 }
 
-                // Try Kraken first for supported cryptos (real OHLC data, works in US)
+                // Try CryptoCompare histominute FIRST for known centralized cryptos.
+                // It has BNB and most majors, returns true minute-granularity OHLC, and
+                // is not geo-blocked from US datacenters (unlike Binance Global).
+                if (KNOWN_CRYPTOS.includes(crypto.toUpperCase())) {
+                    try {
+                        const chartData = await fetchCryptoCompareIntraday(crypto, interval);
+                        if (chartData && chartData.length > 0) {
+                            chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+                            console.log(`[Chart] ✅ CryptoCompare histominute succeeded: ${chartData.length} candles for ${crypto}`);
+                            return res.json({
+                                success: true,
+                                data: chartData,
+                                symbol: `${crypto}-USD`,
+                                interval,
+                                source: 'cryptocompare-histominute'
+                            });
+                        }
+                    } catch (ccErr) {
+                        console.log(`[Chart] ⚠️ CryptoCompare histominute failed for ${crypto}: ${ccErr.message}`);
+                    }
+                }
+
+                // Try Kraken next for supported cryptos (real OHLC data, works in US)
                 if (KRAKEN_SYMBOL_MAP[crypto]) {
                     try {
                         console.log(`[Chart] 🦑 Trying Kraken for ${crypto}...`);
