@@ -545,13 +545,41 @@ async function updateUserStats(userId) {
 router.get('/account', auth, async (req, res) => {
     try {
         let account = await PaperTradingAccount.findOne({ user: req.user.id });
-        
+
         if (!account) {
             account = new PaperTradingAccount({ user: req.user.id });
             await account.save();
         }
-        
-        calculatePortfolioStats(account);
+
+        // Auto-refresh prices if positions exist and haven't been updated in 1 minute
+        if (account.positions && account.positions.length > 0) {
+            const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+            const needsRefresh = !account.lastUpdated || account.lastUpdated < oneMinuteAgo;
+
+            if (needsRefresh) {
+                const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
+                const batchPrices = await priceService.getBatchPrices(allSymbols);
+
+                for (const position of account.positions) {
+                    const symbolKey = position.symbol.toUpperCase();
+                    const price = batchPrices.get(symbolKey);
+
+                    if (price && price > 0) {
+                        position.currentPrice = safeNumber(price, position.currentPrice);
+                        position.lastUpdated = new Date();
+                    }
+                }
+
+                account.lastUpdated = new Date();
+                calculatePortfolioStats(account);
+                await account.save();
+            } else {
+                calculatePortfolioStats(account);
+            }
+        } else {
+            calculatePortfolioStats(account);
+        }
+
         res.json({ success: true, account });
     } catch (error) {
         console.error('[Paper Trading] Get account error:', error);
