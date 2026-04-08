@@ -1121,7 +1121,32 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 }
             }
 
-            // Try Kraken first for supported cryptos (real OHLC data, works in US)
+            // For known centralized cryptos, try CryptoCompare histoday FIRST.
+            // This is the most reliable source for BNB and other majors and avoids
+            // CoinGecko rate-limit fall-throughs that end up at Gecko Terminal returning
+            // wrong-token DEX pools.
+            const isKnownCentralizedDaily = KNOWN_CRYPTOS.includes(crypto.toUpperCase());
+            if (isKnownCentralizedDaily) {
+                try {
+                    const ccLimit = interval === '1M' ? 30 : interval === '1W' ? 364 : 365;
+                    const ccUrl = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${encodeURIComponent(crypto)}&tsym=USD&limit=${ccLimit}`;
+                    console.log(`[Chart] 💿 CryptoCompare histoday (priority): ${ccUrl}`);
+                    const ccRes = await axios.get(ccUrl, { timeout: 8000 });
+                    const bars = ccRes?.data?.Data?.Data || [];
+                    if (bars.length > 10) {
+                        const ccChart = bars
+                            .filter(b => b.close > 0 && b.open > 0)
+                            .map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volumeto || 0 }));
+                        chartDataCache.set(cacheKey, { data: ccChart, timestamp: Date.now() });
+                        console.log(`[Chart] ✅ CryptoCompare histoday: ${ccChart.length} candles for ${crypto}`);
+                        return res.json({ success: true, data: ccChart, symbol: `${crypto}-USD`, interval, source: 'cryptocompare-priority' });
+                    }
+                } catch (ccPriErr) {
+                    console.log(`[Chart] ⚠️ CryptoCompare histoday priority failed: ${ccPriErr.message}`);
+                }
+            }
+
+            // Try Kraken next for supported cryptos (real OHLC data, works in US)
             if (KRAKEN_SYMBOL_MAP[crypto]) {
                 try {
                     console.log(`[Chart] 🦑 Trying Kraken for ${crypto} (${interval})...`);
@@ -1171,28 +1196,32 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 console.log(`[Chart] ⚠️ CoinGecko failed for daily: ${cgError.message}, trying Gecko Terminal...`);
             }
 
-            // Try Gecko Terminal for daily data (especially for DEX tokens)
-            try {
-                console.log(`[Chart] 🦎 Trying Gecko Terminal for ${crypto} (${interval})${network ? ` on ${network}` : ''}...`);
-                const chartData = await fetchGeckoTerminalOHLC(crypto, interval, network);
+            // Try Gecko Terminal for daily data (DEX tokens only — known centralized
+            // cryptos must NEVER hit GT search because it returns wrong-token pools
+            // when tickers collide with wrapped/scam variants).
+            if (!isKnownCentralizedDaily) {
+                try {
+                    console.log(`[Chart] 🦎 Trying Gecko Terminal for ${crypto} (${interval})${network ? ` on ${network}` : ''}...`);
+                    const chartData = await fetchGeckoTerminalOHLC(crypto, interval, network);
 
-                chartDataCache.set(cacheKey, {
-                    data: chartData,
-                    timestamp: Date.now()
-                });
+                    chartDataCache.set(cacheKey, {
+                        data: chartData,
+                        timestamp: Date.now()
+                    });
 
-                console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto} (${interval})`);
+                    console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto} (${interval})`);
 
-                return res.json({
-                    success: true,
-                    data: chartData,
-                    symbol: `${crypto}-USD`,
-                    interval,
-                    source: 'geckoterminal',
-                    network: network || undefined
-                });
-            } catch (gtError) {
-                console.log(`[Chart] ⚠️ Gecko Terminal failed for daily: ${gtError.message}, trying Alpha Vantage...`);
+                    return res.json({
+                        success: true,
+                        data: chartData,
+                        symbol: `${crypto}-USD`,
+                        interval,
+                        source: 'geckoterminal',
+                        network: network || undefined
+                    });
+                } catch (gtError) {
+                    console.log(`[Chart] ⚠️ Gecko Terminal failed for daily: ${gtError.message}, trying Alpha Vantage...`);
+                }
             }
 
             // Fallback to Alpha Vantage for daily/weekly/monthly
