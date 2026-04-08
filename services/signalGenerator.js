@@ -15,7 +15,15 @@ const ML_API_KEY = process.env.ML_API_KEY;
 const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
-const MIN_CONFIDENCE = 55; // Lowered from 65 — ML models pre-retraining are conservative
+// ─── Quality gates ────────────────────────────────────────
+// Tightened after a losing streak dropped win rate from 54% → 48%.
+// Each gate independently rejects garbage signals before they get published.
+const MIN_CONFIDENCE = 70;          // Raised from 55. Below this, the signal is ~coin-flip.
+const MIN_PCT_MAGNITUDE = 2.5;      // Predicted move must be >= 2.5%; below this is noise.
+const NOTIFY_CONFIDENCE = 78;       // Only blast Telegram/Discord/X above this threshold.
+const COOLDOWN_LOSS_STREAK = 3;     // After this many losses in a row on a symbol, cool it off.
+const COOLDOWN_WINDOW_DAYS = 7;     // Loss streak is measured over this window.
+const COOLDOWN_DURATION_HOURS = 48; // How long to skip the symbol after triggering cooldown.
 
 let isRunning = false;
 let lastRun = null;
@@ -96,6 +104,24 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         });
         if (recentExisting) return { status: 'skipped', reason: 'recent signal exists' };
 
+        // ── COOLDOWN: skip symbols on a losing streak ─────────
+        // If the last N closed signals on this symbol were all losses within
+        // the cooldown window, and the most recent loss was inside the cooldown
+        // duration, skip this symbol entirely. Prevents doubling down.
+        const cooldownWindowAgo = new Date(Date.now() - COOLDOWN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+        const recentClosed = await Prediction.find({
+            symbol, user: null,
+            result: { $in: ['win', 'loss'] },
+            resultAt: { $gt: cooldownWindowAgo }
+        }).sort({ resultAt: -1 }).limit(COOLDOWN_LOSS_STREAK);
+        if (recentClosed.length >= COOLDOWN_LOSS_STREAK && recentClosed.every(r => r.result === 'loss')) {
+            const lastLossAt = recentClosed[0].resultAt;
+            const cooldownExpires = new Date(lastLossAt.getTime() + COOLDOWN_DURATION_HOURS * 60 * 60 * 1000);
+            if (Date.now() < cooldownExpires.getTime()) {
+                return { status: 'skipped', reason: `cooldown (${COOLDOWN_LOSS_STREAK} losses in a row)` };
+            }
+        }
+
         // Get price
         const price = assetType === 'crypto'
             ? await getCryptoPrice(symbol, prefetchedPrice)
@@ -114,21 +140,33 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             const mlConf = p.confidence || 0;
             const pctChange = p.price_change_percent || 0;
 
-            // Resolve direction: NEUTRAL uses predicted price change direction
-            if (p.direction && p.direction !== 'NEUTRAL') {
-                direction = p.direction;
-            } else {
-                direction = pctChange >= 0 ? 'UP' : 'DOWN';
+            // ── GATE: NEUTRAL means the model is unsure → skip ──
+            // The previous code juiced NEUTRAL signals with +10 confidence which
+            // was a major source of bad signals. If the model says it doesn't
+            // know, we don't publish.
+            if (!p.direction || p.direction === 'NEUTRAL') {
+                return { status: 'skipped', reason: 'ml direction NEUTRAL' };
             }
 
+            direction = p.direction;
             targetPrice = p.target_price || p.targetPrice;
             confidence = mlConf;
 
-            // If ML returned NEUTRAL but has meaningful price change, boost confidence
-            // (the model is uncertain about direction but the magnitude suggests a move)
-            if (p.direction === 'NEUTRAL' && Math.abs(pctChange) > 1.5 && mlConf >= 45) {
-                confidence = Math.min(mlConf + 10, 70);
-                console.log(`[SignalGen] Boosted ${symbol}: NEUTRAL ${mlConf}% → ${confidence}% (pctChange=${pctChange.toFixed(1)}%)`);
+            // ── GATE: target must agree with direction ──
+            // If ML says UP but the target price is below current (or DOWN with
+            // target above), the model is contradicting itself — skip.
+            if (direction === 'UP' && targetPrice <= price) {
+                return { status: 'skipped', reason: 'direction/target contradiction' };
+            }
+            if (direction === 'DOWN' && targetPrice >= price) {
+                return { status: 'skipped', reason: 'direction/target contradiction' };
+            }
+
+            // ── GATE: predicted move must be meaningful ──
+            // A 0.3% predicted move with a 5% stop is just trading noise. Require
+            // the model to forecast at least MIN_PCT_MAGNITUDE% movement.
+            if (Math.abs(pctChange) < MIN_PCT_MAGNITUDE) {
+                return { status: 'skipped', reason: `low magnitude (${pctChange.toFixed(1)}%)` };
             }
 
             indicators = ml.indicators || ml.technical_analysis || generateIndicators(price, direction);
@@ -142,7 +180,7 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
         // Cap confidence at 95% — never show 100% (damages credibility)
         confidence = Math.min(95, confidence);
 
-        if (confidence < MIN_CONFIDENCE) return { status: 'skipped', reason: 'low confidence' };
+        if (confidence < MIN_CONFIDENCE) return { status: 'skipped', reason: `low confidence (${confidence}%)` };
 
         const priceChange = targetPrice - price;
         const priceChangePercent = (priceChange / price) * 100;
@@ -209,7 +247,7 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             livePriceUpdatedAt: new Date(),
             direction,
             signalStrength,
-            isActionable: confidence >= 60,
+            isActionable: confidence >= MIN_CONFIDENCE, // every published signal is actionable now
             priceChange,
             priceChangePercent,
             confidence,
@@ -229,8 +267,9 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 
         console.log(`[SignalGen] ✅ ${symbol} (${assetType}) — ${direction} ${confidence}% → $${targetPrice >= 1 ? targetPrice.toFixed(2) : targetPrice.toFixed(6)}`);
 
-        // Distribute high-confidence signals: Notifications + Telegram + X
-        if (confidence >= 65) {
+        // Distribute only the highest-conviction signals to external channels.
+        // Lower-conviction signals still appear in the app but don't blast users.
+        if (confidence >= NOTIFY_CONFIDENCE) {
             try { await NotificationService.createSignalNotification({ symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Notification error: ${e.message}`); }
             try { await postSignalTeaser({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] Telegram error: ${e.message}`); }
             try { await postSignalToX({ _id: symbol, symbol, direction, confidence }); } catch (e) { console.error(`[SignalGen] X post error: ${e.message}`); }
@@ -292,7 +331,13 @@ async function runCycle() {
 function startSignalGenerator() {
     console.log(`[SignalGen] Starting automated signal generator`);
     console.log(`[SignalGen] Mode: Smart discovery pipeline (liquidity → movement → scoring)`);
-    console.log(`[SignalGen] Min confidence: ${MIN_CONFIDENCE}%`);
+    console.log(`[SignalGen] Quality gates:`);
+    console.log(`[SignalGen]   • min confidence:        ${MIN_CONFIDENCE}%`);
+    console.log(`[SignalGen]   • min predicted move:    ${MIN_PCT_MAGNITUDE}%`);
+    console.log(`[SignalGen]   • notify threshold:      ${NOTIFY_CONFIDENCE}%`);
+    console.log(`[SignalGen]   • cooldown loss streak:  ${COOLDOWN_LOSS_STREAK} losses → ${COOLDOWN_DURATION_HOURS}h skip`);
+    console.log(`[SignalGen]   • NEUTRAL ML predictions: rejected`);
+    console.log(`[SignalGen]   • direction/target check: enforced`);
 
     // Every hour at :30
     cron.schedule('30 * * * *', () => runCycle());
