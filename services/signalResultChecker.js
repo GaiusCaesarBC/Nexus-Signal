@@ -117,14 +117,9 @@ function checkResult(signal, livePrice) {
 
     if (!entryPrice || !stopLoss || !livePrice) return null;
 
-    // ═══════════════════════════════════════════════════════════
-    // PRICE SANITY CHECK - Reject obviously bad price data
-    // If price moved more than 50% from entry, it's likely bad data
-    // (wrong token, API error, etc.) - skip this check cycle
-    // ═══════════════════════════════════════════════════════════
-    const priceChange = Math.abs(livePrice - entryPrice) / entryPrice;
-    if (priceChange > 0.50) {
-        console.log(`[SignalChecker] ⚠ ${signal.symbol}: Price ${livePrice} is ${(priceChange * 100).toFixed(0)}% from entry ${entryPrice} - skipping (likely bad data)`);
+    // Only reject obviously invalid prices (zero, negative, or impossibly small)
+    if (livePrice <= 0 || livePrice < entryPrice * 0.001) {
+        console.log(`[SignalChecker] ⚠ ${signal.symbol}: Invalid price ${livePrice}, skipping`);
         return null;
     }
 
