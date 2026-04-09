@@ -65,6 +65,9 @@ router.get('/overview', auth, async (req, res) => {
         const positiveDay = sectors.filter(s => s.performance.day > 0).length;
         const positiveWeek = sectors.filter(s => s.performance.week > 0).length;
 
+        // NEW: derived sector intelligence (scores, top/weak sectors, trade ideas)
+        const sectorIntelligence = computeSectorIntelligence(sectorsWithRelativeStrength);
+
         const result = {
             success: true,
             sectors: sectorsWithRelativeStrength,
@@ -85,6 +88,8 @@ router.get('/overview', auth, async (req, res) => {
                 sentiment: positiveWeek >= 7 ? 'bullish' : positiveWeek <= 4 ? 'bearish' : 'neutral'
             },
             rotationPhase: determineRotationPhase(sectorsWithRelativeStrength),
+            // NEW: intelligence layer (additive)
+            sectorIntelligence,
             lastUpdated: new Date().toISOString()
         };
 
@@ -523,5 +528,118 @@ function interpretMoneyFlow(inflows, outflows) {
 
     return `Current rotation: Inflows to ${topInflow}, outflows from ${topOutflow}.`;
 }
+
+// ─────────────────────────────────────────────────────────────────
+// NEW CODE START — Sector intelligence bridge
+//
+// computeSectorIntelligence() takes the sectors array (already enriched
+// with relativeStrength) and returns:
+//   {
+//     sectorScores: [{ sector, score, momentum, strength }],
+//     topSectors:   [string],
+//     weakSectors:  [string],
+//     tradeIdeas:   [string]
+//   }
+//
+// Pure rule-based — no AI, no I/O, no external fetches. Reuses data the
+// /overview handler already computed (performance, relativeStrength,
+// moneyFlow). Safe on empty input.
+// ─────────────────────────────────────────────────────────────────
+
+function computeSectorIntelligence(sectors) {
+    if (!Array.isArray(sectors) || sectors.length === 0) {
+        return {
+            sectorScores: [],
+            topSectors: [],
+            weakSectors: [],
+            tradeIdeas: []
+        };
+    }
+
+    // ─── Per-sector scoring ───
+    // Score blends week return + relative strength vs SPY + month return,
+    // weighted 50/30/20. Mapped to 0-100 on a [-6, +6] domain for week,
+    // [-4, +4] for RS, [-10, +10] for month.
+    const clamp01 = (n) => Math.max(0, Math.min(1, n));
+    const toScore = (val, lo, hi) => Math.round(clamp01((val - lo) / (hi - lo)) * 100);
+
+    const sectorScores = sectors.map((s) => {
+        const week = Number(s.performance && s.performance.week) || 0;
+        const month = Number(s.performance && s.performance.month) || 0;
+        const day = Number(s.performance && s.performance.day) || 0;
+        const rsWeek = Number(s.relativeStrength && s.relativeStrength.week) || 0;
+
+        const weekScore = toScore(week, -6, 6);
+        const rsScore = toScore(rsWeek, -4, 4);
+        const monthScore = toScore(month, -10, 10);
+
+        const score = Math.round(weekScore * 0.5 + rsScore * 0.3 + monthScore * 0.2);
+
+        // Momentum (acceleration): compares short window (day) to weekly
+        // average daily return. Positive = accelerating.
+        const weeklyDailyAvg = week / 5;
+        const momentum = parseFloat((day - weeklyDailyAvg).toFixed(2));
+
+        let strength;
+        if (score >= 65) strength = 'STRONG';
+        else if (score >= 40) strength = 'NEUTRAL';
+        else strength = 'WEAK';
+
+        return {
+            sector: s.name,
+            score,
+            momentum,
+            strength
+        };
+    });
+
+    // Sort by score descending so top/weak slices are stable
+    const ranked = [...sectorScores].sort((a, b) => b.score - a.score);
+
+    // ─── Top sectors / weak sectors ───
+    const topSectors = ranked.slice(0, 3).map((s) => s.sector);
+    const weakSectors = ranked.slice(-2).reverse().map((s) => s.sector);
+
+    // ─── Trade ideas (string array per the API spec) ───
+    // Templated, anchored on the actual top/weak sectors.
+    const tradeIdeas = [];
+    const top = ranked.slice(0, 3);
+    const bottom = ranked.slice(-2).reverse();
+
+    for (const s of top) {
+        if (s.strength === 'STRONG') {
+            tradeIdeas.push(`Long ${s.sector} — strength score ${s.score}/100, ${s.momentum >= 0 ? 'accelerating' : 'cooling'}`);
+        } else if (s.strength === 'NEUTRAL') {
+            tradeIdeas.push(`Watch ${s.sector} for continuation — score ${s.score}/100`);
+        }
+    }
+    for (const s of bottom) {
+        if (s.strength === 'WEAK') {
+            tradeIdeas.push(`Short ${s.sector} — weakest sector at ${s.score}/100`);
+        }
+    }
+
+    // Risk-on / risk-off helper idea anchored on growth vs defensive averages
+    const GROWTH_NAMES = ['Technology', 'Consumer Discretionary', 'Communication Services', 'Industrials', 'Financials'];
+    const DEFENSIVE_NAMES = ['Utilities', 'Consumer Staples', 'Healthcare', 'Real Estate'];
+    const avgScore = (arr) => arr.length > 0 ? Math.round(arr.reduce((sum, s) => sum + s.score, 0) / arr.length) : 50;
+    const growthAvg = avgScore(sectorScores.filter((s) => GROWTH_NAMES.includes(s.sector)));
+    const defAvg = avgScore(sectorScores.filter((s) => DEFENSIVE_NAMES.includes(s.sector)));
+
+    if (growthAvg - defAvg >= 8) {
+        tradeIdeas.push('Risk-on rotation — favor growth and cyclicals over defensives');
+    } else if (defAvg - growthAvg >= 8) {
+        tradeIdeas.push('Risk-off rotation — rotate into defensives and reduce cyclical exposure');
+    }
+
+    return {
+        sectorScores: ranked,
+        topSectors,
+        weakSectors,
+        tradeIdeas: tradeIdeas.slice(0, 6)
+    };
+}
+// NEW CODE END
+// ─────────────────────────────────────────────────────────────────
 
 module.exports = router;
