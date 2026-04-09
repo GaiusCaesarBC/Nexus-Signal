@@ -152,7 +152,8 @@ router.get('/events', auth, async (req, res) => {
 
         const result = {
             success: true,
-            events: filteredEvents,
+            // NEW: each event is enriched with importanceScore + whyItMatters + howToTradeIt
+            events: enrichEvents(filteredEvents),
             dateRange: {
                 start: start.toISOString().split('T')[0],
                 end: end.toISOString().split('T')[0]
@@ -210,10 +211,13 @@ router.get('/upcoming', auth, async (req, res) => {
             .sort((a, b) => new Date(a.date) - new Date(b.date))
             .slice(0, 10);
 
+        // NEW: enrich with importanceScore + whyItMatters + howToTradeIt
+        const enrichedHigh = enrichEvents(highImpactEvents);
+
         const result = {
             success: true,
-            events: highImpactEvents,
-            nextMajorEvent: highImpactEvents[0] || null,
+            events: enrichedHigh,
+            nextMajorEvent: enrichedHigh[0] || null,
             lastUpdated: new Date().toISOString()
         };
 
@@ -298,12 +302,15 @@ router.get('/today', auth, async (req, res) => {
             return a.time.localeCompare(b.time);
         });
 
+        // NEW: enrich with importanceScore + whyItMatters + howToTradeIt
+        const enrichedToday = enrichEvents(events);
+
         const result = {
             success: true,
             date: todayStr,
-            events,
-            hasHighImpact: events.some(e => e.impact === 'high'),
-            totalEvents: events.length,
+            events: enrichedToday,
+            hasHighImpact: enrichedToday.some(e => e.impact === 'high'),
+            totalEvents: enrichedToday.length,
             lastUpdated: new Date().toISOString()
         };
 
@@ -351,6 +358,9 @@ router.get('/week', auth, async (req, res) => {
             }
         });
 
+        // NEW: enrich the full week's events once, before grouping by day
+        const enrichedWeek = enrichEvents(events);
+
         // Group by day
         const eventsByDay = {};
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -361,7 +371,7 @@ router.get('/week', auth, async (req, res) => {
             const dateStr = date.toISOString().split('T')[0];
             eventsByDay[dayNames[i]] = {
                 date: dateStr,
-                events: events.filter(e => e.date === dateStr).sort((a, b) => {
+                events: enrichedWeek.filter(e => e.date === dateStr).sort((a, b) => {
                     if (!a.time) return 1;
                     if (!b.time) return -1;
                     return a.time.localeCompare(b.time);
@@ -373,8 +383,8 @@ router.get('/week', auth, async (req, res) => {
             success: true,
             weekOf: startOfWeek.toISOString().split('T')[0],
             eventsByDay,
-            totalEvents: events.length,
-            highImpactCount: events.filter(e => e.impact === 'high').length,
+            totalEvents: enrichedWeek.length,
+            highImpactCount: enrichedWeek.filter(e => e.impact === 'high').length,
             lastUpdated: new Date().toISOString()
         };
 
@@ -538,5 +548,173 @@ function categorizeEvent(eventName) {
 
     return 'other';
 }
+
+// ─────────────────────────────────────────────────────────────────
+// NEW CODE START — Economic calendar intelligence bridge
+//
+// Adds three derived fields to each event:
+//   { importanceScore: 1-10, whyItMatters: string, howToTradeIt: string }
+//
+// Pure rule-based, no AI calls. Importance is anchored on event name +
+// existing impact field. whyItMatters / howToTradeIt are pulled from a
+// keyword-routed template lookup so the language stays consistent and
+// safe — no hallucination risk.
+//
+// Backward compatible: original event fields are preserved verbatim,
+// the new fields are additive only.
+// ─────────────────────────────────────────────────────────────────
+
+// Importance score 1-10. Anchored on the existing impact field, then
+// boosted/dampened by event-name keywords so a high-impact CPI scores
+// higher than a high-impact ECB decision (since the client is US-centric).
+function eventImportanceScore(event) {
+    if (!event) return 1;
+
+    const baseByImpact = { high: 7, medium: 4, low: 2 };
+    let score = baseByImpact[event.impact] != null ? baseByImpact[event.impact] : 3;
+
+    const upper = (event.name || '').toUpperCase();
+
+    // Tier-1 boosters (the events that always move the tape)
+    if (upper.includes('FOMC') || upper.includes('INTEREST RATE')) score += 3;
+    else if (upper.includes('CPI')) score += 2;
+    else if (upper.includes('NON-FARM') || upper.includes('NFP') || upper.includes('NONFARM')) score += 2;
+    else if (upper.includes('PCE')) score += 2;
+    else if (upper.includes('GDP')) score += 1;
+    else if (upper.includes('UNEMPLOYMENT RATE')) score += 1;
+    else if (upper.includes('PPI')) score += 1;
+
+    // Country dampener — non-US events score one tier lower for the US-centric client
+    const country = (event.country || '').toUpperCase();
+    if (country && country !== 'US' && country !== 'USA') score -= 1;
+
+    return Math.max(1, Math.min(10, score));
+}
+
+// Templated "why it matters" — keyword routed, max one sentence.
+function eventWhyItMatters(event) {
+    const upper = (event && event.name || '').toUpperCase();
+
+    if (upper.includes('FOMC') || upper.includes('INTEREST RATE')) {
+        return 'This sets the path of interest rate expectations and drives moves across stocks, bonds, USD, and gold.';
+    }
+    if (upper.includes('CPI')) {
+        return 'CPI is the headline inflation gauge — it directly shapes Fed rate-cut odds and risk-asset pricing.';
+    }
+    if (upper.includes('PCE')) {
+        return 'Core PCE is the Fed\'s preferred inflation measure, so the print can swing rate expectations sharply.';
+    }
+    if (upper.includes('PPI')) {
+        return 'PPI is a leading indicator for CPI and signals pipeline pressure on margins.';
+    }
+    if (upper.includes('NON-FARM') || upper.includes('NFP') || upper.includes('NONFARM')) {
+        return 'NFP is the most-watched US labor print and frequently triggers the largest single-day moves of the month.';
+    }
+    if (upper.includes('UNEMPLOYMENT RATE')) {
+        return 'Shifts in the unemployment rate move Fed expectations and signal labor-market health.';
+    }
+    if (upper.includes('JOBLESS')) {
+        return 'High-frequency labor signal — sudden spikes can re-price growth expectations within minutes.';
+    }
+    if (upper.includes('GDP')) {
+        return 'GDP confirms or denies the trajectory of US growth and recalibrates cyclical positioning.';
+    }
+    if (upper.includes('PMI') && upper.includes('MANUFACTURING')) {
+        return 'Manufacturing PMI is an early read on industrial activity — readings above/below 50 separate expansion from contraction.';
+    }
+    if (upper.includes('PMI') && upper.includes('SERVICES')) {
+        return 'Services PMI covers ~70% of US GDP — a soft print drags risk assets quickly.';
+    }
+    if (upper.includes('RETAIL')) {
+        return 'Retail Sales is the cleanest read on consumer spending — the engine of US growth.';
+    }
+    if (upper.includes('CONSUMER CONFIDENCE') || upper.includes('CONSUMER SENTIMENT')) {
+        return 'Forward-looking gauge of household confidence — drifts here lead actual spending shifts.';
+    }
+    if (upper.includes('HOUSING') || upper.includes('HOME')) {
+        return 'Housing data signals the rate-sensitive side of the economy — first to react to Fed pivots.';
+    }
+    if (upper.includes('TRADE BALANCE')) {
+        return 'Net trade flows feed directly into GDP and FX positioning.';
+    }
+    if (upper.includes('DURABLE GOODS')) {
+        return 'Durable Goods Orders are a leading indicator for capex and business investment.';
+    }
+    if ((event && event.impact) === 'high') {
+        return 'High-impact macro release — historically capable of moving major indices by more than 1%.';
+    }
+    if ((event && event.impact) === 'medium') {
+        return 'Watched as a secondary input for the Fed and market positioning.';
+    }
+    return 'Provides additional macro context for traders watching this market.';
+}
+
+// Templated "how to trade it" — keyword routed, max one sentence.
+function eventHowToTradeIt(event) {
+    const upper = (event && event.name || '').toUpperCase();
+
+    if (upper.includes('FOMC') || upper.includes('INTEREST RATE')) {
+        return 'Avoid new positions in the 30 minutes before; trade the move after the dot plot and Powell Q&A.';
+    }
+    if (upper.includes('CPI') || upper.includes('PCE') || upper.includes('PPI')) {
+        return 'Hot print → fade rallies in tech/long-duration; cool print → buy continuation in growth and small caps.';
+    }
+    if (upper.includes('NON-FARM') || upper.includes('NFP') || upper.includes('NONFARM')) {
+        return 'Watch the headline + revisions + wages — strong wages with hot headline is the most bearish combo for stocks.';
+    }
+    if (upper.includes('UNEMPLOYMENT RATE')) {
+        return 'A jump of 0.2pp+ has historically triggered rotation from cyclicals into defensives within the session.';
+    }
+    if (upper.includes('JOBLESS')) {
+        return 'Spikes 30k+ above trend signal labor weakness — fade strength in cyclicals.';
+    }
+    if (upper.includes('GDP')) {
+        return 'Beat → cyclical longs (XLI, XLF); miss → defensive rotation into XLP and XLU.';
+    }
+    if (upper.includes('PMI') && upper.includes('MANUFACTURING')) {
+        return 'Above 50 + accelerating → long industrials and materials; below 50 → fade cyclical strength.';
+    }
+    if (upper.includes('PMI') && upper.includes('SERVICES')) {
+        return 'Strong services print → long XLY and consumer discretionary; weak print → defensive tilt.';
+    }
+    if (upper.includes('RETAIL')) {
+        return 'Beat → long XLY (discretionary); miss → long XLP (staples) for defensive rotation.';
+    }
+    if (upper.includes('CONSUMER CONFIDENCE') || upper.includes('CONSUMER SENTIMENT')) {
+        return 'Use as a confirmation signal for trends in retail and discretionary names.';
+    }
+    if (upper.includes('HOUSING') || upper.includes('HOME')) {
+        return 'Strong housing → long homebuilders (XHB) and regional banks; weak → REITs and utilities.';
+    }
+    if (upper.includes('TRADE BALANCE')) {
+        return 'Most relevant for FX (USD pairs) — use to confirm dollar direction.';
+    }
+    if (upper.includes('DURABLE GOODS')) {
+        return 'Beat → long industrial cyclicals; miss → trim industrial exposure.';
+    }
+    if ((event && event.impact) === 'high') {
+        return 'Size positions modestly into the print and trade the reaction, not the prediction.';
+    }
+    return 'Watch for confirmation of the broader macro narrative before sizing.';
+}
+
+// Enrich a single event with the intelligence fields. Pure, never mutates.
+function enrichEvent(event) {
+    if (!event || typeof event !== 'object') return event;
+    return {
+        ...event,
+        importanceScore: eventImportanceScore(event),
+        whyItMatters: eventWhyItMatters(event),
+        howToTradeIt: eventHowToTradeIt(event)
+    };
+}
+
+// Enrich an array of events.
+function enrichEvents(events) {
+    if (!Array.isArray(events)) return events;
+    return events.map(enrichEvent);
+}
+// NEW CODE END
+// ─────────────────────────────────────────────────────────────────
 
 module.exports = router;
