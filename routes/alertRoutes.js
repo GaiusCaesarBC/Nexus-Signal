@@ -32,6 +32,70 @@ const PATTERN_ALERT_TYPES = [
     'rising_wedge', 'falling_wedge'
 ];
 
+// ─────────────────────────────────────────────────────────────────
+// NEW CODE START — Smart Alerts proximity bridge
+//
+// computeProximity() returns a `proximity` block for a single alert:
+//   {
+//     proximity: 0-100,        // closeness score (100 = at trigger)
+//     distanceToTrigger: number, // absolute price difference
+//     nearTrigger: boolean       // true if within ~3% of trigger
+//   }
+//
+// Pure math, no I/O. Only meaningful for price_above / price_below alerts
+// where both currentPrice and targetPrice are present. Returns null for
+// other alert types or when prices are missing — callers attach `null`
+// rather than fabricating numbers.
+//
+// enrichAlertWithProximity() takes a single alert (Mongoose doc OR plain
+// object) and returns a plain object with `proximity` attached. The
+// original alert fields are preserved verbatim.
+// ─────────────────────────────────────────────────────────────────
+
+function computeProximity(alert) {
+    if (!alert) return null;
+    const type = alert.type;
+    if (type !== 'price_above' && type !== 'price_below') return null;
+
+    const target = Number(alert.targetPrice);
+    const current = Number(alert.currentPrice);
+    if (!Number.isFinite(target) || !Number.isFinite(current) || target <= 0 || current <= 0) {
+        return null;
+    }
+
+    const distanceToTrigger = Math.abs(target - current);
+    const distancePct = (distanceToTrigger / target) * 100;
+
+    // Closeness score: 100 = at trigger, 0 = ~10% or further away
+    const proximity = Math.max(0, Math.min(100, Math.round(100 - distancePct * 10)));
+
+    // Near trigger if within 3% — applies in both directions
+    const nearTrigger = distancePct <= 3;
+
+    return {
+        proximity,
+        distanceToTrigger: parseFloat(distanceToTrigger.toFixed(6)),
+        nearTrigger
+    };
+}
+
+function enrichAlertWithProximity(alert) {
+    if (!alert) return alert;
+    // Convert Mongoose doc to plain object so we can attach the new field
+    // without mutating the document. toObject() handles plain objects too
+    // (Mongoose docs have it; plain objects fall through to spread).
+    const obj = typeof alert.toObject === 'function' ? alert.toObject() : { ...alert };
+    obj.proximity = computeProximity(obj);
+    return obj;
+}
+
+function enrichAlertsWithProximity(alerts) {
+    if (!Array.isArray(alerts)) return alerts;
+    return alerts.map(enrichAlertWithProximity);
+}
+// NEW CODE END
+// ─────────────────────────────────────────────────────────────────
+
 // @route   GET /api/alerts/technical-types
 // @desc    Get available technical alert types
 // @access  Public
@@ -486,7 +550,8 @@ router.get('/', auth, async (req, res) => {
         res.json({
             success: true,
             count: alerts.length,
-            alerts
+            // NEW: each alert is enriched with a `proximity` block
+            alerts: enrichAlertsWithProximity(alerts)
         });
 
     } catch (error) {
@@ -508,7 +573,8 @@ router.get('/active', auth, async (req, res) => {
         res.json({
             success: true,
             count: alerts.length,
-            alerts
+            // NEW: each alert is enriched with a `proximity` block
+            alerts: enrichAlertsWithProximity(alerts)
         });
 
     } catch (error) {
@@ -531,7 +597,8 @@ router.get('/triggered', auth, async (req, res) => {
         res.json({
             success: true,
             count: alerts.length,
-            alerts
+            // NEW: each alert is enriched with a `proximity` block
+            alerts: enrichAlertsWithProximity(alerts)
         });
 
     } catch (error) {
@@ -591,7 +658,8 @@ router.get('/:id', auth, async (req, res) => {
 
         res.json({
             success: true,
-            alert
+            // NEW: enriched with `proximity` block
+            alert: enrichAlertWithProximity(alert)
         });
 
     } catch (error) {
