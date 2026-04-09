@@ -299,38 +299,196 @@ Please provide:
 4. Risk factors to watch
 5. Trading outlook (bullish/bearish/neutral with reasoning)
 
-Format the response as JSON with these fields: summary, themes (array), sectorHighlights, riskFactors (array), outlook (object with sentiment and reasoning).`;
+ALSO PROVIDE the following intelligence layer (used by the redesigned Daily Report UI):
+- tradeBias: one of "BULLISH", "BEARISH", or "NEUTRAL"
+- confidence: integer 0-100 representing your confidence in the bias
+- timeHorizon: one of "SHORT" (intraday), "MEDIUM" (swing, days), or "LONG" (multi-week)
+- strategy: one short sentence describing the overall posture
+- actionableInsights: array of 2-4 short, action-oriented bullet strings (each <= 14 words)
+- tradeSetups: array of 2-4 objects, each shaped { asset, direction, reasoning } where direction is "LONG" or "SHORT"
+- snapshot: a single one-line snapshot of the tape (<= 18 words)
+- aiInsight: a single punchy one-line takeaway (<= 18 words)
+
+Format the response as JSON with these fields:
+summary, themes (array), sectorHighlights, riskFactors (array),
+outlook (object with sentiment and reasoning),
+tradeBias, confidence, timeHorizon, strategy,
+actionableInsights (array), tradeSetups (array),
+snapshot, aiInsight.`;
 
     try {
         const response = await anthropic.messages.create({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: 1500,
+            max_tokens: 1800,
             messages: [{ role: 'user', content: prompt }]
         });
 
         const content = response.content[0].text;
-        // Try to parse as JSON, fallback to raw text
+        let parsed = null;
         try {
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
+                parsed = JSON.parse(jsonMatch[0]);
             }
         } catch (e) {
             console.log('[Market Reports] Could not parse JSON, using raw text');
         }
 
-        return {
+        if (parsed) {
+            return withIntelligenceFallback(parsed, marketData);
+        }
+
+        // Raw-text fallback — preserve original behavior + fill intelligence
+        return withIntelligenceFallback({
             summary: content,
             themes: [],
             sectorHighlights: '',
             riskFactors: [],
             outlook: { sentiment: 'neutral', reasoning: 'See summary' }
-        };
+        }, marketData);
     } catch (error) {
         console.error('[Market Reports] AI generation error:', error.message);
         throw error;
     }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// NEW CODE START — Intelligence layer (deterministic fallbacks)
+//
+// withIntelligenceFallback() takes a parsed daily-report JSON object and
+// guarantees that the new intelligence fields (tradeBias, confidence,
+// timeHorizon, strategy, actionableInsights, tradeSetups, snapshot,
+// aiInsight) are always present and well-formed. AI is asked for them in
+// the prompt, but if AI omits or malforms a field we fall back to
+// deterministic values derived from the existing report data + market
+// breadth — keeping the response 100% backward compatible while making
+// the new fields safe to consume.
+// ─────────────────────────────────────────────────────────────────
+
+function deriveBiasFromSentiment(sentiment) {
+    const s = (sentiment || '').toString().toLowerCase();
+    if (s.includes('bull') || s === 'positive' || s === 'up') return 'BULLISH';
+    if (s.includes('bear') || s === 'negative' || s === 'down') return 'BEARISH';
+    return 'NEUTRAL';
+}
+
+function buildFallbackInsights(bias, parsed) {
+    const out = [];
+    if (bias === 'BULLISH') {
+        out.push('Lean long — focus on continuation setups in leaders');
+        out.push('Use defined risk; avoid chasing extended names');
+    } else if (bias === 'BEARISH') {
+        out.push('Lean short — fade rallies in weakest sectors');
+        out.push('Tighten stops and reduce position sizes');
+    } else {
+        out.push('Stay nimble — trade both sides selectively');
+        out.push('Avoid heavy directional bets, wait for confirmation');
+    }
+    if (Array.isArray(parsed?.riskFactors) && parsed.riskFactors.length >= 2) {
+        out.push('Elevated event risk — reduce size and tighten stops');
+    }
+    return out.slice(0, 4);
+}
+
+function buildFallbackSetups(bias) {
+    if (bias === 'BULLISH') {
+        return [
+            { asset: 'SPY', direction: 'LONG', reasoning: 'Bullish bias — buy strength on confirmation' },
+            { asset: 'QQQ', direction: 'LONG', reasoning: 'Tech leadership — follow continuation breakouts' }
+        ];
+    }
+    if (bias === 'BEARISH') {
+        return [
+            { asset: 'SPY', direction: 'SHORT', reasoning: 'Bearish bias — fade rallies on failed bounces' },
+            { asset: 'QQQ', direction: 'SHORT', reasoning: 'Growth weakness — short failed retests' }
+        ];
+    }
+    return [
+        { asset: 'SPY', direction: 'LONG', reasoning: 'Neutral tape — wait for clear setup before sizing' }
+    ];
+}
+
+function withIntelligenceFallback(parsed, marketData) {
+    if (!parsed || typeof parsed !== 'object') parsed = {};
+
+    // Derive a safe bias from the existing outlook for fallback
+    const sentiment = parsed.outlook && parsed.outlook.sentiment;
+    const fallbackBias = deriveBiasFromSentiment(sentiment);
+
+    // Compute breadth from indices for the snapshot fallback
+    const indices = marketData && marketData.indices ? marketData.indices : {};
+    const indicesArr = Object.values(indices);
+    const indicesUp = indicesArr.filter((d) => (d && d.changePercent || 0) > 0).length;
+    const indicesTotal = indicesArr.length || 1;
+    const breadthPct = Math.round((indicesUp / indicesTotal) * 100);
+
+    // ─── Helpers (inline so we don't introduce a new file) ───
+    const validBias = (v) => ['BULLISH', 'BEARISH', 'NEUTRAL'].includes((v || '').toString().toUpperCase());
+    const validHorizon = (v) => ['SHORT', 'MEDIUM', 'LONG'].includes((v || '').toString().toUpperCase());
+    const validDirection = (v) => ['LONG', 'SHORT'].includes((v || '').toString().toUpperCase());
+
+    const tradeBias = validBias(parsed.tradeBias) ? parsed.tradeBias.toUpperCase() : fallbackBias;
+
+    const confidence = (typeof parsed.confidence === 'number' && parsed.confidence >= 0 && parsed.confidence <= 100)
+        ? Math.round(parsed.confidence)
+        : (tradeBias === 'NEUTRAL' ? 55 : 65);
+
+    const timeHorizon = validHorizon(parsed.timeHorizon) ? parsed.timeHorizon.toUpperCase() : 'MEDIUM';
+
+    const strategy = (typeof parsed.strategy === 'string' && parsed.strategy.trim())
+        ? parsed.strategy.trim()
+        : (tradeBias === 'BULLISH' ? 'Buy strength in leaders, avoid chasing extended names'
+          : tradeBias === 'BEARISH' ? 'Reduce exposure, fade rallies in weakest sectors'
+          : 'Stay nimble, trade selectively, avoid heavy directional bets');
+
+    const actionableInsights = (Array.isArray(parsed.actionableInsights) && parsed.actionableInsights.length > 0)
+        ? parsed.actionableInsights
+            .filter((s) => typeof s === 'string' && s.trim())
+            .slice(0, 4)
+        : buildFallbackInsights(tradeBias, parsed);
+
+    const tradeSetups = (Array.isArray(parsed.tradeSetups) && parsed.tradeSetups.length > 0)
+        ? parsed.tradeSetups
+            .map((s) => ({
+                asset: (s && s.asset) ? String(s.asset).toUpperCase() : '',
+                direction: validDirection(s && s.direction) ? s.direction.toUpperCase() : 'LONG',
+                reasoning: (s && s.reasoning) ? String(s.reasoning) : ''
+            }))
+            .filter((s) => s.asset)
+            .slice(0, 4)
+        : buildFallbackSetups(tradeBias);
+
+    const snapshot = (typeof parsed.snapshot === 'string' && parsed.snapshot.trim())
+        ? parsed.snapshot.trim()
+        : `${tradeBias} bias · ${breadthPct}% breadth · ${indicesUp}/${indicesTotal} indices up`;
+
+    const aiInsight = (typeof parsed.aiInsight === 'string' && parsed.aiInsight.trim())
+        ? parsed.aiInsight.trim()
+        : (parsed.summary
+            ? String(parsed.summary).split(/(?<=[.!?])\s+/)[0]
+            : 'Markets in consolidation — wait for confirmation before sizing.');
+
+    return {
+        // ─── Original fields (UNCHANGED, always present) ───
+        summary: parsed.summary || '',
+        themes: Array.isArray(parsed.themes) ? parsed.themes : [],
+        sectorHighlights: parsed.sectorHighlights || '',
+        riskFactors: Array.isArray(parsed.riskFactors) ? parsed.riskFactors : [],
+        outlook: parsed.outlook || { sentiment: 'neutral', reasoning: '' },
+
+        // ─── Intelligence layer (NEW, additive) ───
+        tradeBias,
+        confidence,
+        timeHorizon,
+        strategy,
+        actionableInsights,
+        tradeSetups,
+        snapshot,
+        aiInsight
+    };
+}
+// NEW CODE END
+// ─────────────────────────────────────────────────────────────────
 
 async function generateWeeklyReport(marketData) {
     const prompt = `You are a professional financial analyst. Generate a comprehensive weekly market review based on current market data.
