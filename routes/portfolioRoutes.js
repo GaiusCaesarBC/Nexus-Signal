@@ -899,6 +899,27 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             assetTypeCount: Object.keys(allocationByType).length
         };
 
+        // ─────────────────────────────────────────────────────────────────
+        // NEW CODE START — Portfolio intelligence derivation layer
+        //
+        // Pure rule-based scoring built from the data the rest of this
+        // handler already produced. Returned as `analytics.intelligence`
+        // so existing consumers (overview, allocation, paperTrading,
+        // predictions, risk) keep working unchanged.
+        // Pattern follows the Financial Verdict bridge from 11d70871.
+        // ─────────────────────────────────────────────────────────────────
+        const intelligence = computePortfolioIntelligence({
+            holdings,
+            totalValue,
+            performanceMetrics,
+            paperTradingStats,
+            predictionAccuracy: parseFloat(predictionAccuracy) || 0,
+            riskMetrics,
+            allocationByType
+        });
+        // NEW CODE END
+        // ─────────────────────────────────────────────────────────────────
+
         res.json({
             success: true,
             mode, // Include mode in response
@@ -911,7 +932,9 @@ router.get('/analytics', authMiddleware, async (req, res) => {
                     correct: correctPredictions,
                     accuracy: predictionAccuracy
                 },
-                risk: riskMetrics
+                risk: riskMetrics,
+                // NEW: intelligence layer (additive)
+                intelligence
             }
         });
 
@@ -924,5 +947,150 @@ router.get('/analytics', authMiddleware, async (req, res) => {
         });
     }
 });
+
+// ─────────────────────────────────────────────────────────────────
+// NEW CODE START — Portfolio intelligence helpers
+//
+// computePortfolioIntelligence() takes the same data the analytics handler
+// already computed and derives:
+//   { healthScore, riskLevel, diversificationScore, strengths, weaknesses,
+//     recommendations, verdict }
+//
+// Pure rule-based — no AI calls, no external fetches, no DB writes.
+// Safe to invoke even on empty portfolios; every output field is always
+// present and well-formed.
+// ─────────────────────────────────────────────────────────────────
+
+function computePortfolioIntelligence(input) {
+    const safe = input || {};
+    const holdings = Array.isArray(safe.holdings) ? safe.holdings : [];
+    const totalValue = Number(safe.totalValue) || 0;
+    const overview = safe.performanceMetrics || {};
+    const paper = safe.paperTradingStats || null;
+    const accuracy = Number(safe.predictionAccuracy) || 0;
+    const risk = safe.riskMetrics || {};
+    const allocation = safe.allocationByType || {};
+
+    const totalHoldings = Number(overview.totalHoldings) || holdings.length;
+    const totalReturnPct = Number(overview.totalGainLossPercent) || 0;
+    const concentration = parseFloat(risk.concentrationRisk) || 0;
+    const assetTypeCount = Number(risk.assetTypeCount) || Object.keys(allocation).length;
+    const winRate = paper ? Number(paper.winRate) || 0 : null;
+    const totalTrades = paper ? Number(paper.totalTrades) || 0 : 0;
+    const totalPL = paper ? Number(paper.totalPL) || 0 : 0;
+    const biggestWin = paper ? Number(paper.biggestWin) || 0 : 0;
+    const biggestLoss = paper ? Math.abs(Number(paper.biggestLoss) || 0) : 0;
+
+    // ─── Diversification sub-score (0-100) ───
+    // Three factors: holdings count, asset-type diversity, concentration drag.
+    let diversificationScore = 0;
+    if (totalHoldings >= 10) diversificationScore += 50;
+    else if (totalHoldings >= 5) diversificationScore += 35;
+    else if (totalHoldings >= 3) diversificationScore += 20;
+    else if (totalHoldings === 2) diversificationScore += 10;
+
+    if (assetTypeCount >= 3) diversificationScore += 30;
+    else if (assetTypeCount === 2) diversificationScore += 20;
+    else if (assetTypeCount === 1) diversificationScore += 5;
+
+    if (concentration <= 25) diversificationScore += 20;
+    else if (concentration <= 40) diversificationScore += 10;
+    else if (concentration >= 70) diversificationScore -= 10;
+
+    diversificationScore = Math.max(0, Math.min(100, diversificationScore));
+
+    // ─── Risk level (LOW / MEDIUM / HIGH) ───
+    let riskLevel = 'MEDIUM';
+    if (concentration >= 70 || totalHoldings <= 1) riskLevel = 'HIGH';
+    else if (concentration >= 40 || totalHoldings <= 3 || diversificationScore < 40) riskLevel = 'MEDIUM';
+    else riskLevel = 'LOW';
+
+    // ─── Health Score (0-100) — composite ───
+    let healthScore = 50;
+
+    // P/L direction (+/- 18)
+    if (totalReturnPct > 0) healthScore += Math.min(18, Math.round(totalReturnPct * 2));
+    else if (totalReturnPct < 0) healthScore -= Math.min(18, Math.round(Math.abs(totalReturnPct) * 2));
+
+    // Win-rate (paper) (+/- 12)
+    if (winRate != null && totalTrades >= 10) {
+        if (winRate >= 60) healthScore += 12;
+        else if (winRate >= 50) healthScore += 6;
+        else if (winRate >= 40) healthScore += 0;
+        else healthScore -= 8;
+    }
+
+    // Diversification contribution (+/- 12)
+    if (diversificationScore >= 70) healthScore += 12;
+    else if (diversificationScore >= 50) healthScore += 6;
+    else if (diversificationScore < 30) healthScore -= 8;
+
+    // Concentration penalty (top of risk pyramid)
+    if (concentration >= 70) healthScore -= 12;
+    else if (concentration >= 50) healthScore -= 6;
+
+    // Sample size — reward meaningful trade history
+    if (totalTrades >= 50) healthScore += 8;
+    else if (totalTrades >= 20) healthScore += 4;
+    else if (totalTrades === 0 && totalHoldings === 0) healthScore -= 10;
+
+    // Prediction accuracy bonus
+    if (accuracy >= 65) healthScore += 8;
+    else if (accuracy >= 50) healthScore += 3;
+    else if (accuracy > 0 && accuracy < 40) healthScore -= 4;
+
+    healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
+
+    // ─── Strengths (templated, max 4) ───
+    const strengths = [];
+    if (totalReturnPct > 5) strengths.push(`Portfolio is up ${totalReturnPct.toFixed(1)}% — your strategy is working`);
+    if (winRate != null && winRate >= 60 && totalTrades >= 10) strengths.push(`Strong ${winRate.toFixed(0)}% win rate — your setup quality is high`);
+    if (diversificationScore >= 70) strengths.push('Well diversified across positions and asset types');
+    if (totalHoldings >= 5 && concentration <= 30) strengths.push('Balanced concentration — no single position dominates');
+    if (totalTrades >= 50) strengths.push('Statistically meaningful sample size — your edge is measurable');
+    if (accuracy >= 65) strengths.push(`AI signal accuracy of ${accuracy.toFixed(0)}% is above coin-flip`);
+    if (paper && Number(paper.bestStreak) >= 5) strengths.push(`Longest winning streak of ${paper.bestStreak} shows you can sustain conviction`);
+
+    // ─── Weaknesses (templated, max 4) ───
+    const weaknesses = [];
+    if (concentration >= 70) weaknesses.push(`Top holding is ${Math.round(concentration)}% of portfolio — single-name risk is dangerous`);
+    else if (concentration >= 50) weaknesses.push(`Top holding is ${Math.round(concentration)}% of portfolio — concentration is elevated`);
+    if (totalHoldings === 1) weaknesses.push('Only 1 holding — portfolio behaves like a coin-flip');
+    else if (totalHoldings <= 3 && totalHoldings > 0) weaknesses.push(`Only ${totalHoldings} holdings — too few to dilute single-name risk`);
+    if (assetTypeCount <= 1 && totalHoldings > 0) weaknesses.push('Exposure concentrated in one asset type — correlated drawdowns possible');
+    if (totalTrades > 0 && totalTrades < 20) weaknesses.push(`Only ${totalTrades} trades — sample size too small to validate edge`);
+    if (winRate != null && winRate < 40 && totalTrades >= 20) weaknesses.push(`Low ${winRate.toFixed(0)}% win rate — review setup quality before sizing up`);
+    if (totalReturnPct < -5) weaknesses.push(`Portfolio down ${Math.abs(totalReturnPct).toFixed(1)}% — strategy is currently bleeding`);
+    if (biggestWin > 0 && biggestLoss > biggestWin * 1.5) weaknesses.push('Biggest loss dwarfs biggest win — you may be holding losers too long');
+
+    // ─── Recommendations (templated, max 4) — actionable fixes ───
+    const recommendations = [];
+    if (concentration >= 50) recommendations.push('Trim the top position to 25-30% of portfolio and reallocate');
+    if (totalHoldings <= 3 && totalHoldings > 0) recommendations.push('Add 2-4 more positions across uncorrelated sectors');
+    if (totalHoldings === 0 && totalTrades === 0) recommendations.push('Open paper trading and run your first 10 setups');
+    if (assetTypeCount <= 1 && totalHoldings > 0) recommendations.push('Mix asset classes — add stocks AND crypto exposure');
+    if (winRate != null && winRate < 40 && totalTrades >= 10) recommendations.push('Tighten setup quality — only take A+ signals (≥70% confidence)');
+    if (totalTrades > 0 && totalTrades < 20) recommendations.push('Increase trade count to build a statistically meaningful sample');
+    if (totalReturnPct < -5) recommendations.push('Pause live sizing — paper trade until expectancy turns positive');
+    if (biggestWin > 0 && biggestLoss > biggestWin * 1.5) recommendations.push('Honor your stops — never let a loss exceed 1.5× your avg win');
+
+    // ─── Verdict (STRONG / BALANCED / WEAK) ───
+    let verdict;
+    if (healthScore >= 70) verdict = 'STRONG';
+    else if (healthScore >= 45) verdict = 'BALANCED';
+    else verdict = 'WEAK';
+
+    return {
+        healthScore,
+        riskLevel,
+        diversificationScore,
+        strengths: strengths.slice(0, 4),
+        weaknesses: weaknesses.slice(0, 4),
+        recommendations: recommendations.slice(0, 4),
+        verdict
+    };
+}
+// NEW CODE END
+// ─────────────────────────────────────────────────────────────────
 
 module.exports = router;
