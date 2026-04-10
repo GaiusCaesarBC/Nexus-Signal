@@ -616,9 +616,18 @@ const connectDB = async () => {
         });
 
         // Admin: Manually sync subscription from Stripe (fix missed webhooks)
+        // Supports both GET (browser-friendly) and POST
+        app.get('/api/admin/sync-subscription', async (req, res) => {
+            const { email, userId } = req.query;
+            return handleSyncSubscription(email, userId, res);
+        });
         app.post('/api/admin/sync-subscription', async (req, res) => {
+            const { email, userId } = req.body;
+            return handleSyncSubscription(email, userId, res);
+        });
+
+        async function handleSyncSubscription(email, userId, res) {
             try {
-                const { email, userId } = req.body;
                 if (!email && !userId) {
                     return res.status(400).json({ error: 'Provide email or userId in body' });
                 }
@@ -710,7 +719,7 @@ const connectDB = async () => {
                 console.error('[Admin] Sync subscription error:', e);
                 res.json({ success: false, error: e.message });
             }
-        });
+        }
 
         // Manual signal generation trigger (for debugging)
         app.get('/api/trigger-signals', async (req, res) => {
