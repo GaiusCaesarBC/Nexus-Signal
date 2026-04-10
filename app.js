@@ -41,20 +41,40 @@ const stripeRoutes = require('./routes/stripeRoutes'); // 💳 Stripe Payments
 const User = require('./models/User');
 const { PLAN_LIMITS } = require('./middleware/subscriptionMiddleware');
 
-// Price mapping function for webhook - uses env vars only
+// Price mapping function for webhook - uses env vars with hardcoded fallbacks
 const getPlanFromPriceId = (priceId) => {
-    const priceMapping = {
+    // Environment variable mapping (preferred)
+    const envMapping = {
         [process.env.STRIPE_PRICE_STARTER]: 'starter',
         [process.env.STRIPE_PRICE_PRO]: 'pro',
         [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
         [process.env.STRIPE_PRICE_ELITE]: 'elite'
     };
 
-    const plan = priceMapping[priceId];
+    // Hardcoded LIVE price IDs as fallback (must match Stripe dashboard)
+    const hardcodedMapping = {
+        // Monthly
+        'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
+        'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
+        'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
+        'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
+        // Yearly
+        'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
+        'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
+        'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
+        'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
+    };
+
+    // Try env mapping first, then hardcoded
+    let plan = envMapping[priceId] || hardcodedMapping[priceId];
+
     if (!plan) {
-        logger.warn(`Unknown Stripe price ID: ${priceId}. Check STRIPE_PRICE_* env vars.`);
-        return 'starter'; // Default fallback
+        console.log(`[Stripe Webhook] ⚠️ Unknown price ID: ${priceId}`);
+        console.log(`[Stripe Webhook] Env vars: STARTER=${process.env.STRIPE_PRICE_STARTER}, PRO=${process.env.STRIPE_PRICE_PRO}`);
+        plan = 'starter'; // Default fallback
     }
+
+    console.log(`[Stripe Webhook] Price ${priceId} → Plan: ${plan}`);
     return plan;
 };
 
@@ -527,6 +547,167 @@ const connectDB = async () => {
                 }
                 res.json({ success: true, removed, message: `Removed ${removed} signals with broken levels` });
             } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
+        // Admin: Check subscription status for a user (by email or userId)
+        app.get('/api/admin/subscription-status', async (req, res) => {
+            try {
+                const { email, userId } = req.query;
+                if (!email && !userId) {
+                    return res.status(400).json({ error: 'Provide email or userId query param' });
+                }
+
+                const query = email ? { email } : { _id: userId };
+                const user = await User.findOne(query).select('email username subscription createdAt');
+
+                if (!user) {
+                    return res.json({ found: false, message: 'User not found' });
+                }
+
+                // Check Stripe subscription if customerId exists
+                let stripeData = null;
+                if (user.subscription?.stripeCustomerId) {
+                    try {
+                        const customer = await stripe.customers.retrieve(user.subscription.stripeCustomerId);
+                        const subscriptions = await stripe.subscriptions.list({
+                            customer: user.subscription.stripeCustomerId,
+                            limit: 5
+                        });
+                        stripeData = {
+                            customer: {
+                                id: customer.id,
+                                email: customer.email,
+                                created: new Date(customer.created * 1000)
+                            },
+                            subscriptions: subscriptions.data.map(s => ({
+                                id: s.id,
+                                status: s.status,
+                                priceId: s.items.data[0]?.price?.id,
+                                currentPeriodEnd: new Date(s.current_period_end * 1000),
+                                cancelAtPeriodEnd: s.cancel_at_period_end
+                            }))
+                        };
+                    } catch (stripeErr) {
+                        stripeData = { error: stripeErr.message };
+                    }
+                }
+
+                res.json({
+                    found: true,
+                    user: {
+                        id: user._id,
+                        email: user.email,
+                        username: user.username,
+                        createdAt: user.createdAt
+                    },
+                    subscription: user.subscription,
+                    stripeData,
+                    envCheck: {
+                        webhookSecretConfigured: !!process.env.STRIPE_WEBHOOK_SECRET,
+                        priceStarterConfigured: !!process.env.STRIPE_PRICE_STARTER,
+                        priceProConfigured: !!process.env.STRIPE_PRICE_PRO
+                    }
+                });
+            } catch (e) {
+                res.json({ success: false, error: e.message });
+            }
+        });
+
+        // Admin: Manually sync subscription from Stripe (fix missed webhooks)
+        app.post('/api/admin/sync-subscription', async (req, res) => {
+            try {
+                const { email, userId } = req.body;
+                if (!email && !userId) {
+                    return res.status(400).json({ error: 'Provide email or userId in body' });
+                }
+
+                const query = email ? { email } : { _id: userId };
+                const user = await User.findOne(query);
+
+                if (!user) {
+                    return res.json({ success: false, error: 'User not found' });
+                }
+
+                // Find or get Stripe customer
+                let customerId = user.subscription?.stripeCustomerId;
+                if (!customerId) {
+                    // Try to find by email
+                    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+                    if (customers.data.length > 0) {
+                        customerId = customers.data[0].id;
+                    }
+                }
+
+                if (!customerId) {
+                    return res.json({ success: false, error: 'No Stripe customer found for this user' });
+                }
+
+                // Get active subscriptions
+                const subscriptions = await stripe.subscriptions.list({
+                    customer: customerId,
+                    status: 'active',
+                    limit: 1
+                });
+
+                if (subscriptions.data.length === 0) {
+                    // Check for trialing or past_due
+                    const allSubs = await stripe.subscriptions.list({
+                        customer: customerId,
+                        limit: 5
+                    });
+
+                    if (allSubs.data.length === 0) {
+                        return res.json({ success: false, error: 'No subscriptions found in Stripe' });
+                    }
+
+                    // Use the most recent subscription
+                    const latestSub = allSubs.data[0];
+                    if (latestSub.status === 'canceled' || latestSub.status === 'incomplete_expired') {
+                        user.subscription = {
+                            ...user.subscription,
+                            status: 'free',
+                            stripeCustomerId: customerId
+                        };
+                        await user.save();
+                        return res.json({ success: true, message: 'Subscription is canceled, set to free', subscription: user.subscription });
+                    }
+                }
+
+                const subscription = subscriptions.data[0] || (await stripe.subscriptions.list({ customer: customerId, limit: 1 })).data[0];
+
+                if (!subscription) {
+                    return res.json({ success: false, error: 'No subscription found' });
+                }
+
+                const priceId = subscription.items.data[0].price.id;
+                const plan = getPlanFromPriceId(priceId);
+
+                // Update user subscription
+                const oldStatus = user.subscription?.status;
+                user.subscription = {
+                    status: plan,
+                    stripeSubscriptionId: subscription.id,
+                    stripeCustomerId: customerId,
+                    stripePriceId: priceId,
+                    currentPeriodStart: new Date(subscription.current_period_start * 1000),
+                    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                    trialUsed: user.subscription?.trialUsed || false,
+                    trialEndsAt: user.subscription?.trialEndsAt || null
+                };
+                await user.save();
+
+                console.log(`[Admin] Synced subscription for ${user.email}: ${oldStatus} → ${plan}`);
+
+                res.json({
+                    success: true,
+                    message: `Subscription synced: ${oldStatus || 'none'} → ${plan}`,
+                    subscription: user.subscription
+                });
+            } catch (e) {
+                console.error('[Admin] Sync subscription error:', e);
                 res.json({ success: false, error: e.message });
             }
         });
