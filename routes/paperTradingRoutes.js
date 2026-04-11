@@ -781,13 +781,16 @@ router.post('/buy', auth, async (req, res) => {
             notes: notes || ''
         });
         
-        account.totalTrades = safeNumber(account.totalTrades, 0) + 1;
+        // NOTE: totalTrades is NOT incremented here. Opening a position
+        // (buy long or short entry) is not a completed trade — it has no P/L
+        // outcome yet. Only closing actions (sell, cover, auto-close, force-
+        // close) increment totalTrades so win rate = wins / completed trades.
         account.lastUpdated = new Date();
-        
+
         calculatePortfolioStats(account);
         await account.save();
         await updateUserStats(req.user.id);
-        
+
 // ✅ ADD THIS:
 // Track badges
 await trackTradeForBadges(req.user.id, {
