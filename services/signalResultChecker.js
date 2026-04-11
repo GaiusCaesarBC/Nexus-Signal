@@ -182,10 +182,10 @@ async function runCheckCycle() {
     const start = Date.now();
     let checked = 0, wins = 0, losses = 0, errors = 0;
 
-    console.log('[SignalChecker] ══════════════════════════════════');
-    console.log('[SignalChecker] Checking active signals for TP/SL hits...');
-
     try {
+        console.log('[SignalChecker] ══════════════════════════════════');
+        console.log('[SignalChecker] Checking active signals for TP/SL hits...');
+
         // Get all pending signals that have locked levels
         const signals = await Prediction.find({
             status: 'pending',
@@ -275,15 +275,19 @@ async function runCheckCycle() {
     } catch (err) {
         console.error('[SignalChecker] Cycle error:', err.message);
         errors++;
+    } finally {
+        // ALWAYS release the lock — this is the permanent fix for the
+        // stuck-flag problem. No matter what throws above, the next cron
+        // tick will be able to run.
+        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+        stats = { checked, wins, losses, errors };
+        lastRun = new Date();
+        isRunning = false;
+        runStartedAt = null;
+
+        console.log(`[SignalChecker] Done in ${elapsed}s — ${checked} checked, ${wins} wins, ${losses} losses, ${errors} errors`);
+        console.log('[SignalChecker] ══════════════════════════════════');
     }
-
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    stats = { checked, wins, losses, errors };
-    lastRun = new Date();
-    isRunning = false;
-
-    console.log(`[SignalChecker] Done in ${elapsed}s — ${checked} checked, ${wins} wins, ${losses} losses, ${errors} errors`);
-    console.log('[SignalChecker] ══════════════════════════════════');
 }
 
 // ─── Start/Stop ───────────────────────────────────────────

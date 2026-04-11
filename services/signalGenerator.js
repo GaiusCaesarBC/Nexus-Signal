@@ -299,39 +299,46 @@ async function runCycle() {
     const start = Date.now();
     let gen = 0, skip = 0, err = 0;
 
-    console.log(`[SignalGen] ══════════════════════════════════`);
+    try {
+        console.log(`[SignalGen] ══════════════════════════════════`);
 
-    // Smart asset discovery pipeline
-    const { stocks, crypto } = await discoverAssets();
+        // Smart asset discovery pipeline
+        const { stocks, crypto } = await discoverAssets();
 
-    console.log(`[SignalGen] Processing ${stocks.length} stocks + ${crypto.length} crypto`);
+        console.log(`[SignalGen] Processing ${stocks.length} stocks + ${crypto.length} crypto`);
 
-    // Process stocks (3s delay for ML rate limit)
-    for (const candidate of stocks) {
-        console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
-        const r = await processAsset(candidate.symbol, 'stock', candidate.price);
-        if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
-        await new Promise(r => setTimeout(r, 3000));
+        // Process stocks (3s delay for ML rate limit)
+        for (const candidate of stocks) {
+            console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
+            const r = await processAsset(candidate.symbol, 'stock', candidate.price);
+            if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        // Process crypto (2s delay, price already prefetched)
+        for (const candidate of crypto) {
+            console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
+            const r = await processAsset(candidate.symbol, 'crypto', candidate.price);
+            if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    } catch (cycleErr) {
+        console.error(`[SignalGen] Cycle crashed: ${cycleErr.message}`);
+        err++;
+    } finally {
+        // ALWAYS release the lock — prevents permanent stuck-flag blockage
+        const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+        stats.totalGenerated += gen;
+        stats.totalSkipped += skip;
+        stats.lastCycleGenerated = gen;
+        stats.errors += err;
+        lastRun = new Date();
+        isRunning = false;
+        runStartedAt = null;
+
+        console.log(`[SignalGen] Done in ${elapsed}s — ${gen} generated, ${skip} skipped, ${err} errors`);
+        console.log(`[SignalGen] ══════════════════════════════════`);
     }
-
-    // Process crypto (2s delay, price already prefetched)
-    for (const candidate of crypto) {
-        console.log(`[SignalGen] → ${candidate.symbol} [${candidate.bucket}] score=${candidate.compositeScore}`);
-        const r = await processAsset(candidate.symbol, 'crypto', candidate.price);
-        if (r.status === 'generated') gen++; else if (r.status === 'error') err++; else skip++;
-        await new Promise(r => setTimeout(r, 2000));
-    }
-
-    const elapsed = ((Date.now() - start) / 1000).toFixed(0);
-    stats.totalGenerated += gen;
-    stats.totalSkipped += skip;
-    stats.lastCycleGenerated = gen;
-    stats.errors += err;
-    lastRun = new Date();
-    isRunning = false;
-
-    console.log(`[SignalGen] Done in ${elapsed}s — ${gen} generated, ${skip} skipped, ${err} errors`);
-    console.log(`[SignalGen] ══════════════════════════════════`);
 }
 
 // ─── Start ────────────────────────────────────────────────
