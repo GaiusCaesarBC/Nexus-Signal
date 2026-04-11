@@ -398,9 +398,11 @@ router.get('/discover', async (req, res) => {
         const { limit = 20, skip = 0, timeframe = '24h' } = req.query;
         const currentUserId = req.user?.id || null;
 
-        // Calculate time threshold
-        let timeThreshold;
+        // Calculate time threshold — 'all' skips the date filter entirely
+        // so the "All Activity" tab on the client shows every public post.
+        let timeThreshold = null;
         switch (timeframe) {
+            case 'all': timeThreshold = null; break;
             case '1h': timeThreshold = new Date(Date.now() - 60 * 60 * 1000); break;
             case '6h': timeThreshold = new Date(Date.now() - 6 * 60 * 60 * 1000); break;
             case '24h': timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000); break;
@@ -409,11 +411,15 @@ router.get('/discover', async (req, res) => {
         }
 
         // Get posts with engagement
-        const posts = await Post.find({
+        const query = {
             deleted: { $ne: true },
             visibility: 'public',
-            createdAt: { $gte: timeThreshold }
-        })
+        };
+        if (timeThreshold) {
+            query.createdAt = { $gte: timeThreshold };
+        }
+
+        const posts = await Post.find(query)
         .populate('user', USER_POPULATE_FIELDS)
         .populate('repostOf')
         .lean();
