@@ -348,7 +348,7 @@ const fetchCryptoCompareIntraday = async (symbol, interval) => {
     let pages = 1;          // number of paginated calls to stitch
     switch (interval) {
         case 'LIVE':
-        case '1m': aggregate = 1;   limit = 2000; pages = 3; break; // ~3 days of 1m data
+        case '1m': aggregate = 1;   limit = 2000; pages = 1; break; // ~33 hours (pagination disabled — older pages return flat bars for low-cap tokens)
         case '5m': aggregate = 5;   limit = 2000; pages = 1; break; // ~7 days
         case '15m': aggregate = 15; limit = 2000; pages = 1; break; // ~20 days
         case '30m': aggregate = 30; limit = 2000; pages = 1; break; // ~40 days
