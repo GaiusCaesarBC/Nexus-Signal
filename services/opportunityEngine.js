@@ -185,15 +185,39 @@ function computeAiScore(prediction) {
     // Sentiment bonus — opposed indicators penalize
     const sentimentScore = Math.max(0, 100 - opposed * 25);
 
-    const aiScore = Math.round(
+    const baseScore = Math.round(
         conf * 0.40 +
         alignmentScore * 0.25 +
         sentimentScore * 0.15 +
         rrScore * 0.20
     );
 
+    // ─── Freshness decay ──────────────────────────────────────
+    // Prevents the same signal from sitting at #1 on the dashboard for
+    // days. Signals under 6 hours old get full score; older signals
+    // decay linearly down to a floor of 60%. A 2-day-old signal at
+    // base score 85 decays to ~64, letting fresher setups rise.
+    //
+    // Curve: decayMultiplier = max(0.60, 1 - (ageHours - 6) * 0.006)
+    //   0h  → 1.00
+    //   6h  → 1.00  (grace period)
+    //  12h  → 0.964
+    //  24h  → 0.892
+    //  48h  → 0.748
+    //  72h  → 0.604
+    //  73h+ → 0.60  (floor)
+    const ageMs = prediction.createdAt
+        ? Date.now() - new Date(prediction.createdAt).getTime()
+        : 0;
+    const ageHours = Math.max(0, ageMs / (1000 * 60 * 60));
+    const decay = ageHours <= 6
+        ? 1.0
+        : Math.max(0.60, 1.0 - (ageHours - 6) * 0.006);
+
+    const aiScore = Math.round(Math.min(95, baseScore) * decay);
+
     return {
-        aiScore: Math.min(95, aiScore),
+        aiScore: Math.max(0, aiScore),
         rr: rr ? Math.round(rr * 10) / 10 : null,
         alignmentRatio,
         alignedCount: aligned,
