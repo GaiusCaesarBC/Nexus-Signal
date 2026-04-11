@@ -122,19 +122,49 @@ function checkResult(signal, livePrice) {
 
     if (!entryPrice || !stopLoss || !livePrice) return null;
 
-    // Only reject obviously invalid prices (zero, negative, or impossibly small)
-    if (livePrice <= 0 || livePrice < entryPrice * 0.001) {
+    // ─── PRICE SANITY GATE ────────────────────────────────────
+    // Reject live prices that are unreasonably far from entry.
+    // If the price is >40% away, the data source is almost certainly
+    // returning the wrong token, a stale cache, or API garbage.
+    // This prevents recording fake wins/losses from bad price data
+    // (the exact problem cleanupBadPriceResults.js was fixing
+    // retroactively — now caught inline before saving).
+    const priceDeltaPct = Math.abs((livePrice - entryPrice) / entryPrice) * 100;
+    if (priceDeltaPct > 40) {
+        console.warn(`[SignalChecker] ⚠️ ${signal.symbol}: Live price $${livePrice} is ${priceDeltaPct.toFixed(1)}% from entry $${entryPrice} — rejecting as bad data`);
+        return null;
+    }
+
+    // Reject obviously invalid prices (zero, negative)
+    if (livePrice <= 0) {
         console.log(`[SignalChecker] ⚠ ${signal.symbol}: Invalid price ${livePrice}, skipping`);
         return null;
     }
 
     const isLong = direction === 'UP';
 
+    // ─── SL HIT DISTANCE VALIDATION ──────────────────────────
+    // After confirming SL was hit, verify the loss % is reasonable.
+    // Our SL structure is 5% from entry. If the result shows a loss
+    // of >15%, the SL value itself was likely broken (from the old
+    // bug where SL was calculated from ML target instead of fixed %).
+    // In that case, skip recording the result — the signal's SL is
+    // corrupt and shouldn't count.
+    const slDistPct = Math.abs((livePrice - entryPrice) / entryPrice) * 100;
+
     // Check Stop Loss hit
     if (isLong && livePrice <= stopLoss) {
+        if (slDistPct > 15) {
+            console.warn(`[SignalChecker] ⚠️ ${signal.symbol}: SL hit but loss is ${slDistPct.toFixed(1)}% (max expected ~5%) — skipping corrupt SL`);
+            return null;
+        }
         return { result: 'loss', resultText: 'SL Hit', resultPrice: livePrice };
     }
     if (!isLong && livePrice >= stopLoss) {
+        if (slDistPct > 15) {
+            console.warn(`[SignalChecker] ⚠️ ${signal.symbol}: SL hit but loss is ${slDistPct.toFixed(1)}% (max expected ~5%) — skipping corrupt SL`);
+            return null;
+        }
         return { result: 'loss', resultText: 'SL Hit', resultPrice: livePrice };
     }
 

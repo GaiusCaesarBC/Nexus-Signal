@@ -233,6 +233,20 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
             return { status: 'skipped', reason: 'invalid sl/tp' };
         }
 
+        // ─── SL/TP DISTANCE AUDIT ────────────────────────────
+        // Verify the computed levels match our intended structure.
+        // Our SL is 5% from entry; TP3 is 12%. If any level is more
+        // than 20% from entry, the price input was likely garbage
+        // (wrong token, stale cache, API error). Reject the signal
+        // before it gets saved — this is the inline equivalent of
+        // cleanupBrokenSignals.js and cleanupBadLosses.js.
+        const slDist = Math.abs((stopLoss - entryPrice) / entryPrice) * 100;
+        const tp3Dist = Math.abs((takeProfit3 - entryPrice) / entryPrice) * 100;
+        if (slDist > 20 || tp3Dist > 20) {
+            console.error(`[SignalGen] ❌ ${symbol}: SL/TP distances out of range (SL ${slDist.toFixed(1)}%, TP3 ${tp3Dist.toFixed(1)}%) — rejecting`);
+            return { status: 'skipped', reason: 'sl/tp distance out of range' };
+        }
+
         await new Prediction({
             user: null,
             symbol,
