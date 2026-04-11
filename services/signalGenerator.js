@@ -26,6 +26,8 @@ const COOLDOWN_WINDOW_DAYS = 7;     // Loss streak is measured over this window.
 const COOLDOWN_DURATION_HOURS = 48; // How long to skip the symbol after triggering cooldown.
 
 let isRunning = false;
+let runStartedAt = null;
+const MAX_CYCLE_MS = 10 * 60000; // 10 min safety ceiling for signal generation
 let lastRun = null;
 let stats = { totalGenerated: 0, totalSkipped: 0, lastCycleGenerated: 0, errors: 0 };
 
@@ -286,8 +288,14 @@ async function processAsset(symbol, assetType, prefetchedPrice = null) {
 // ─── Run cycle ────────────────────────────────────────────
 
 async function runCycle() {
+    // Safety: force-reset a stuck isRunning flag after MAX_CYCLE_MS
+    if (isRunning && runStartedAt && (Date.now() - runStartedAt > MAX_CYCLE_MS)) {
+        console.warn(`[SignalGen] ⚠️ Previous cycle stuck for ${((Date.now() - runStartedAt) / 1000).toFixed(0)}s — force-resetting`);
+        isRunning = false;
+    }
     if (isRunning) { console.log('[SignalGen] Already running'); return; }
     isRunning = true;
+    runStartedAt = Date.now();
     const start = Date.now();
     let gen = 0, skip = 0, err = 0;
 

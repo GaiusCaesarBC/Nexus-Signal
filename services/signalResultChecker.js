@@ -27,6 +27,10 @@ const COINGECKO_IDS = {
 };
 
 let isRunning = false;
+let runStartedAt = null;         // timestamp when the current cycle started
+const MAX_CYCLE_MS = 4 * 60000; // 4 minutes — safety ceiling; if a cycle exceeds
+                                 // this, the isRunning flag is force-reset so the
+                                 // next cron tick isn't permanently blocked.
 let lastRun = null;
 let stats = { checked: 0, wins: 0, losses: 0, errors: 0 };
 
@@ -160,12 +164,21 @@ function checkResult(signal, livePrice) {
 // ─── Main Check Cycle ─────────────────────────────────────
 
 async function runCheckCycle() {
+    // Safety: if the previous cycle's isRunning flag has been stuck for
+    // longer than MAX_CYCLE_MS, force-reset it. This prevents a single
+    // crashed cycle from permanently blocking all future checks.
+    if (isRunning && runStartedAt && (Date.now() - runStartedAt > MAX_CYCLE_MS)) {
+        console.warn(`[SignalChecker] ⚠️ Previous cycle stuck for ${((Date.now() - runStartedAt) / 1000).toFixed(0)}s — force-resetting isRunning flag`);
+        isRunning = false;
+    }
+
     if (isRunning) {
         console.log('[SignalChecker] Already running, skipping...');
         return;
     }
 
     isRunning = true;
+    runStartedAt = Date.now();
     const start = Date.now();
     let checked = 0, wins = 0, losses = 0, errors = 0;
 
