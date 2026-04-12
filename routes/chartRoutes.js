@@ -851,30 +851,15 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     try {
                         const chartData = await fetchCryptoCompareIntraday(crypto, interval);
                         if (chartData && chartData.length > 0) {
-                            // Check if CryptoCompare has sufficient price resolution.
-                            // Micro-price tokens (SHIB, PEPE, BONK, FLOKI) often come
-                            // back with O===H===L===C on most bars because CryptoCompare
-                            // rounds to ~7 significant digits. If >60% of candles are
-                            // flat (zero body), discard and fall through to Binance
-                            // which provides 8+ decimal precision.
-                            const flatCount = chartData.filter(c =>
-                                c.open === c.high && c.high === c.low && c.low === c.close
-                            ).length;
-                            const flatPct = flatCount / chartData.length;
-
-                            if (flatPct > 0.6) {
-                                console.log(`[Chart] ⚠️ CryptoCompare returned ${(flatPct * 100).toFixed(0)}% flat candles for ${crypto} — insufficient precision, falling through to Binance`);
-                            } else {
-                                chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
-                                console.log(`[Chart] ✅ CryptoCompare histominute succeeded: ${chartData.length} candles for ${crypto}`);
-                                return res.json({
-                                    success: true,
-                                    data: chartData,
-                                    symbol: `${crypto}-USD`,
-                                    interval,
-                                    source: 'cryptocompare-histominute'
-                                });
-                            }
+                            chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+                            console.log(`[Chart] ✅ CryptoCompare histominute succeeded: ${chartData.length} candles for ${crypto}`);
+                            return res.json({
+                                success: true,
+                                data: chartData,
+                                symbol: `${crypto}-USD`,
+                                interval,
+                                source: 'cryptocompare-histominute'
+                            });
                         }
                     } catch (ccErr) {
                         console.log(`[Chart] ⚠️ CryptoCompare histominute failed for ${crypto}: ${ccErr.message}`);
