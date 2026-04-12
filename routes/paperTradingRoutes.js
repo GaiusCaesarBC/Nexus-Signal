@@ -1520,24 +1520,34 @@ router.post('/refresh-prices', auth, async (req, res) => {
 
         const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
 
-        // Individual fallback for any symbols still missing
+        // Individual fallback for any symbols still missing —
+        // tries the stored type first, then falls back to the other.
+        // This catches cases where a crypto position's `type` field
+        // wasn't stored correctly (e.g. AIOT stored without type).
         for (const sym of allSymbols) {
             if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
                 try {
-                    // Use the STORED position type, not isCryptoSymbol() guess
-                    const isCrypto = positionTypeMap.get(sym) === 'crypto';
+                    const storedType = positionTypeMap.get(sym);
+                    const isCrypto = storedType === 'crypto';
+                    const axios = require('axios');
+
                     if (isCrypto) {
-                        // CryptoCompare individual fallback
-                        const axios = require('axios');
+                        // Try CryptoCompare first
                         const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
                         if (ccRes.data?.USD > 0) batchPrices.set(sym, ccRes.data.USD);
                     } else {
-                        // Finnhub individual fallback
+                        // Try Finnhub (stock) first
                         const FKEY = process.env.FINNHUB_API_KEY;
                         if (FKEY) {
-                            const axios = require('axios');
                             const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
                             if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
+                        }
+                        // If stock API returned nothing, try crypto as fallback
+                        // (catches positions with missing/wrong type field)
+                        if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
+                            console.log(`[Paper Trading] ${sym}: stock API returned nothing, trying crypto fallback`);
+                            const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
+                            if (ccRes.data?.USD > 0) batchPrices.set(sym, ccRes.data.USD);
                         }
                     }
                 } catch (e) { /* tried our best */ }
