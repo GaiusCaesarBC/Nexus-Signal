@@ -1485,40 +1485,48 @@ router.post('/refresh-prices', auth, async (req, res) => {
             else stockPositions.push(sym);
         });
 
-        // Fetch crypto and stock prices separately using correct APIs
+        // Fetch prices — try ALL symbols against CryptoCompare first
+        // (covers all crypto regardless of stored type), then fill
+        // remaining gaps with Finnhub (stocks). This eliminates the
+        // class of bugs where a crypto position's type field is wrong
+        // and the system tries to price it via a stock API.
         const batchPrices = new Map();
+        const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
 
-        // Crypto batch via CryptoCompare
-        if (cryptoPositions.length > 0) {
+        // Step 1: Try CryptoCompare batch for ALL symbols at once
+        // (CryptoCompare silently ignores symbols it doesn't know)
+        if (allSymbols.length > 0) {
             try {
                 const axios = require('axios');
-                const fsyms = cryptoPositions.join(',');
+                const fsyms = [...new Set(allSymbols)].join(',');
                 const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`, { timeout: 8000 });
-                for (const sym of cryptoPositions) {
+                for (const sym of allSymbols) {
                     if (ccRes.data?.[sym]?.USD > 0) batchPrices.set(sym, ccRes.data[sym].USD);
                 }
-            } catch (e) { console.log('[Paper Trading] Crypto batch failed:', e.message); }
+                console.log(`[Paper Trading] CryptoCompare batch: ${batchPrices.size}/${allSymbols.length} symbols priced`);
+            } catch (e) { console.log('[Paper Trading] CryptoCompare batch failed:', e.message); }
         }
 
-        // Stock batch via Finnhub
-        if (stockPositions.length > 0) {
-            const FKEY = process.env.FINNHUB_API_KEY;
-            if (FKEY) {
+        // Step 2: Fill gaps with Finnhub for anything CryptoCompare missed
+        // (stocks, or crypto that CC doesn't list)
+        const FKEY = process.env.FINNHUB_API_KEY;
+        if (FKEY) {
+            const missing = allSymbols.filter(s => !batchPrices.has(s));
+            if (missing.length > 0) {
                 const axios = require('axios');
-                for (const sym of stockPositions) {
+                for (const sym of missing) {
                     try {
                         const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
                         if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
                     } catch (e) { /* skip */ }
                 }
+                console.log(`[Paper Trading] Finnhub filled ${missing.length - [...missing].filter(s => !batchPrices.has(s)).length} more`);
             }
         }
 
         // Build type map for individual fallback
         const positionTypeMap = new Map();
         account.positions.forEach(p => positionTypeMap.set(p.symbol.toUpperCase(), p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock')));
-
-        const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
 
         // Individual fallback for any symbols still missing —
         // tries the stored type first, then falls back to the other.
