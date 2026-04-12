@@ -1572,13 +1572,29 @@ router.post('/refresh-prices', auth, async (req, res) => {
             const oldPrice = position.currentPrice;
 
             if (price && price > 0) {
+                // Sanity check: reject price updates that deviate >40% from
+                // the position's entry price. This catches wrong-token
+                // mappings (e.g. CryptoCompare resolving "NEO" to a $2.70
+                // token when the real NEO is $5.50). Without this check,
+                // the TP/SL auto-close triggers immediately on garbage data,
+                // closing the position at a fake price.
+                const entry = safeNumber(position.averagePrice, 0);
+                if (entry > 0) {
+                    const devPct = Math.abs((price - entry) / entry);
+                    if (devPct > 0.40) {
+                        console.warn(`[Paper Trading] ⚠️ ${position.symbol}: price $${price} deviates ${(devPct * 100).toFixed(1)}% from entry $${entry} — likely wrong token mapping, skipping update`);
+                        // Don't update price, don't check triggers
+                        continue;
+                    }
+                }
+
                 position.currentPrice = safeNumber(price, position.currentPrice);
                 position.lastUpdated = new Date();
                 console.log(`[Paper Trading] ${position.symbol}: $${oldPrice} → $${position.currentPrice}`);
             } else {
                 console.log(`[Paper Trading] No price found for ${position.symbol} (key: ${symbolKey})`);
             }
-            
+
             // Check for TP/SL/Trailing/Liquidation triggers
             const triggers = checkPositionTriggers(position);
 
