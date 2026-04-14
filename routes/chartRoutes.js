@@ -899,8 +899,14 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     }
                 }
 
-                // Try CoinGecko (synthesized OHLC from price data)
+                // Try CoinGecko (synthesized OHLC from price data) —
+                // skip for sub-15m intervals because CoinGecko's /market_chart
+                // returns sparse price ticks that synthesize into flat
+                // open=close=high=low bars (renders as a line, not candles).
+                // Falling through lets Binance/Binance.US provide real OHLC.
+                const cgSkip = ['LIVE', '1m', '5m'].includes(interval);
                 try {
+                    if (cgSkip) throw new Error('CoinGecko skipped for sub-15m (synthesized OHLC is flat)');
                     console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto}...`);
                     const chartData = await fetchCoinGeckoOHLC(crypto, interval);
 
