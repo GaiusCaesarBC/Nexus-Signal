@@ -5,6 +5,25 @@ const router = express.Router();
 const axios = require('axios');
 const auth = require('../middleware/authMiddleware');
 const { sanitizeSymbol, encodeSymbolForUrl } = require('../utils/symbolValidation');
+const priceService = require('../services/priceService');
+
+// Reverse map: CoinGecko ID → ticker (e.g. "enjincoin" → "ENJ").
+// Lets the chart route accept either form so callers passing the
+// CoinGecko slug (from /crypto/info responses, etc.) don't 404.
+const CG_ID_TO_TICKER = (() => {
+    const out = {};
+    const ids = priceService.COINGECKO_IDS || {};
+    for (const [ticker, id] of Object.entries(ids)) {
+        if (!out[id.toLowerCase()]) out[id.toLowerCase()] = ticker;
+    }
+    return out;
+})();
+const normalizeChartSymbol = (raw) => {
+    if (!raw) return raw;
+    const lower = raw.toLowerCase();
+    if (CG_ID_TO_TICKER[lower]) return CG_ID_TO_TICKER[lower];
+    return raw;
+};
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
@@ -804,7 +823,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
         // Validate symbol to prevent SSRF/injection attacks
         let symbol;
         try {
-            symbol = sanitizeSymbol(req.params.symbol);
+            symbol = normalizeChartSymbol(sanitizeSymbol(req.params.symbol));
         } catch (validationError) {
             return res.status(400).json({
                 success: false,
@@ -1530,7 +1549,7 @@ router.get('/:symbol/quote', auth, async (req, res) => {
         // Validate symbol to prevent SSRF/injection attacks
         let symbol;
         try {
-            symbol = sanitizeSymbol(req.params.symbol);
+            symbol = normalizeChartSymbol(sanitizeSymbol(req.params.symbol));
         } catch (validationError) {
             return res.status(400).json({
                 success: false,
