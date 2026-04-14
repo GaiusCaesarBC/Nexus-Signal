@@ -848,9 +848,14 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                 // It has BNB and most majors, returns true minute-granularity OHLC, and
                 // is not geo-blocked from US datacenters (unlike Binance Global).
                 if (KNOWN_CRYPTOS.includes(crypto.toUpperCase())) {
+                    // CC routinely returns zero-bars for older minute data on
+                    // many tokens (filter at line ~395 drops them), leaving a
+                    // sparse series. Require a minimum candle count for short
+                    // intervals so we fall through to Binance when CC is thin.
+                    const ccMinCandles = { '1m': 200, '5m': 200, '15m': 100, '30m': 100 }[interval] || 0;
                     try {
                         const chartData = await fetchCryptoCompareIntraday(crypto, interval);
-                        if (chartData && chartData.length > 0) {
+                        if (chartData && chartData.length >= Math.max(1, ccMinCandles)) {
                             chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
                             console.log(`[Chart] ✅ CryptoCompare histominute succeeded: ${chartData.length} candles for ${crypto}`);
                             return res.json({
@@ -861,6 +866,7 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                                 source: 'cryptocompare-histominute'
                             });
                         }
+                        console.log(`[Chart] ⚠️ CryptoCompare returned only ${chartData?.length || 0} candles for ${crypto} (${interval}), need ≥${ccMinCandles} — falling through`);
                     } catch (ccErr) {
                         console.log(`[Chart] ⚠️ CryptoCompare histominute failed for ${crypto}: ${ccErr.message}`);
                     }

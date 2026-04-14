@@ -1565,38 +1565,23 @@ router.post('/refresh-prices', auth, async (req, res) => {
         const positionTypeMap = new Map();
         account.positions.forEach(p => positionTypeMap.set(p.symbol.toUpperCase(), p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock')));
 
-        // Individual fallback for any symbols still missing —
-        // tries the stored type first, then falls back to the other.
-        // This catches cases where a crypto position's `type` field
-        // wasn't stored correctly (e.g. AIOT stored without type).
+        // Individual fallback for any symbols still missing — route
+        // through priceService.getCurrentPrice so we pick up its full
+        // fallback chain (CryptoCompare → Binance US → CoinGecko for
+        // crypto; Yahoo → Alpha Vantage → Finnhub for stocks). If the
+        // stored type doesn't yield a price, retry as the other type
+        // to catch positions with a missing/wrong `type` field.
         for (const sym of allSymbols) {
-            if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
-                try {
-                    const storedType = positionTypeMap.get(sym);
-                    const isCrypto = storedType === 'crypto';
-                    const axios = require('axios');
-
-                    if (isCrypto) {
-                        // Try CryptoCompare first
-                        const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
-                        if (ccRes.data?.USD > 0) batchPrices.set(sym, ccRes.data.USD);
-                    } else {
-                        // Try Finnhub (stock) first
-                        const FKEY = process.env.FINNHUB_API_KEY;
-                        if (FKEY) {
-                            const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
-                            if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
-                        }
-                        // If stock API returned nothing, try crypto as fallback
-                        // (catches positions with missing/wrong type field)
-                        if (!batchPrices.has(sym) || !batchPrices.get(sym)) {
-                            console.log(`[Paper Trading] ${sym}: stock API returned nothing, trying crypto fallback`);
-                            const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/price?fsym=${sym}&tsyms=USD`, { timeout: 5000 });
-                            if (ccRes.data?.USD > 0) batchPrices.set(sym, ccRes.data.USD);
-                        }
-                    }
-                } catch (e) { /* tried our best */ }
-            }
+            if (batchPrices.has(sym) && batchPrices.get(sym)) continue;
+            const storedType = positionTypeMap.get(sym);
+            try {
+                let r = await priceService.getCurrentPrice(sym, storedType);
+                if (!r.price) {
+                    const otherType = storedType === 'crypto' ? 'stock' : 'crypto';
+                    r = await priceService.getCurrentPrice(sym, otherType);
+                }
+                if (r.price > 0) batchPrices.set(sym, r.price);
+            } catch (e) { /* tried our best */ }
         }
 
         console.log(`[Paper Trading] Fetched prices for ${batchPrices.size}/${allSymbols.length} symbols:`, Object.fromEntries(batchPrices));
