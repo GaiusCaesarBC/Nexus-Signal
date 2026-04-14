@@ -1544,26 +1544,31 @@ router.post('/refresh-prices', auth, async (req, res) => {
             } catch (e) { console.log('[Paper Trading] CryptoCompare batch failed:', e.message); }
         }
 
-        // Step 2: Fill gaps with Finnhub for anything CryptoCompare missed
-        // (stocks, or crypto that CC doesn't list)
+        // Build type map up-front so we never ask a stock API for a crypto
+        // ticker (or vice versa). Many crypto tickers collide with real stock
+        // symbols (ENJ/Enjin vs ENJ stock, UNI/Uniswap vs UNI stock, AVAX,
+        // RUNE, etc.) — Finnhub will happily return the wrong asset's price
+        // and the deviation guard will then permanently block updates.
+        const positionTypeMap = new Map();
+        account.positions.forEach(p => positionTypeMap.set(p.symbol.toUpperCase(), p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock')));
+
+        // Step 2: Fill gaps with Finnhub — STOCKS ONLY. Crypto symbols fall
+        // through to the priceService individual fallback below, which uses
+        // Binance US / CoinGecko for true crypto prices.
         const FKEY = process.env.FINNHUB_API_KEY;
         if (FKEY) {
-            const missing = allSymbols.filter(s => !batchPrices.has(s));
-            if (missing.length > 0) {
+            const missingStocks = allSymbols.filter(s => !batchPrices.has(s) && positionTypeMap.get(s) === 'stock');
+            if (missingStocks.length > 0) {
                 const axios = require('axios');
-                for (const sym of missing) {
+                for (const sym of missingStocks) {
                     try {
                         const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FKEY}`, { timeout: 5000 });
                         if (fRes.data?.c > 0) batchPrices.set(sym, fRes.data.c);
                     } catch (e) { /* skip */ }
                 }
-                console.log(`[Paper Trading] Finnhub filled ${missing.length - [...missing].filter(s => !batchPrices.has(s)).length} more`);
+                console.log(`[Paper Trading] Finnhub filled ${missingStocks.length - [...missingStocks].filter(s => !batchPrices.has(s)).length}/${missingStocks.length} stocks`);
             }
         }
-
-        // Build type map for individual fallback
-        const positionTypeMap = new Map();
-        account.positions.forEach(p => positionTypeMap.set(p.symbol.toUpperCase(), p.type || (priceService.isCryptoSymbol(p.symbol) ? 'crypto' : 'stock')));
 
         // Individual fallback for any symbols still missing — route
         // through priceService.getCurrentPrice so we pick up its full
