@@ -476,6 +476,74 @@ const fetchKrakenOHLC = async (symbol, interval) => {
     return chartData;
 };
 
+// Helper: Fetch real exchange OHLC from Binance (Global, falling back to US).
+// Binance Global is 451-blocked from US datacenters, so US is usually the
+// one that succeeds in production. Returns up to 2000 candles via pagination.
+const fetchBinanceOHLC = async (symbol, interval) => {
+    let binanceInterval;
+    switch (interval) {
+        case 'LIVE': binanceInterval = '1m'; break;
+        case '1m': binanceInterval = '1m'; break;
+        case '5m': binanceInterval = '5m'; break;
+        case '15m': binanceInterval = '15m'; break;
+        case '30m': binanceInterval = '30m'; break;
+        case '1h': binanceInterval = '1h'; break;
+        case '4h': binanceInterval = '4h'; break;
+        default: binanceInterval = '1h';
+    }
+
+    const pair = `${symbol}USDT`;
+    const TARGET = 2000;
+    const BATCH = 1000;
+
+    const fetchFromHost = async (host) => {
+        let candles = [];
+        let endTime = null;
+        while (candles.length < TARGET) {
+            let url = `https://${host}/api/v3/klines?symbol=${pair}&interval=${binanceInterval}&limit=${BATCH}`;
+            if (endTime) url += `&endTime=${endTime}`;
+            const r = await axios.get(url, {
+                headers: { 'User-Agent': 'NexusSignal/1.0', 'Accept': 'application/json' },
+                timeout: 10000
+            });
+            if (!r.data || r.data.length === 0) break;
+            candles = [...r.data, ...candles];
+            endTime = r.data[0][0] - 1;
+            if (r.data.length < BATCH) break;
+        }
+        return candles
+            .map(k => (k[0] == null || k[1] == null || k[2] == null || k[3] == null || k[4] == null) ? null : ({
+                time: Math.floor(k[0] / 1000),
+                open: parseFloat(k[1]),
+                high: parseFloat(k[2]),
+                low: parseFloat(k[3]),
+                close: parseFloat(k[4]),
+                volume: parseFloat(k[5]) || 0
+            }))
+            .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                         Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                         c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
+            .sort((a, b) => a.time - b.time);
+    };
+
+    let chartData = [];
+    let source = null;
+    try {
+        chartData = await fetchFromHost('api.binance.com');
+        if (chartData.length > 0) source = 'binance';
+    } catch (e) { console.log(`[Chart] Binance Global failed for ${pair}: ${e.message}`); }
+
+    if (chartData.length === 0) {
+        try {
+            chartData = await fetchFromHost('api.binance.us');
+            if (chartData.length > 0) source = 'binance-us';
+        } catch (e) { console.log(`[Chart] Binance US failed for ${pair}: ${e.message}`); }
+    }
+
+    if (chartData.length === 0) throw new Error(`No Binance data for ${pair}`);
+    return { chartData, source };
+};
+
 // Helper: Fetch price data from CoinGecko market_chart and synthesize OHLC
 const fetchCoinGeckoOHLC = async (symbol, interval) => {
     // CoinGecko free /market_chart minimum granularity is ~5 minutes for days=1.
@@ -844,293 +912,96 @@ router.get('/:symbol/:interval', auth, async (req, res) => {
                     }
                 }
 
-                // Try CryptoCompare histominute FIRST for known centralized cryptos.
-                // It has BNB and most majors, returns true minute-granularity OHLC, and
-                // is not geo-blocked from US datacenters (unlike Binance Global).
-                if (KNOWN_CRYPTOS.includes(crypto.toUpperCase())) {
-                    // CC routinely returns zero-bars for older minute data on
-                    // many tokens (filter at line ~395 drops them), leaving a
-                    // sparse series. Require a minimum candle count for short
-                    // intervals so we fall through to Binance when CC is thin.
+                // Priority for known centralized cryptos:
+                //   1. Binance (real exchange OHLC, true 1m/5m)
+                //   2. CoinGecko (synthesized — skipped for sub-15m where it's flat)
+                //   3. CryptoCompare histominute (geo-safe but sparse on shorter TFs)
+                //   4. Kraken (real OHLC for the symbols it lists)
+                //   5. Gecko Terminal (DEX) for unknown tokens
+                const isKnownCentralized = KNOWN_CRYPTOS.includes(crypto.toUpperCase());
+
+                // 1. Binance
+                if (isKnownCentralized) {
+                    try {
+                        const { chartData, source } = await fetchBinanceOHLC(crypto, interval);
+                        if (chartData.length > 0) {
+                            chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+                            console.log(`[Chart] ✅ ${source} succeeded: ${chartData.length} candles for ${crypto}`);
+                            return res.json({ success: true, data: chartData, symbol: `${crypto}-USD`, interval, source });
+                        }
+                    } catch (e) {
+                        console.log(`[Chart] ⚠️ Binance failed for ${crypto}: ${e.message}`);
+                    }
+                }
+
+                // 2. CoinGecko — synthesized; skip for sub-15m where bars come out flat
+                const cgSkip = ['LIVE', '1m', '5m'].includes(interval);
+                if (!cgSkip) {
+                    try {
+                        console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto}...`);
+                        const chartData = await fetchCoinGeckoOHLC(crypto, interval);
+                        if (chartData && chartData.length > 0) {
+                            chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+                            console.log(`[Chart] ✅ CoinGecko succeeded: ${chartData.length} candles for ${crypto}`);
+                            return res.json({ success: true, data: chartData, symbol: `${crypto}-USD`, interval, source: 'coingecko' });
+                        }
+                    } catch (cgError) {
+                        console.log(`[Chart] ⚠️ CoinGecko failed: ${cgError.message}`);
+                    }
+                }
+
+                // 3. CryptoCompare histominute — require minimum candles for short
+                // intervals because CC returns zero-bars for older minute data on
+                // many tokens (filter at line ~395 drops them) leaving a sparse series.
+                if (isKnownCentralized) {
                     const ccMinCandles = { '1m': 200, '5m': 200, '15m': 100, '30m': 100 }[interval] || 0;
                     try {
                         const chartData = await fetchCryptoCompareIntraday(crypto, interval);
                         if (chartData && chartData.length >= Math.max(1, ccMinCandles)) {
                             chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
                             console.log(`[Chart] ✅ CryptoCompare histominute succeeded: ${chartData.length} candles for ${crypto}`);
-                            return res.json({
-                                success: true,
-                                data: chartData,
-                                symbol: `${crypto}-USD`,
-                                interval,
-                                source: 'cryptocompare-histominute'
-                            });
+                            return res.json({ success: true, data: chartData, symbol: `${crypto}-USD`, interval, source: 'cryptocompare-histominute' });
                         }
-                        console.log(`[Chart] ⚠️ CryptoCompare returned only ${chartData?.length || 0} candles for ${crypto} (${interval}), need ≥${ccMinCandles} — falling through`);
+                        console.log(`[Chart] ⚠️ CryptoCompare returned only ${chartData?.length || 0} candles for ${crypto} (${interval}), need ≥${ccMinCandles}`);
                     } catch (ccErr) {
                         console.log(`[Chart] ⚠️ CryptoCompare histominute failed for ${crypto}: ${ccErr.message}`);
                     }
                 }
 
-                // Try Kraken next for supported cryptos (real OHLC data, works in US)
+                // 4. Kraken — real OHLC for the symbols it lists
                 if (KRAKEN_SYMBOL_MAP[crypto]) {
                     try {
                         console.log(`[Chart] 🦑 Trying Kraken for ${crypto}...`);
                         const chartData = await fetchKrakenOHLC(crypto, interval);
-
                         if (chartData && chartData.length > 0) {
-                            chartDataCache.set(cacheKey, {
-                                data: chartData,
-                                timestamp: Date.now()
-                            });
-
+                            chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
                             console.log(`[Chart] ✅ Kraken succeeded: ${chartData.length} candles for ${crypto}`);
-
-                            return res.json({
-                                success: true,
-                                data: chartData,
-                                symbol: `${crypto}-USD`,
-                                interval,
-                                source: 'kraken'
-                            });
+                            return res.json({ success: true, data: chartData, symbol: `${crypto}-USD`, interval, source: 'kraken' });
                         }
                     } catch (krakenError) {
                         console.log(`[Chart] ⚠️ Kraken failed: ${krakenError.message}`);
                     }
                 }
 
-                // Try CoinGecko (synthesized OHLC from price data) —
-                // skip for sub-15m intervals because CoinGecko's /market_chart
-                // returns sparse price ticks that synthesize into flat
-                // open=close=high=low bars (renders as a line, not candles).
-                // Falling through lets Binance/Binance.US provide real OHLC.
-                const cgSkip = ['LIVE', '1m', '5m'].includes(interval);
-                try {
-                    if (cgSkip) throw new Error('CoinGecko skipped for sub-15m (synthesized OHLC is flat)');
-                    console.log(`[Chart] 🦎 Trying CoinGecko for ${crypto}...`);
-                    const chartData = await fetchCoinGeckoOHLC(crypto, interval);
-
-                    chartDataCache.set(cacheKey, {
-                        data: chartData,
-                        timestamp: Date.now()
-                    });
-
-                    console.log(`[Chart] ✅ CoinGecko succeeded: ${chartData.length} candles for ${crypto}`);
-
-                    return res.json({
-                        success: true,
-                        data: chartData,
-                        symbol: `${crypto}-USD`,
-                        interval,
-                        source: 'coingecko'
-                    });
-                } catch (cgError) {
-                    console.log(`[Chart] ⚠️ CoinGecko failed: ${cgError.message}`);
-                }
-
-                // For known centralized cryptos, try Binance BEFORE Gecko Terminal —
-                // GT's DEX search returns wrong-token scam pools when ticker collides
-                // (e.g. "BNB" matches a $5 wrapped DEX token instead of real BNB).
-                const isKnownCentralized = KNOWN_CRYPTOS.includes(crypto.toUpperCase());
+                // 5. Gecko Terminal (DEX) for unknown / DEX-only tokens
                 if (!isKnownCentralized) {
-                    // Unknown / DEX-only token: try Gecko Terminal (any network)
                     try {
                         console.log(`[Chart] 🦎 Trying Gecko Terminal (any network) for ${crypto}...`);
                         const chartData = await fetchGeckoTerminalOHLC(crypto, interval);
-
-                        chartDataCache.set(cacheKey, {
-                            data: chartData,
-                            timestamp: Date.now()
-                        });
-
+                        chartDataCache.set(cacheKey, { data: chartData, timestamp: Date.now() });
                         console.log(`[Chart] ✅ Gecko Terminal succeeded: ${chartData.length} candles for ${crypto}`);
-
-                        return res.json({
-                            success: true,
-                            data: chartData,
-                            symbol: `${crypto}-USD`,
-                            interval,
-                            source: 'geckoterminal'
-                        });
+                        return res.json({ success: true, data: chartData, symbol: `${crypto}-USD`, interval, source: 'geckoterminal' });
                     } catch (gtError) {
                         console.log(`[Chart] ⚠️ Gecko Terminal failed: ${gtError.message}`);
                     }
                 }
 
-                // Fallback to Binance (always tried for known centralized cryptos)
-                console.log(`[Chart] 🔄 Falling back to Binance for ${crypto}...`);
-
-                // Map interval to Binance format (Binance supports real 1m and 5m)
-                let binanceInterval;
-                switch(interval) {
-                    case 'LIVE': binanceInterval = '1m'; break;
-                    case '1m': binanceInterval = '1m'; break;
-                    case '5m': binanceInterval = '5m'; break;
-                    case '15m': binanceInterval = '15m'; break;
-                    case '30m': binanceInterval = '30m'; break;
-                    case '1h': binanceInterval = '1h'; break;
-                    case '4h': binanceInterval = '4h'; break;
-                    default: binanceInterval = '1h';
-                }
-
-                const binanceSymbol = `${crypto}USDT`;
-                const TARGET_BINANCE_CANDLES = 2000;
-                const BINANCE_BATCH = 1000;
-
-                try {
-                    // Fetch with pagination for more candles
-                    let allCandles = [];
-                    let endTime = null;
-
-                    while (allCandles.length < TARGET_BINANCE_CANDLES) {
-                        let binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${BINANCE_BATCH}`;
-                        if (endTime) {
-                            binanceUrl += `&endTime=${endTime}`;
-                        }
-
-                        const response = await axios.get(binanceUrl, {
-                            headers: {
-                                'User-Agent': 'NexusSignal/1.0',
-                                'Accept': 'application/json'
-                            },
-                            timeout: 10000
-                        });
-
-                        if (!response.data || response.data.length === 0) break;
-
-                        // Prepend older data
-                        allCandles = [...response.data, ...allCandles];
-
-                        // Get oldest timestamp for next batch
-                        endTime = response.data[0][0] - 1;
-
-                        if (response.data.length < BINANCE_BATCH) break;
-                    }
-
-                    if (allCandles.length === 0) {
-                        console.log(`[Chart] ❌ No Binance data for ${binanceSymbol}`);
-                        return res.status(404).json({
-                            success: false,
-                            error: 'No crypto data found for this symbol'
-                        });
-                    }
-
-                    const chartData = allCandles
-                        .map(kline => {
-                            // Explicit null/undefined check on raw data before parsing
-                            if (kline[0] == null || kline[1] == null || kline[2] == null ||
-                                kline[3] == null || kline[4] == null) {
-                                return null;
-                            }
-                            return {
-                                time: Math.floor(kline[0] / 1000),
-                                open: parseFloat(kline[1]),
-                                high: parseFloat(kline[2]),
-                                low: parseFloat(kline[3]),
-                                close: parseFloat(kline[4]),
-                                volume: parseFloat(kline[5]) || 0
-                            };
-                        })
-                        .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
-                                     Number.isFinite(c.low) && Number.isFinite(c.close) &&
-                                     c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
-                        .sort((a, b) => a.time - b.time);
-
-                    // Cache the data
-                    chartDataCache.set(cacheKey, {
-                        data: chartData,
-                        timestamp: Date.now()
-                    });
-
-                    console.log(`[Chart] ✅ Binance succeeded: ${chartData.length} candles for ${crypto}/${binanceInterval}`);
-
-                    return res.json({
-                        success: true,
-                        data: chartData,
-                        symbol: `${crypto}-USD`,
-                        interval,
-                        source: 'binance'
-                    });
-
-                } catch (binanceError) {
-                    console.error(`[Chart] ❌ Binance Global error:`, binanceError.message);
-
-                    // Try Binance US as last resort with pagination
-                    try {
-                        console.log(`[Chart] 🔄 Trying Binance US as final fallback...`);
-                        let usCandles = [];
-                        let usEndTime = null;
-
-                        while (usCandles.length < TARGET_BINANCE_CANDLES) {
-                            let binanceUsUrl = `https://api.binance.us/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${BINANCE_BATCH}`;
-                            if (usEndTime) {
-                                binanceUsUrl += `&endTime=${usEndTime}`;
-                            }
-
-                            const usResponse = await axios.get(binanceUsUrl, {
-                                headers: {
-                                    'User-Agent': 'NexusSignal/1.0',
-                                    'Accept': 'application/json'
-                                },
-                                timeout: 10000
-                            });
-
-                            if (!usResponse.data || usResponse.data.length === 0) break;
-
-                            usCandles = [...usResponse.data, ...usCandles];
-                            usEndTime = usResponse.data[0][0] - 1;
-
-                            if (usResponse.data.length < BINANCE_BATCH) break;
-                        }
-
-                        if (usCandles.length > 0) {
-                            const chartData = usCandles
-                                .map(kline => {
-                                    // Explicit null/undefined check on raw data before parsing
-                                    if (kline[0] == null || kline[1] == null || kline[2] == null ||
-                                        kline[3] == null || kline[4] == null) {
-                                        return null;
-                                    }
-                                    return {
-                                        time: Math.floor(kline[0] / 1000),
-                                        open: parseFloat(kline[1]),
-                                        high: parseFloat(kline[2]),
-                                        low: parseFloat(kline[3]),
-                                        close: parseFloat(kline[4]),
-                                        volume: parseFloat(kline[5]) || 0
-                                    };
-                                })
-                                .filter(c => c && c.time > 0 && Number.isFinite(c.open) && Number.isFinite(c.high) &&
-                                             Number.isFinite(c.low) && Number.isFinite(c.close) &&
-                                             c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
-                                .sort((a, b) => a.time - b.time);
-
-                            chartDataCache.set(cacheKey, {
-                                data: chartData,
-                                timestamp: Date.now()
-                            });
-
-                            console.log(`[Chart] ✅ Binance US succeeded: ${chartData.length} candles`);
-                            return res.json({
-                                success: true,
-                                data: chartData,
-                                symbol: `${crypto}-USD`,
-                                interval,
-                                source: 'binance-us'
-                            });
-                        }
-                    } catch (usError) {
-                        console.error(`[Chart] ❌ Binance US also failed:`, usError.message);
-                    }
-
-                    // All sources failed
-                    return res.status(503).json({
-                        success: false,
-                        error: 'Unable to fetch crypto data',
-                        message: 'All data sources failed (CoinGecko, Gecko Terminal, Binance)',
-                        symbol: crypto
-                    });
-                }
+                return res.status(503).json({
+                    success: false,
+                    error: 'Unable to fetch crypto data',
+                    message: 'All data sources failed (Binance, CoinGecko, CryptoCompare, Kraken, Gecko Terminal)',
+                    symbol: crypto
+                });
             }
 
             // ====== DAILY/WEEKLY/MONTHLY CRYPTO ======
