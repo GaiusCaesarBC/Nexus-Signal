@@ -1594,18 +1594,18 @@ router.post('/refresh-prices', auth, async (req, res) => {
             const oldPrice = position.currentPrice;
 
             if (price && price > 0) {
-                // Sanity check: reject price updates that deviate >40% from
-                // the position's entry price. This catches wrong-token
-                // mappings (e.g. CryptoCompare resolving "NEO" to a $2.70
-                // token when the real NEO is $5.50). Without this check,
-                // the TP/SL auto-close triggers immediately on garbage data,
-                // closing the position at a fake price.
-                const entry = safeNumber(position.averagePrice, 0);
-                if (entry > 0) {
-                    const devPct = Math.abs((price - entry) / entry);
+                // Sanity check: reject single-tick anomalies (e.g. CryptoCompare
+                // resolving "NEO" to a $2.70 token when real NEO is $5.50).
+                // Compare against the LAST KNOWN PRICE (previous currentPrice),
+                // not entry — comparing to entry permanently blocks updates for
+                // any asset that has moved >40% since the position was opened
+                // (normal for crypto, especially leveraged positions held days+).
+                // Fall back to entry only when there's no prior currentPrice yet.
+                const lastKnown = safeNumber(position.currentPrice, 0) || safeNumber(position.averagePrice, 0);
+                if (lastKnown > 0) {
+                    const devPct = Math.abs((price - lastKnown) / lastKnown);
                     if (devPct > 0.40) {
-                        console.warn(`[Paper Trading] ⚠️ ${position.symbol}: price $${price} deviates ${(devPct * 100).toFixed(1)}% from entry $${entry} — likely wrong token mapping, skipping update`);
-                        // Don't update price, don't check triggers
+                        console.warn(`[Paper Trading] ⚠️ ${position.symbol}: price $${price} jumped ${(devPct * 100).toFixed(1)}% from last $${lastKnown} in one tick — likely wrong token mapping, skipping update`);
                         continue;
                     }
                 }
