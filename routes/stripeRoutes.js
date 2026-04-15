@@ -146,6 +146,102 @@ router.post('/create-checkout-session', auth, async (req, res) => {
     }
 });
 
+// @route   POST /api/stripe/upgrade-subscription
+// @desc    Upgrade or change existing subscription plan (with automatic proration)
+// @access  Private
+router.post('/upgrade-subscription', auth, async (req, res) => {
+    try {
+        const { newPriceId } = req.body;
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Check if user has active subscription
+        const subscriptionId = user.subscription?.stripeSubscriptionId;
+        if (!subscriptionId) {
+            return res.status(400).json({ 
+                error: 'No active subscription found. Create one first.',
+                requiresNewCheckout: true 
+            });
+        }
+
+        // Retrieve current subscription
+        const currentSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const currentPriceId = currentSubscription.items.data[0].price.id;
+        const currentPlan = getPlanFromPriceId(currentPriceId);
+        const newPlan = getPlanFromPriceId(newPriceId);
+
+        // Prevent changing to same plan
+        if (currentPriceId === newPriceId) {
+            return res.status(400).json({ 
+                error: `Already on ${newPlan} plan` 
+            });
+        }
+
+        // Update subscription with new price and automatic proration
+        const updatedSubscription = await stripe.subscriptions.update(
+            subscriptionId,
+            {
+                items: [
+                    {
+                        id: currentSubscription.items.data[0].id,
+                        price: newPriceId,
+                    }
+                ],
+                // proration_behavior: 'create_prorations' is the default
+                // This will automatically create invoice items for the prorated amount
+                proration_behavior: 'create_prorations',
+                billing_cycle_anchor: 'now', // Start new billing cycle immediately
+            }
+        );
+
+        // Get the upcoming invoice to show the user their charges
+        let upcomingInvoice = null;
+        try {
+            upcomingInvoice = await stripe.invoices.retrieveUpcoming({
+                customer: user.subscription.stripeCustomerId,
+            });
+        } catch (e) {
+            // Upcoming invoice might not exist yet, that's ok
+            console.log('[Stripe] No upcoming invoice yet:', e.message);
+        }
+
+        // Calculate what they owe or will be credited
+        const prorationDetails = {
+            fromPlan: currentPlan,
+            toPlan: newPlan,
+            effectiveDate: new Date(updatedSubscription.current_period_start * 1000),
+            nextBillingDate: new Date(updatedSubscription.current_period_end * 1000),
+            amountDue: upcomingInvoice ? (upcomingInvoice.amount_due / 100) : 0,
+            amountCredit: upcomingInvoice ? Math.max(0, -(upcomingInvoice.amount_due / 100)) : 0,
+            message: upcomingInvoice && upcomingInvoice.amount_due > 0 
+                ? `You'll be charged $${(upcomingInvoice.amount_due / 100).toFixed(2)} for the upgrade`
+                : upcomingInvoice && upcomingInvoice.amount_due < 0
+                ? `You'll receive a credit of $${Math.abs(upcomingInvoice.amount_due / 100).toFixed(2)}`
+                : 'Upgrade applied with automatic proration'
+        };
+
+        res.json({
+            success: true,
+            subscription: {
+                status: newPlan,
+                currentPeriodStart: new Date(updatedSubscription.current_period_start * 1000),
+                currentPeriodEnd: new Date(updatedSubscription.current_period_end * 1000),
+            },
+            proration: prorationDetails
+        });
+
+    } catch (error) {
+        console.error('Upgrade subscription error:', error);
+        res.status(500).json({
+            error: 'Failed to upgrade subscription',
+            details: error.message
+        });
+    }
+});
+
 // NOTE: Webhook is now handled directly in app.js BEFORE body parsing middleware
 // This ensures the raw body is preserved for Stripe signature verification
 
