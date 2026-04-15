@@ -15,15 +15,15 @@ const CONFIG = {
         minVolume24h: 5_000_000,      // $5M minimum 24h volume
         minMarketCap: 10_000_000,     // $10M minimum market cap
         minPrice: 0.0000001,          // filter dead coins
-        maxResults: 15,               // max crypto candidates per cycle
-        topPoolSize: 80,              // initial pool to fetch
+        maxResults: 40,               // max crypto candidates per cycle (was 15)
+        topPoolSize: 250,             // wider initial pool for more variety (was 80)
     },
     stocks: {
         minVolume24h: 1_000_000,      // 1M shares minimum daily volume
         minPrice: 2.00,               // no penny stocks
         maxPrice: 10_000,             // sanity cap
         maxTickerLength: 5,           // filter warrants (RMSGW, etc.)
-        maxResults: 15,               // max stock candidates per cycle
+        maxResults: 40,               // max stock candidates per cycle (was 15)
     },
     // Stablecoins and wrapped tokens to exclude
     excludeSymbols: new Set([

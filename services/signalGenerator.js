@@ -16,14 +16,14 @@ const ML_HEADERS = ML_API_KEY ? { 'X-API-Key': ML_API_KEY } : {};
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
 // ─── Quality gates ────────────────────────────────────────
-// Tightened hard — fewer signals, only strong setups get through. Each gate
-// independently rejects marginal signals before they get published.
-const MIN_CONFIDENCE = 80;          // Only publish signals the model is genuinely confident in.
-const MIN_PCT_MAGNITUDE = 4.0;      // Predicted move must be >= 4% — skip tiny edges.
-const NOTIFY_CONFIDENCE = 88;       // Only blast Telegram/Discord/X on the highest-conviction setups.
-const COOLDOWN_LOSS_STREAK = 2;     // Tighter: cool off after 2 losses in a row (was 3).
+// Tightened after a losing streak dropped win rate from 54% → 48%.
+// Each gate independently rejects garbage signals before they get published.
+const MIN_CONFIDENCE = 70;          // Raised from 55. Below this, the signal is ~coin-flip.
+const MIN_PCT_MAGNITUDE = 2.5;      // Predicted move must be >= 2.5%; below this is noise.
+const NOTIFY_CONFIDENCE = 78;       // Only blast Telegram/Discord/X above this threshold.
+const COOLDOWN_LOSS_STREAK = 3;     // After this many losses in a row on a symbol, cool it off.
 const COOLDOWN_WINDOW_DAYS = 7;     // Loss streak is measured over this window.
-const COOLDOWN_DURATION_HOURS = 72; // Longer cooldown (was 48h) to let the symbol reset.
+const COOLDOWN_DURATION_HOURS = 48; // How long to skip the symbol after triggering cooldown.
 
 let isRunning = false;
 let runStartedAt = null;
