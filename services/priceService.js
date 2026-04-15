@@ -275,7 +275,10 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
             { timeout: 5000 }
         );
         if (ccRes.data?.USD > 0) {
-            return { price: ccRes.data.USD, source: 'cryptocompare' };
+            const price = parseFloat(ccRes.data.USD);
+            if (!isNaN(price) && isFinite(price)) {
+                return { price, source: 'cryptocompare' };
+            }
         }
     } catch (e) { /* next */ }
 
@@ -286,7 +289,10 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
             { timeout: 5000 }
         );
         if (bRes.data?.price) {
-            return { price: parseFloat(bRes.data.price), source: 'binance-us' };
+            const price = parseFloat(bRes.data.price);
+            if (!isNaN(price) && isFinite(price)) {
+                return { price, source: 'binance-us' };
+            }
         }
     } catch (e) { /* next */ }
 
@@ -302,7 +308,10 @@ async function fetchCryptoPrice(symbol, coinGeckoId = null) {
             { headers, timeout: 10000 }
         );
         if (response.data?.[coinId]?.usd) {
-            return { price: response.data[coinId].usd, source: 'coingecko', coinGeckoId: coinId };
+            const price = parseFloat(response.data[coinId].usd);
+            if (!isNaN(price) && isFinite(price)) {
+                return { price, source: 'coingecko', coinGeckoId: coinId };
+            }
         }
     } catch (error) {
         console.log(`[PriceService] CoinGecko failed for ${symbol}:`, error.message);
@@ -548,8 +557,11 @@ async function getBatchPrices(symbols) {
             );
             for (const sym of cryptoSymbols) {
                 if (ccRes.data?.[sym]?.USD) {
-                    results.set(sym, ccRes.data[sym].USD);
-                    setCache(`price_${sym}`, ccRes.data[sym].USD, 'cryptocompare');
+                    const price = parseFloat(ccRes.data[sym].USD);
+                    if (!isNaN(price) && isFinite(price)) {
+                        results.set(sym, price);
+                        setCache(`price_${sym}`, price, 'cryptocompare');
+                    }
                 }
             }
             console.log(`[PriceService] CryptoCompare: ${cryptoSymbols.filter(s=>results.has(s)).length}/${cryptoSymbols.length} prices`);
@@ -616,8 +628,11 @@ async function getBatchPrices(symbols) {
             try {
                 const fRes = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`, { timeout: 5000 });
                 if (fRes.data?.c > 0) {
-                    results.set(symbol, fRes.data.c);
-                    setCache(`price_${symbol}`, fRes.data.c, 'finnhub');
+                    const price = parseFloat(fRes.data.c);
+                    if (!isNaN(price) && isFinite(price)) {
+                        results.set(symbol, price);
+                        setCache(`price_${symbol}`, price, 'finnhub');
+                    }
                 }
             } catch (e) { /* fallback below */ }
         }
@@ -626,7 +641,10 @@ async function getBatchPrices(symbols) {
         if (!results.has(symbol)) {
             const result = await getCurrentPrice(symbol, 'stock');
             if (result.price) {
-                results.set(symbol, result.price);
+                const price = parseFloat(result.price);
+                if (!isNaN(price) && isFinite(price)) {
+                    results.set(symbol, price);
+                }
             }
         }
 

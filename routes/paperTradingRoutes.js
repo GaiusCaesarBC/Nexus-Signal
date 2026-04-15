@@ -563,10 +563,17 @@ router.get('/account', auth, async (req, res) => {
                 for (const position of account.positions) {
                     const symbolKey = position.symbol.toUpperCase();
                     const price = batchPrices.get(symbolKey);
+                    const oldPrice = position.currentPrice;
 
                     if (price && price > 0) {
-                        position.currentPrice = safeNumber(price, position.currentPrice);
+                        const newPrice = safeNumber(price, position.currentPrice);
+                        if (newPrice !== oldPrice) {
+                            console.log(`[Paper Trading] Price update for ${symbolKey}: ${oldPrice} -> ${newPrice} (fetched type: ${typeof price})`);
+                        }
+                        position.currentPrice = newPrice;
                         position.lastUpdated = new Date();
+                    } else {
+                        console.log(`[Paper Trading] No price for ${symbolKey} (price: ${price}, type: ${typeof price})`);
                     }
                 }
 
