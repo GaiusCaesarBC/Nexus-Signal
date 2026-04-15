@@ -281,6 +281,25 @@ function safeNumber(value, defaultValue = 0) {
     return isNaN(num) || !isFinite(num) ? defaultValue : num;
 }
 
+// Helper function to format prices for display in notifications/messages
+// Shows appropriate decimal places based on price value and asset type
+function formatPriceForDisplay(price, assetType = null) {
+    const num = safeNumber(price, 0);
+    if (num === 0) return '0.00';
+    
+    // For crypto or low-value prices, show more decimals
+    // Crypto or prices < $1 get up to 8 decimals; otherwise 2 decimals
+    if (assetType === 'crypto' || num < 1) {
+        // Dynamically determine decimals: remove trailing zeros but keep precision
+        const decimals = num < 0.01 ? 8 : (num < 1 ? 6 : 4);
+        const formatted = num.toFixed(decimals);
+        // Remove trailing zeros after decimal point
+        return formatted.replace(/\.?0+$/, '');
+    }
+    
+    return num.toFixed(2);
+}
+
 // Calculate portfolio stats with leverage support
 // Leverage P/L Formula:
 //   - margin = entry_price × quantity (what you put up as collateral)
@@ -851,7 +870,7 @@ const updatedUser = await User.findById(req.user.id).select('gamification');
 
 res.json({
     success: true,
-    message: `Bought ${safeQuantity} ${symbol.toUpperCase()} @ $${safePrice.toFixed(2)}${leverageMsg}`,
+    message: `Bought ${safeQuantity} ${symbol.toUpperCase()} @ $${formatPriceForDisplay(safePrice, type)}${leverageMsg}`,
     account,
     trade: {
         symbol: symbol.toUpperCase(),
@@ -1036,7 +1055,7 @@ router.post('/sell', auth, async (req, res) => {
             
             return res.json({
                 success: true,
-                message: `Shorted ${safeQuantity} ${symbol.toUpperCase()} @ $${safePrice.toFixed(2)}${leverageMsg}`,
+                message: `Shorted ${safeQuantity} ${symbol.toUpperCase()} @ $${formatPriceForDisplay(safePrice, type)}${leverageMsg}`,
                 account,
                 trade: {
                     symbol: symbol.toUpperCase(),
@@ -1198,7 +1217,7 @@ const updatedUser = await User.findById(req.user.id).select('gamification');
 
 res.json({
     success: true,
-    message: `Sold ${safeQuantity} ${symbol.toUpperCase()} @ $${safePrice.toFixed(2)}`,
+    message: `Sold ${safeQuantity} ${symbol.toUpperCase()} @ $${formatPriceForDisplay(safePrice, position.type)}`,
     account,
     profitLoss,
     profitLossPercent,
@@ -1386,7 +1405,7 @@ const updatedUser = await User.findById(req.user.id).select('gamification');
 
 res.json({
     success: true,
-    message: `Covered ${safeQuantity} ${symbol.toUpperCase()} @ $${safePrice.toFixed(2)}`,
+    message: `Covered ${safeQuantity} ${symbol.toUpperCase()} @ $${formatPriceForDisplay(safePrice, position.type)}`,
     account,
     profitLoss,
     profitLossPercent,
