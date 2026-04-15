@@ -359,4 +359,92 @@ router.post('/portal', auth, async (req, res) => {
     }
 });
 
+// @route   POST /api/stripe/sync-subscription
+// @desc    Manually sync user's subscription from Stripe (fix for upgrade bugs)
+// @access  Private
+// @usage   Call this if subscription didn't update after purchase
+router.post('/sync-subscription', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+
+        if (!user.subscription?.stripeCustomerId) {
+            return res.status(400).json({
+                success: false,
+                error: 'No Stripe customer found. Please purchase a subscription first.'
+            });
+        }
+
+        const customerId = user.subscription.stripeCustomerId;
+
+        // Get the latest active subscription from Stripe
+        const subscriptions = await stripe.subscriptions.list({
+            customer: customerId,
+            limit: 1,
+            status: 'active'
+        });
+
+        if (subscriptions.data.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No active subscription found in Stripe'
+            });
+        }
+
+        const stripeSubscription = subscriptions.data[0];
+        const priceId = stripeSubscription.items.data[0].price.id;
+
+        // Map price ID to plan
+        const priceMapping = {
+            [process.env.STRIPE_PRICE_STARTER]: 'starter',
+            [process.env.STRIPE_PRICE_PRO]: 'pro',
+            [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
+            [process.env.STRIPE_PRICE_ELITE]: 'elite'
+        };
+
+        const hardcodedMapping = {
+            'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
+            'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
+            'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
+            'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
+            'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
+            'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
+            'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
+            'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
+        };
+
+        const plan = priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
+
+        const oldPlan = user.subscription.status || 'free';
+
+        // Update subscription
+        user.subscription.status = plan;
+        user.subscription.stripeSubscriptionId = stripeSubscription.id;
+        user.subscription.stripePriceId = priceId;
+        user.subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
+        user.subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
+        user.subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
+
+        await user.save();
+
+        console.log(`✅ Manual sync: User ${user._id} subscription updated from ${oldPlan} to ${plan}`);
+
+        res.json({
+            success: true,
+            message: `Subscription synced: ${oldPlan} → ${plan}`,
+            data: {
+                newPlan: plan,
+                previousPlan: oldPlan,
+                currentPeriodEnd: user.subscription.currentPeriodEnd
+            }
+        });
+    } catch (error) {
+        console.error('Manual subscription sync error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to sync subscription',
+            details: error.message
+        });
+    }
+});
+
 module.exports = router;

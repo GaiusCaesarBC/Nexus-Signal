@@ -153,15 +153,44 @@ app.post('/api/stripe/webhook',
                 case 'customer.subscription.updated': {
                     const subscription = event.data.object;
                     const customerId = subscription.customer;
+                    const subscriptionId = subscription.id;
 
-                    console.log(`[Stripe Webhook] customer.subscription.updated for customer ${customerId}`);
+                    console.log(`[Stripe Webhook] customer.subscription.updated for customer ${customerId}, subscription ${subscriptionId}`);
 
-                    const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+                    // Try to find user by stripeCustomerId
+                    let user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+
+                    // If not found, try to get userId from Stripe customer metadata
+                    if (!user) {
+                        try {
+                            console.log(`[Stripe Webhook] User not found by stripeCustomerId, checking Stripe customer metadata...`);
+                            const customer = await stripe.customers.retrieve(customerId);
+                            const userId = customer.metadata?.userId;
+
+                            if (userId) {
+                                console.log(`[Stripe Webhook] Found userId in customer metadata: ${userId}`);
+                                user = await User.findById(userId);
+                                
+                                if (user) {
+                                    // Update the stripeCustomerId field to prevent this issue next time
+                                    if (!user.subscription) {
+                                        user.subscription = {};
+                                    }
+                                    user.subscription.stripeCustomerId = customerId;
+                                    console.log(`[Stripe Webhook] ✅ Found user by metadata, updated stripeCustomerId`);
+                                }
+                            }
+                        } catch (stripeErr) {
+                            console.error(`[Stripe Webhook] Error retrieving customer metadata: ${stripeErr.message}`);
+                        }
+                    }
+
                     if (user) {
                         const priceId = subscription.items.data[0].price.id;
                         const plan = getPlanFromPriceId(priceId);
 
                         user.subscription.status = plan;
+                        user.subscription.stripeSubscriptionId = subscriptionId;
                         user.subscription.stripePriceId = priceId;
                         user.subscription.currentPeriodStart = new Date(subscription.current_period_start * 1000);
                         user.subscription.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
@@ -170,7 +199,8 @@ app.post('/api/stripe/webhook',
 
                         console.log(`✅ Subscription updated for user ${user._id}: ${plan}`);
                     } else {
-                        console.log(`[Stripe Webhook] No user found with stripeCustomerId: ${customerId}`);
+                        console.error(`[Stripe Webhook] ⚠️ ERROR: No user found for customer ${customerId}. Subscription update FAILED!`);
+                        console.error(`[Stripe Webhook] This user needs manual intervention to update their subscription to the new plan.`);
                     }
                     break;
                 }
@@ -179,7 +209,27 @@ app.post('/api/stripe/webhook',
                     const subscription = event.data.object;
                     const customerId = subscription.customer;
 
-                    const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+                    console.log(`[Stripe Webhook] customer.subscription.deleted for customer ${customerId}`);
+
+                    // Try to find user by stripeCustomerId
+                    let user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+
+                    // If not found, try to get userId from Stripe customer metadata
+                    if (!user) {
+                        try {
+                            console.log(`[Stripe Webhook] User not found by stripeCustomerId, checking Stripe customer metadata...`);
+                            const customer = await stripe.customers.retrieve(customerId);
+                            const userId = customer.metadata?.userId;
+
+                            if (userId) {
+                                console.log(`[Stripe Webhook] Found userId in customer metadata: ${userId}`);
+                                user = await User.findById(userId);
+                            }
+                        } catch (stripeErr) {
+                            console.error(`[Stripe Webhook] Error retrieving customer metadata: ${stripeErr.message}`);
+                        }
+                    }
+
                     if (user) {
                         user.subscription.status = 'free';
                         user.subscription.stripeSubscriptionId = null;
@@ -195,6 +245,8 @@ app.post('/api/stripe/webhook',
                         } catch (discordErr) {
                             console.error('[Stripe Webhook] Discord role removal error:', discordErr.message);
                         }
+                    } else {
+                        console.error(`[Stripe Webhook] ⚠️ ERROR: No user found for customer ${customerId}. Subscription cancellation NOT recorded!`);
                     }
                     break;
                 }
