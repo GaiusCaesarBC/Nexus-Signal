@@ -6,6 +6,8 @@ const BrokerageConnection = require('../models/BrokerageConnection');
 const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory');
 const krakenService = require('../services/krakenService');
 const plaidService = require('../services/plaidService');
+const ManualHolding = require('../models/ManualHolding');
+const priceService = require('../services/priceService');
 
 // ============================================
 // NOTE: Plaid webhook is now defined in app.js with proper signature verification
@@ -886,5 +888,337 @@ router.get('/portfolio-history/snapshots', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// ============================================
+// MANUAL PORTFOLIO ROUTES
+// ============================================
+
+/**
+ * POST /api/brokerage/manual/connect
+ * Create a manual portfolio connection
+ */
+router.post('/manual/connect', async (req, res) => {
+    try {
+        // Check if user already has a manual connection
+        const existing = await BrokerageConnection.findOne({ user: req.user.id, type: 'manual' });
+        if (existing) {
+            return res.json({ success: true, connection: { id: existing._id, type: 'manual', status: existing.status } });
+        }
+
+        const connection = await BrokerageConnection.create({
+            user: req.user.id,
+            type: 'manual',
+            name: 'Manual Portfolio',
+            status: 'active',
+            cachedPortfolio: { holdings: [], totalValue: 0, lastUpdated: new Date() }
+        });
+
+        res.json({
+            success: true,
+            connection: { id: connection._id, type: 'manual', status: 'active' }
+        });
+    } catch (error) {
+        console.error('Error creating manual connection:', error);
+        res.status(500).json({ success: false, error: 'Failed to create manual portfolio' });
+    }
+});
+
+/**
+ * GET /api/brokerage/manual/holdings
+ * Get all manual holdings for the user
+ */
+router.get('/manual/holdings', async (req, res) => {
+    try {
+        const connection = await BrokerageConnection.findOne({ user: req.user.id, type: 'manual' });
+        if (!connection) {
+            return res.json({ success: true, holdings: [], totalValue: 0, totalGainLoss: 0, totalGainLossPercent: 0 });
+        }
+
+        const holdings = await ManualHolding.getByConnection(connection._id);
+
+        const totalValue = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+        const totalCost = holdings.reduce((sum, h) => sum + (h.quantity * h.costBasis), 0);
+        const totalGainLoss = totalValue - totalCost;
+        const totalGainLossPercent = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+
+        res.json({
+            success: true,
+            connectionId: connection._id,
+            holdings: holdings.map(h => ({
+                id: h._id,
+                symbol: h.symbol,
+                name: h.name,
+                assetType: h.assetType,
+                quantity: h.quantity,
+                costBasis: h.costBasis,
+                currentPrice: h.currentPrice,
+                currentValue: h.currentValue,
+                gainLoss: h.gainLoss,
+                gainLossPercent: h.gainLossPercent,
+                dateAdded: h.dateAdded,
+                lastPriceUpdate: h.lastPriceUpdate
+            })),
+            totalValue,
+            totalCost,
+            totalGainLoss,
+            totalGainLossPercent
+        });
+    } catch (error) {
+        console.error('Error fetching manual holdings:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch holdings' });
+    }
+});
+
+/**
+ * POST /api/brokerage/manual/holdings
+ * Add a new manual holding
+ */
+router.post('/manual/holdings', async (req, res) => {
+    try {
+        const { symbol, name, assetType, quantity, costBasis, dateAdded } = req.body;
+
+        if (!symbol || quantity == null || costBasis == null) {
+            return res.status(400).json({ success: false, error: 'Symbol, quantity, and cost basis are required' });
+        }
+        if (quantity <= 0 || costBasis < 0) {
+            return res.status(400).json({ success: false, error: 'Quantity must be positive and cost basis non-negative' });
+        }
+
+        // Get or create manual connection
+        let connection = await BrokerageConnection.findOne({ user: req.user.id, type: 'manual' });
+        if (!connection) {
+            connection = await BrokerageConnection.create({
+                user: req.user.id,
+                type: 'manual',
+                name: 'Manual Portfolio',
+                status: 'active',
+                cachedPortfolio: { holdings: [], totalValue: 0, lastUpdated: new Date() }
+            });
+        }
+
+        const cleanSymbol = symbol.toUpperCase().trim();
+
+        // Fetch current price
+        let currentPrice = 0;
+        try {
+            const priceResult = await priceService.getCurrentPrice(cleanSymbol, assetType || null);
+            currentPrice = priceResult?.price || 0;
+        } catch (priceErr) {
+            console.warn(`[Manual] Could not fetch price for ${cleanSymbol}:`, priceErr.message);
+        }
+
+        const holding = await ManualHolding.create({
+            user: req.user.id,
+            connection: connection._id,
+            symbol: cleanSymbol,
+            name: name || cleanSymbol,
+            assetType: assetType || 'stock',
+            quantity: parseFloat(quantity),
+            costBasis: parseFloat(costBasis),
+            currentPrice,
+            currentValue: parseFloat(quantity) * currentPrice,
+            gainLoss: (parseFloat(quantity) * currentPrice) - (parseFloat(quantity) * parseFloat(costBasis)),
+            gainLossPercent: parseFloat(costBasis) > 0
+                ? (((currentPrice - parseFloat(costBasis)) / parseFloat(costBasis)) * 100)
+                : 0,
+            dateAdded: dateAdded || new Date(),
+            lastPriceUpdate: currentPrice > 0 ? new Date() : null
+        });
+
+        // Update cached portfolio on connection
+        await _updateManualConnectionCache(connection._id, req.user.id);
+
+        res.json({
+            success: true,
+            holding: {
+                id: holding._id,
+                symbol: holding.symbol,
+                name: holding.name,
+                assetType: holding.assetType,
+                quantity: holding.quantity,
+                costBasis: holding.costBasis,
+                currentPrice: holding.currentPrice,
+                currentValue: holding.currentValue,
+                gainLoss: holding.gainLoss,
+                gainLossPercent: holding.gainLossPercent,
+                dateAdded: holding.dateAdded
+            }
+        });
+    } catch (error) {
+        console.error('Error adding manual holding:', error);
+        res.status(500).json({ success: false, error: 'Failed to add holding' });
+    }
+});
+
+/**
+ * PUT /api/brokerage/manual/holdings/:holdingId
+ * Edit a manual holding
+ */
+router.put('/manual/holdings/:holdingId', async (req, res) => {
+    try {
+        const { holdingId } = req.params;
+        const { quantity, costBasis, name, assetType } = req.body;
+
+        const holding = await ManualHolding.findOne({ _id: holdingId, user: req.user.id });
+        if (!holding) {
+            return res.status(404).json({ success: false, error: 'Holding not found' });
+        }
+
+        if (quantity != null) {
+            if (quantity <= 0) return res.status(400).json({ success: false, error: 'Quantity must be positive' });
+            holding.quantity = parseFloat(quantity);
+        }
+        if (costBasis != null) {
+            if (costBasis < 0) return res.status(400).json({ success: false, error: 'Cost basis must be non-negative' });
+            holding.costBasis = parseFloat(costBasis);
+        }
+        if (name != null) holding.name = name;
+        if (assetType != null) holding.assetType = assetType;
+
+        // Recalculate with existing price
+        holding.updatePrice(holding.currentPrice);
+        await holding.save();
+
+        // Update cached portfolio
+        await _updateManualConnectionCache(holding.connection, req.user.id);
+
+        res.json({
+            success: true,
+            holding: {
+                id: holding._id,
+                symbol: holding.symbol,
+                name: holding.name,
+                assetType: holding.assetType,
+                quantity: holding.quantity,
+                costBasis: holding.costBasis,
+                currentPrice: holding.currentPrice,
+                currentValue: holding.currentValue,
+                gainLoss: holding.gainLoss,
+                gainLossPercent: holding.gainLossPercent,
+                dateAdded: holding.dateAdded
+            }
+        });
+    } catch (error) {
+        console.error('Error updating manual holding:', error);
+        res.status(500).json({ success: false, error: 'Failed to update holding' });
+    }
+});
+
+/**
+ * DELETE /api/brokerage/manual/holdings/:holdingId
+ * Remove a manual holding
+ */
+router.delete('/manual/holdings/:holdingId', async (req, res) => {
+    try {
+        const { holdingId } = req.params;
+        const holding = await ManualHolding.findOne({ _id: holdingId, user: req.user.id });
+        if (!holding) {
+            return res.status(404).json({ success: false, error: 'Holding not found' });
+        }
+
+        const connectionId = holding.connection;
+        await ManualHolding.deleteOne({ _id: holdingId });
+
+        // Update cached portfolio
+        await _updateManualConnectionCache(connectionId, req.user.id);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error removing manual holding:', error);
+        res.status(500).json({ success: false, error: 'Failed to remove holding' });
+    }
+});
+
+/**
+ * POST /api/brokerage/manual/sync
+ * Refresh prices for all manual holdings
+ */
+router.post('/manual/sync', async (req, res) => {
+    try {
+        const connection = await BrokerageConnection.findOne({ user: req.user.id, type: 'manual' });
+        if (!connection) {
+            return res.status(404).json({ success: false, error: 'No manual portfolio found' });
+        }
+
+        const holdings = await ManualHolding.getByConnection(connection._id);
+        if (holdings.length === 0) {
+            return res.json({ success: true, message: 'No holdings to sync', totalValue: 0 });
+        }
+
+        // Batch fetch prices
+        const symbols = holdings.map(h => h.symbol);
+        const prices = await priceService.getBatchPrices(symbols);
+
+        // Update each holding
+        for (const holding of holdings) {
+            const price = prices.get(holding.symbol) || prices.get(holding.symbol.toUpperCase());
+            if (price && price > 0) {
+                holding.updatePrice(price);
+                await holding.save();
+            }
+        }
+
+        // Update connection cache and portfolio history
+        const totalValue = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+        await connection.updateCache({
+            holdings: holdings.map(h => ({
+                symbol: h.symbol,
+                name: h.name,
+                quantity: h.quantity,
+                price: h.currentPrice,
+                value: h.currentValue,
+                costBasis: h.costBasis,
+                type: h.assetType
+            })),
+            totalValue
+        });
+
+        // Update portfolio history for leaderboard
+        if (totalValue > 0) {
+            await BrokeragePortfolioHistory.trackValue(req.user.id, totalValue, holdings.length);
+        }
+
+        res.json({
+            success: true,
+            totalValue,
+            holdingsUpdated: holdings.length,
+            syncedAt: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error syncing manual holdings:', error);
+        res.status(500).json({ success: false, error: 'Failed to sync prices' });
+    }
+});
+
+/**
+ * Helper: Update the manual connection's cached portfolio
+ */
+async function _updateManualConnectionCache(connectionId, userId) {
+    try {
+        const holdings = await ManualHolding.find({ connection: connectionId });
+        const totalValue = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+        const connection = await BrokerageConnection.findById(connectionId);
+        if (connection) {
+            await connection.updateCache({
+                holdings: holdings.map(h => ({
+                    symbol: h.symbol,
+                    name: h.name,
+                    quantity: h.quantity,
+                    price: h.currentPrice,
+                    value: h.currentValue,
+                    costBasis: h.costBasis,
+                    type: h.assetType
+                })),
+                totalValue
+            });
+        }
+        // Update portfolio history
+        if (totalValue > 0) {
+            await BrokeragePortfolioHistory.trackValue(userId, totalValue, holdings.length);
+        }
+    } catch (err) {
+        console.error('[Manual] Error updating connection cache:', err.message);
+    }
+}
 
 module.exports = router;

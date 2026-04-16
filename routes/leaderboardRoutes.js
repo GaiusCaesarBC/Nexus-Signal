@@ -318,17 +318,24 @@ router.get('/real-portfolio', leaderboardLimiter, async (req, res) => {
         }).lean();
 
         // Build a map of userId -> live total value from cached brokerage data
+        // Also track portfolio source type (verified vs manual)
         const liveValueMap = {};
         const liveHoldingsMap = {};
+        const portfolioSourceMap = {};
         for (const conn of allConnections) {
             const uid = conn.user.toString();
             if (!liveValueMap[uid]) {
                 liveValueMap[uid] = 0;
                 liveHoldingsMap[uid] = 0;
+                portfolioSourceMap[uid] = 'manual'; // default to manual, upgrade to verified if any API/Plaid connection
             }
             if (conn.cachedPortfolio) {
                 liveValueMap[uid] += conn.cachedPortfolio.totalValue || 0;
                 liveHoldingsMap[uid] += (conn.cachedPortfolio.holdings || []).length;
+            }
+            // If any connection is API-linked (not manual), mark as verified
+            if (conn.type !== 'manual') {
+                portfolioSourceMap[uid] = 'verified';
             }
         }
 
@@ -361,7 +368,8 @@ router.get('/real-portfolio', leaderboardLimiter, async (req, res) => {
                 allTimeHigh: history.allTimeHigh?.value || 0,
                 allTimeLow: history.allTimeLow?.value || 0,
                 lastSync: history.lastUpdated,
-                trackingSince: history.initialDate
+                trackingSince: history.initialDate,
+                portfolioSource: portfolioSourceMap[uid] || 'manual'
                 };
             });
 

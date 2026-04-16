@@ -1,3 +1,4 @@
+
 // server/models/BrokerageConnection.js - Brokerage Connection Model
 const mongoose = require('mongoose');
 const crypto = require('crypto');
@@ -43,7 +44,7 @@ const brokerageConnectionSchema = new mongoose.Schema({
     // Brokerage type
     type: {
         type: String,
-        enum: ['kraken', 'robinhood', 'webull', 'schwab', 'plaid'],
+        enum: ['kraken', 'robinhood', 'webull', 'schwab', 'plaid', 'manual'],
         required: true
     },
     // Display name for this connection
