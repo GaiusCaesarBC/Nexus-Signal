@@ -159,13 +159,16 @@ function normalizeAssetCode(asset) {
         'XZEC': 'ZEC'
     };
 
-    // Remove leading X or Z for crypto/fiat
+    // Remove leading X or Z for 4-char codes
     if (asset.length === 4 && (asset.startsWith('X') || asset.startsWith('Z'))) {
         return assetMap[asset] || asset.slice(1);
     }
 
     return assetMap[asset] || asset;
 }
+
+// Known stablecoins pegged ~$1
+const STABLECOINS = new Set(['USDC', 'USDT', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD', 'PYUSD']);
 
 /**
  * Get trade history from Kraken
@@ -372,10 +375,18 @@ async function getForexRates() {
 async function getPortfolioWithValues(apiKey, apiSecret) {
     const balances = await getBalance(apiKey, apiSecret);
 
-    // Get USD prices for all crypto assets
-    const cryptoAssets = Object.keys(balances).filter(asset =>
-        !['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'AUD', 'CHF'].includes(asset)
-    );
+    // Classify assets: fiat, stablecoin, equity (.EQ suffix), crypto
+    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'AUD', 'CHF'];
+    const cryptoAssets = [];
+    const equityAssets = [];
+    const stablecoinAssets = [];
+
+    for (const asset of Object.keys(balances)) {
+        if (fiatCurrencies.includes(asset)) continue; // handled separately
+        if (STABLECOINS.has(asset)) { stablecoinAssets.push(asset); continue; }
+        if (asset.endsWith('.EQ') || asset.endsWith('.S')) { equityAssets.push(asset); continue; }
+        cryptoAssets.push(asset);
+    }
 
     const holdings = [];
     let totalValue = 0;
@@ -384,7 +395,6 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
     const forexRates = await getForexRates();
 
     // Add fiat balances converted to USD
-    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'CAD', 'JPY', 'AUD', 'CHF'];
     for (const fiat of fiatCurrencies) {
         if (balances[fiat]) {
             const rate = forexRates[fiat] || 1;
@@ -401,9 +411,85 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
         }
     }
 
+    // Add stablecoins at $1.00
+    for (const coin of stablecoinAssets) {
+        const balance = balances[coin];
+        const value = balance * 1.0;
+        holdings.push({
+            symbol: coin,
+            name: coin,
+            quantity: balance,
+            price: 1.0,
+            value,
+            change24h: 0,
+            type: 'stablecoin'
+        });
+        totalValue += value;
+    }
+
+    // Price equity tokens (.EQ) via Kraken ticker individually, then
+    // fall back to priceService for the underlying stock symbol
+    if (equityAssets.length > 0) {
+        const priceService = require('./priceService');
+        for (const asset of equityAssets) {
+            const balance = balances[asset];
+            let price = 0;
+            let change24h = 0;
+
+            // Try Kraken ticker first (pair = asset + USD, e.g. NVD.EQUSD)
+            try {
+                const pair = `${asset}USD`;
+                const tickers = await getTicker([pair]);
+                const tickerKey = Object.keys(tickers).find(k => k.includes(asset));
+                if (tickerKey && tickers[tickerKey]) {
+                    price = parseFloat(tickers[tickerKey].c?.[0] || tickers[tickerKey].last || 0);
+                    const open24h = parseFloat(tickers[tickerKey].o || tickers[tickerKey].open24h || price);
+                    if (open24h > 0) change24h = ((price - open24h) / open24h * 100);
+                }
+            } catch (e) {
+                console.log(`[Kraken] Ticker failed for equity ${asset}:`, e.message);
+            }
+
+            // Fallback: strip .EQ/.S suffix and look up stock price
+            if (!price || price <= 0) {
+                const stockSymbol = asset.replace(/\.(EQ|S)$/, '');
+                // Kraken may abbreviate: NVD→NVDA, TZA stays TZA, etc.
+                // Try the raw symbol first, then common expansions
+                const candidates = [stockSymbol];
+                // Kraken truncates some tickers: NVD=NVDA, MSF=MSFT, etc.
+                const expansions = { 'NVD': 'NVDA', 'MSF': 'MSFT', 'AMZ': 'AMZN', 'GOO': 'GOOGL', 'TSL': 'TSLA', 'MET': 'META', 'AMD': 'AMD' };
+                if (expansions[stockSymbol]) candidates.push(expansions[stockSymbol]);
+                
+                for (const sym of candidates) {
+                    try {
+                        const result = await priceService.getCurrentPrice(sym, 'stock');
+                        if (result.price && result.price > 0) {
+                            price = result.price;
+                            console.log(`[Kraken] Equity ${asset} priced via stock ${sym}: $${price}`);
+                            break;
+                        }
+                    } catch (e) { /* next candidate */ }
+                }
+            }
+
+            const value = balance * price;
+            const stockSym = asset.replace(/\.(EQ|S)$/, '');
+            holdings.push({
+                symbol: asset,
+                name: getCryptoName(stockSym) || asset,
+                quantity: balance,
+                price,
+                value,
+                change24h,
+                type: 'equity'
+            });
+            totalValue += value;
+        }
+    }
+
     // Get crypto prices
     if (cryptoAssets.length > 0) {
-        // Build Kraken ticker pairs (different format than balance API)
+        // Build Kraken ticker pairs
         const pairs = cryptoAssets.map(asset => getKrakenTickerPair(asset));
         console.log('[Kraken] Fetching ticker pairs:', pairs);
 
@@ -453,17 +539,37 @@ async function getPortfolioWithValues(apiKey, apiSecret) {
                 totalValue += value;
             }
         } catch (error) {
-            console.error('[Kraken] Error fetching prices:', error.message);
-            // Add holdings without prices
+            console.error('[Kraken] Batch ticker failed, trying individually:', error.message);
+            // Batch may fail if one pair is invalid — try each individually
             for (const asset of cryptoAssets) {
+                const balance = balances[asset];
+                let price = 0;
+                let change24h = 0;
+
+                try {
+                    const pair = getKrakenTickerPair(asset);
+                    const tickers = await getTicker([pair]);
+                    const tickerKey = Object.keys(tickers)[0];
+                    if (tickerKey && tickers[tickerKey]) {
+                        price = parseFloat(tickers[tickerKey].c?.[0] || tickers[tickerKey].last || 0);
+                        const open24h = parseFloat(tickers[tickerKey].o || tickers[tickerKey].open24h || price);
+                        if (open24h > 0) change24h = ((price - open24h) / open24h * 100);
+                    }
+                } catch (e) {
+                    console.log(`[Kraken] Individual ticker failed for ${asset}:`, e.message);
+                }
+
+                const value = balance * price;
                 holdings.push({
                     symbol: asset,
                     name: getCryptoName(asset),
-                    quantity: balances[asset],
-                    price: 0,
-                    value: 0,
+                    quantity: balance,
+                    price,
+                    value,
+                    change24h,
                     type: 'crypto'
                 });
+                totalValue += value;
             }
         }
     }
