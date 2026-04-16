@@ -141,10 +141,10 @@ router.get('/leaderboard', async (req, res) => {
             .select('username profile stats gamification social vault createdAt')
             .limit(500); // Get more users initially, we'll filter and sort after calculating period stats
 
-        // Fetch paper trading accounts with orders for time-period calculations
+        // Fetch paper trading accounts with orders and positions for live calculations
         const userIds = users.map(u => u._id);
         const paperAccounts = await PaperTradingAccount.find({ user: { $in: userIds } })
-            .select('user totalTrades winningTrades losingTrades winRate totalProfitLossPercent orders currentStreak portfolioValue initialBalance');
+            .select('user totalTrades winningTrades losingTrades winRate totalProfitLossPercent orders currentStreak portfolioValue initialBalance cashBalance positions totalRefillAmount');
 
         // Create a map of userId -> paper trading stats (calculated based on time period)
         const paperStatsMap = {};
@@ -193,13 +193,46 @@ router.get('/leaderboard', async (req, res) => {
                     hasActivity: totalTrades > 0
                 };
             } else {
-                // Use all-time stats directly from the account
+                // Recalculate all-time return live from positions + cash
+                // instead of relying on stale stored totalProfitLossPercent
+                const initialBalance = account.initialBalance || 100000;
+                const cashBalance = account.cashBalance ?? initialBalance;
+                const totalRefillAmount = account.totalRefillAmount || 0;
+
+                // Sum up current value of all open positions
+                let positionsValue = 0;
+                if (account.positions && account.positions.length > 0) {
+                    for (const pos of account.positions) {
+                        if (pos.isLiquidated) continue;
+                        const quantity = pos.quantity || 0;
+                        const avgPrice = pos.averagePrice || 0;
+                        const curPrice = pos.currentPrice || avgPrice;
+                        const leverage = pos.leverage || 1;
+                        const margin = quantity * avgPrice / leverage;
+
+                        let pnl;
+                        if (pos.positionType === 'short') {
+                            pnl = (avgPrice - curPrice) * quantity;
+                        } else {
+                            pnl = (curPrice - avgPrice) * quantity;
+                        }
+                        if (leverage > 1) pnl = pnl * leverage;
+
+                        const currentValue = Math.max(0, margin + pnl);
+                        positionsValue += currentValue;
+                    }
+                }
+
+                const portfolioValue = cashBalance + positionsValue;
+                const totalPL = portfolioValue - initialBalance - totalRefillAmount;
+                const totalReturnPercent = initialBalance > 0 ? (totalPL / initialBalance) * 100 : 0;
+
                 paperStatsMap[userId] = {
                     totalTrades: account.totalTrades || 0,
                     winRate: account.winRate || 0,
                     winningTrades: account.winningTrades || 0,
                     losingTrades: account.losingTrades || 0,
-                    totalReturnPercent: account.totalProfitLossPercent || 0,
+                    totalReturnPercent,
                     currentStreak: account.currentStreak || 0,
                     hasActivity: (account.totalTrades || 0) > 0
                 };
