@@ -792,24 +792,28 @@ router.get('/profile/username/:username', optionalAuth, async (req, res) => {
 
             if (brokerageConnections.length > 0) {
                 let totalValue = 0;
-                let totalCostBasis = 0;
 
                 brokerageConnections.forEach(conn => {
-                    const holdings = conn.cachedPortfolio?.holdings || [];
-                    holdings.forEach(h => {
-                        totalValue += h.value || 0;
-                        totalCostBasis += h.costBasis || h.value || 0; // Fall back to value if no cost basis
-                    });
+                    totalValue += conn.cachedPortfolio?.totalValue || 0;
                 });
 
-                // Calculate return percentage
-                const returnPercent = totalCostBasis > 0
-                    ? ((totalValue - totalCostBasis) / totalCostBasis) * 100
-                    : 0;
+                // Use BrokeragePortfolioHistory for accurate return calculation
+                // (holdings don't carry costBasis, so value-vs-value always = 0%)
+                let returnPercent = 0;
+                try {
+                    const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory');
+                    const history = await BrokeragePortfolioHistory.findOne({ user: user._id });
+                    if (history && history.initialValue > 0) {
+                        history.currentValue = totalValue;
+                        history.calculateGainLoss();
+                        returnPercent = history.totalGainPercent || 0;
+                    }
+                } catch (e) {
+                    console.warn('[Profile] Could not fetch portfolio history:', e.message);
+                }
 
                 brokerageStats = {
                     totalValue: totalValue,
-                    totalCostBasis: totalCostBasis,
                     returnPercent: returnPercent,
                     connectionCount: brokerageConnections.length,
                     hasConnections: true
