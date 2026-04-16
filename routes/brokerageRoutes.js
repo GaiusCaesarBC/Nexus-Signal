@@ -694,12 +694,48 @@ router.get('/portfolio', async (req, res) => {
  */
 router.post('/sync-all', async (req, res) => {
     try {
+        const force = req.query.force === 'true';
         const connections = await BrokerageConnection.getByUser(req.user.id);
+
+        // Throttle: skip if all connections synced within last 5 minutes (unless forced)
+        if (!force && connections.length > 0) {
+            const recentThreshold = Date.now() - 5 * 60 * 1000;
+            const allRecent = connections.every(c => c.lastSync && new Date(c.lastSync).getTime() > recentThreshold);
+            if (allRecent) {
+                return res.json({
+                    success: true,
+                    results: connections.map(c => ({ id: c._id, type: c.type, status: 'skipped', reason: 'recently_synced' })),
+                    syncedAt: connections[0].lastSync,
+                    throttled: true
+                });
+            }
+        }
+
         const results = [];
 
         for (const conn of connections) {
             try {
-                if (conn.type === 'kraken') {
+                if (conn.type === 'manual') {
+                    // Sync manual holdings prices
+                    const holdings = await ManualHolding.getByConnection(conn._id);
+                    if (holdings.length > 0) {
+                        const symbols = holdings.map(h => h.symbol);
+                        const prices = await priceService.getBatchPrices(symbols);
+                        for (const holding of holdings) {
+                            const price = prices.get(holding.symbol) || prices.get(holding.symbol.toUpperCase());
+                            if (price && price > 0) {
+                                holding.updatePrice(price);
+                                await holding.save();
+                            }
+                        }
+                        const totalValue = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+                        await conn.updateCache({
+                            holdings: holdings.map(h => ({ symbol: h.symbol, name: h.name, quantity: h.quantity, price: h.currentPrice, value: h.currentValue, costBasis: h.costBasis, type: h.assetType })),
+                            totalValue
+                        });
+                    }
+                    results.push({ id: conn._id, type: conn.type, status: 'success' });
+                } else if (conn.type === 'kraken') {
                     const apiKey = conn.getApiKey();
                     const apiSecret = conn.getApiSecret();
                     const portfolio = await krakenService.getPortfolioWithValues(apiKey, apiSecret);
