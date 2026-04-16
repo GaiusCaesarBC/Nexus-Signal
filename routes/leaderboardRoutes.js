@@ -310,11 +310,43 @@ router.get('/real-portfolio', leaderboardLimiter, async (req, res) => {
         .populate('user', 'username displayName avatar profile vault level xp gamification')
         .lean();
 
-        // Build leaderboard from portfolio histories
+        // Get live cached values from BrokerageConnection for all users with histories
+        const userIds = histories.filter(h => h.user).map(h => h.user._id);
+        const allConnections = await BrokerageConnection.find({
+            user: { $in: userIds },
+            status: 'active'
+        }).lean();
+
+        // Build a map of userId -> live total value from cached brokerage data
+        const liveValueMap = {};
+        const liveHoldingsMap = {};
+        for (const conn of allConnections) {
+            const uid = conn.user.toString();
+            if (!liveValueMap[uid]) {
+                liveValueMap[uid] = 0;
+                liveHoldingsMap[uid] = 0;
+            }
+            if (conn.cachedPortfolio) {
+                liveValueMap[uid] += conn.cachedPortfolio.totalValue || 0;
+                liveHoldingsMap[uid] += (conn.cachedPortfolio.holdings || []).length;
+            }
+        }
+
+        // Build leaderboard from portfolio histories, using live cached values when available
         const leaderboard = histories
             .filter(h => h.user) // Only include entries with valid users
-            .map(history => ({
-                userId: history.user._id.toString(),
+            .map(history => {
+                const uid = history.user._id.toString();
+                // Use live cached value if available and > 0, otherwise fall back to history
+                const liveValue = liveValueMap[uid];
+                const currentValue = (liveValue && liveValue > 0) ? liveValue : (history.currentValue || 0);
+                const initialValue = history.initialValue || 0;
+                // Recalculate gain from live data
+                const totalReturn = initialValue > 0 ? currentValue - initialValue : 0;
+                const totalReturnPercent = initialValue > 0 ? ((currentValue - initialValue) / initialValue) * 100 : 0;
+
+                return {
+                userId: uid,
                 username: history.user.username || 'Anonymous',
                 displayName: history.user.displayName || history.user.profile?.displayName || history.user.username || 'Anonymous Trader',
                 avatar: history.user.avatar || history.user.profile?.avatar,
@@ -322,15 +354,16 @@ router.get('/real-portfolio', leaderboardLimiter, async (req, res) => {
                 xp: history.user.gamification?.xp || history.user.xp || 0,
                 equippedBorder: history.user.vault?.equippedBorder || 'border-bronze',
                 equippedBadges: history.user.vault?.equippedBadges || [],
-                totalValue: history.currentValue || 0,
-                initialValue: history.initialValue || 0,
-                totalReturn: history.totalGain || 0,
-                totalReturnPercent: history.totalGainPercent || 0,
+                totalValue: currentValue,
+                initialValue: initialValue,
+                totalReturn: totalReturn,
+                totalReturnPercent: totalReturnPercent,
                 allTimeHigh: history.allTimeHigh?.value || 0,
                 allTimeLow: history.allTimeLow?.value || 0,
                 lastSync: history.lastUpdated,
                 trackingSince: history.initialDate
-            }));
+                };
+            });
 
         // Sort based on sortBy parameter - default is by percentage gain (highest to lowest)
         switch (sortBy) {

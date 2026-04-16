@@ -728,6 +728,29 @@ router.post('/sync-all', async (req, res) => {
             }
         }
 
+        // After syncing all connections, update portfolio history with fresh total
+        const successfulSyncs = results.filter(r => r.status === 'success');
+        if (successfulSyncs.length > 0) {
+            try {
+                // Re-fetch connections to get updated cached values
+                const updatedConnections = await BrokerageConnection.getByUser(req.user.id);
+                let totalValue = 0;
+                let holdingsCount = 0;
+                for (const conn of updatedConnections) {
+                    if (conn.cachedPortfolio) {
+                        totalValue += conn.cachedPortfolio.totalValue || 0;
+                        holdingsCount += (conn.cachedPortfolio.holdings || []).length;
+                    }
+                }
+                if (totalValue > 0) {
+                    await BrokeragePortfolioHistory.trackValue(req.user.id, totalValue, holdingsCount);
+                    console.log(`[Sync] Updated portfolio history for user ${req.user.id}: $${totalValue.toFixed(2)}`);
+                }
+            } catch (historyErr) {
+                console.error('[Sync] Failed to update portfolio history:', historyErr.message);
+            }
+        }
+
         res.json({
             success: true,
             results,
