@@ -794,9 +794,20 @@ router.get('/analytics', authMiddleware, async (req, res) => {
                 }
             }
 
-            // Calculate total P/L percent based on initial value
-            const initialValue = portfolioValue - totalPL;
-            totalPLPercent = initialValue > 0 ? (totalPL / initialValue) * 100 : 0;
+            // Use BrokeragePortfolioHistory for accurate return calculation
+            // (holdings lack costBasis, so value-vs-value always yields 0%)
+            try {
+                const BrokeragePortfolioHistory = require('../models/BrokeragePortfolioHistory');
+                const history = await BrokeragePortfolioHistory.findOne({ user: userId });
+                if (history && history.initialValue > 0) {
+                    totalPL = portfolioValue - history.initialValue;
+                    totalPLPercent = ((portfolioValue - history.initialValue) / history.initialValue) * 100;
+                }
+            } catch (e) {
+                console.warn('[Portfolio Analytics] Could not fetch portfolio history:', e.message);
+                const initialValue = portfolioValue - totalPL;
+                totalPLPercent = initialValue > 0 ? (totalPL / initialValue) * 100 : 0;
+            }
         }
 
         // Calculate allocation by asset type
@@ -832,8 +843,8 @@ router.get('/analytics', authMiddleware, async (req, res) => {
             }
         }
 
-        // Paper trading stats (always include for the card)
-        const paperTradingStats = paperAccount ? {
+        // Paper trading stats — only include when viewing paper mode
+        const paperTradingStats = (mode === 'paper' && paperAccount) ? {
             totalTrades: paperAccount.totalTrades || 0,
             winningTrades: paperAccount.winningTrades || 0,
             losingTrades: paperAccount.losingTrades || 0,
