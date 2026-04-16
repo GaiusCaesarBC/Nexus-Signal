@@ -1556,17 +1556,22 @@ router.post('/refresh-prices', auth, async (req, res) => {
         const batchPrices = new Map();
         const allSymbols = account.positions.map(p => p.symbol.toUpperCase());
 
-        // Step 1: Try CryptoCompare batch for ALL symbols at once
-        // (CryptoCompare silently ignores symbols it doesn't know)
-        if (allSymbols.length > 0) {
+        // Step 1: Try CryptoCompare batch for CRYPTO positions only.
+        // CryptoCompare has tokens that collide with stock tickers
+        // (e.g. SNAP crypto vs SNAP Inc stock) — sending stock symbols
+        // here would "shadow" the real stock price, Finnhub would skip
+        // the symbol (already in batchPrices), and the deviation guard
+        // would then reject the wrong price, leaving it stuck forever.
+        const uniqueCrypto = [...new Set(cryptoPositions)];
+        if (uniqueCrypto.length > 0) {
             try {
                 const axios = require('axios');
-                const fsyms = [...new Set(allSymbols)].join(',');
+                const fsyms = uniqueCrypto.join(',');
                 const ccRes = await axios.get(`https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fsyms}&tsyms=USD`, { timeout: 8000 });
-                for (const sym of allSymbols) {
+                for (const sym of uniqueCrypto) {
                     if (ccRes.data?.[sym]?.USD > 0) batchPrices.set(sym, ccRes.data[sym].USD);
                 }
-                console.log(`[Paper Trading] CryptoCompare batch: ${batchPrices.size}/${allSymbols.length} symbols priced`);
+                console.log(`[Paper Trading] CryptoCompare batch: ${batchPrices.size}/${uniqueCrypto.length} crypto symbols priced`);
             } catch (e) { console.log('[Paper Trading] CryptoCompare batch failed:', e.message); }
         }
 

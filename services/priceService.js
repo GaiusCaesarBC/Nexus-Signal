@@ -12,9 +12,9 @@ const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const THE_GRAPH_API_KEY = process.env.THE_GRAPH_API_KEY;
 const PANCAKESWAP_V3_SUBGRAPH_ID = process.env.PANCAKESWAP_V3_SUBGRAPH_ID || 'A1fvJWQLBeUAggX2WQTMm3FKjXTekNXo77ZySun4YN2m';
 
-// Cache for prices (5 minute TTL)
+// Cache for prices (60 second TTL — keep short for live paper trading)
 const priceCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 60 * 1000; // 60 seconds
 
 // ============ CRYPTO SYMBOL DETECTION ============
 const CRYPTO_SYMBOLS = new Set([
