@@ -20,6 +20,8 @@ const MAX_POSTS_PER_HOUR = 6;
 
 // ─── X Client ─────────────────────────────────────────────
 function initializeXClient() {
+    const safety = require('../config/runtimeSafety');
+    if (!safety.enabled('ENABLE_NOTIFICATIONS') || safety.environment() === 'staging') return null;
     const k = process.env.X_API_KEY;
     const ks = process.env.X_API_KEY_SECRET;
     const t = process.env.X_ACCESS_TOKEN;
@@ -36,6 +38,8 @@ function setTelegramBot(bot) { telegramBot = bot; }
 
 // ─── Post to X (final step) ──────────────────────────────
 async function postToX(text) {
+    const safety = require('../config/runtimeSafety');
+    if (!safety.enabled('ENABLE_NOTIFICATIONS') || safety.environment() === 'staging') return false;
     if (!ENABLED) { console.log('[X] Disabled'); return null; }
     if (!xClient) { console.log('[X] No client initialized'); return null; }
     if (postsThisHour >= MAX_POSTS_PER_HOUR) { console.log('[X] Rate limit'); return null; }
@@ -280,6 +284,7 @@ async function postDailyRecap() {
 
 // ─── Start ────────────────────────────────────────────────
 function startXPoster() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     if (!ENABLED) { console.log('[X] Disabled'); return; }
     initializeXClient();
 

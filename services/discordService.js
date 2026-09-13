@@ -11,6 +11,8 @@ let linkedServers = new Map(); // `${guildId}-${channelId}` -> { guildName, chan
 
 // Initialize the Discord bot
 const initializeBot = async () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_NOTIFICATIONS')) return null;
+    if (require('../config/runtimeSafety').environment() === 'staging') return null;
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
 

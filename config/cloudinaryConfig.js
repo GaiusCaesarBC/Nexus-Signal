@@ -1,6 +1,17 @@
 // server/config/cloudinaryConfig.js - Cloudinary Setup for Profile Pictures
 
 const cloudinary = require('cloudinary').v2;
+const uploader = cloudinary.uploader;
+cloudinary.uploader = new Proxy(uploader, {
+    get(target, name) {
+        const method = target[name];
+        if (typeof method !== 'function') return method;
+        return function (...args) {
+            require('./runtimeSafety').assertIntegration('ENABLE_MEDIA_UPLOADS');
+            return method.apply(target, args);
+        };
+    }
+});
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 

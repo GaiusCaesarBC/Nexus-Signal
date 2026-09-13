@@ -14,6 +14,7 @@ const sentWhaleAlerts = new Set();
 
 // Check for upcoming economic events every 5 minutes
 const startEconomicEventReminders = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('[Discord] Economic event reminder scheduler started');
 
     cron.schedule('*/5 * * * *', async () => {
@@ -89,6 +90,7 @@ const startEconomicEventReminders = () => {
 
 // Send daily summary at 8 AM EST
 const startDailySummaryScheduler = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('[Discord] Daily summary scheduler started');
 
     // Run at 8 AM EST (13:00 UTC) Monday-Friday
@@ -382,6 +384,7 @@ const sendTechnicalAlertNotification = async (userId, alert) => {
 // ==================== DAILY CHANNEL RECAP ====================
 
 const startDailyChannelRecap = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('[Discord] Daily channel recap scheduler started (9 PM ET)');
 
     // Post daily recap at 9 PM ET every day
@@ -395,6 +398,7 @@ const startDailyChannelRecap = () => {
 };
 
 const initializeSchedulers = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     if (!discordService.isBotActive()) {
         console.log('[Discord] Bot not active, schedulers not started');
         return;

@@ -9,34 +9,13 @@
  */
 
 require('dotenv').config();
+require('../config/runtimeSafety').validateRuntime();
 
 const mongoose = require('mongoose');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('../config/stripeClient').createStripeClient();
 const User = require('../models/User');
 
-const getPlanFromPriceId = (priceId) => {
-    const priceMapping = {
-        [process.env.STRIPE_PRICE_STARTER]: 'starter',
-        [process.env.STRIPE_PRICE_PRO]: 'pro',
-        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-        [process.env.STRIPE_PRICE_ELITE]: 'elite'
-    };
-
-    const hardcodedMapping = {
-        // Monthly
-        'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
-        'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
-        'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
-        'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
-        // Yearly
-        'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
-        'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
-        'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
-        'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
-    };
-
-    return priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
-};
+const { getPlanFromPriceId } = require('../config/stripePrices');
 
 async function fixUpgradeSubscriptions() {
     console.log('🔧 Starting subscription sync fix...\n');

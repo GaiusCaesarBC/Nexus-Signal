@@ -266,6 +266,7 @@ async function runCheckCycle() {
 // ─── Start/Stop ───────────────────────────────────────────
 
 function startSignalResultChecker() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('[SignalChecker] Starting signal result checker...');
     console.log('[SignalChecker] Schedule: Every 5 minutes');
 

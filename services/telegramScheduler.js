@@ -13,6 +13,7 @@ const sentWhaleAlerts = new Set();
 
 // Check for upcoming economic events every 5 minutes
 const startEconomicEventReminders = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('📅 Telegram: Economic event reminder scheduler started');
 
     cron.schedule('*/5 * * * *', async () => {
@@ -100,6 +101,7 @@ const startEconomicEventReminders = () => {
 
 // Send daily summary at 8 AM EST
 const startDailySummaryScheduler = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('☀️ Telegram: Daily summary scheduler started');
 
     // Run at 8 AM EST (13:00 UTC) Monday-Friday
@@ -500,6 +502,7 @@ const sendTechnicalAlertNotification = async (userId, alert) => {
 // ==================== INITIALIZE ALL SCHEDULERS ====================
 
 const initializeSchedulers = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     if (!telegramService.isBotActive()) {
         console.log('⚠️ Telegram bot not active, schedulers not started');
         return;

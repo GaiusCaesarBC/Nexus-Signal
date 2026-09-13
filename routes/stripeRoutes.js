@@ -3,41 +3,12 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/authMiddleware');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('../config/stripeClient').createStripeClient();
 const User = require('../models/User');
 const { PLAN_LIMITS, getEffectivePlan } = require('../middleware/subscriptionMiddleware');
 
 // Price mapping - Use a function to get fresh env vars
-const getPlanFromPriceId = (priceId) => {
-    // Direct mapping from environment variables
-    const priceMapping = {
-        [process.env.STRIPE_PRICE_STARTER]: 'starter',
-        [process.env.STRIPE_PRICE_PRO]: 'pro',
-        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-        [process.env.STRIPE_PRICE_ELITE]: 'elite'
-    };
-
-    // Also check hardcoded price IDs as fallback (LIVE price IDs)
-    const hardcodedMapping = {
-        // Monthly
-        'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
-        'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
-        'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
-        'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
-        // Yearly
-        'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
-        'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
-        'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
-        'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
-    };
-
-    console.log(`[Stripe] Looking up plan for price ID: ${priceId}`);
-    console.log(`[Stripe] Env price IDs: starter=${process.env.STRIPE_PRICE_STARTER}, pro=${process.env.STRIPE_PRICE_PRO}, premium=${process.env.STRIPE_PRICE_PREMIUM}, elite=${process.env.STRIPE_PRICE_ELITE}`);
-
-    const plan = priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
-    console.log(`[Stripe] Resolved plan: ${plan}`);
-    return plan;
-};
+const { getPlanFromPriceId } = require('../config/stripePrices');
 
 // @route   POST /api/stripe/create-checkout-session
 // @desc    Create Stripe checkout session
@@ -45,6 +16,7 @@ const getPlanFromPriceId = (priceId) => {
 router.post('/create-checkout-session', auth, async (req, res) => {
     try {
         const { priceId } = req.body;
+        getPlanFromPriceId(priceId);
         const user = await User.findById(req.user.id);
 
         if (!user) {
@@ -119,8 +91,8 @@ router.post('/create-checkout-session', auth, async (req, res) => {
                 },
             ],
             mode: 'subscription',
-            success_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/pricing?canceled=true`,
+            success_url: `${require('../config/runtimeSafety').serviceUrl('CLIENT_URL')}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${require('../config/runtimeSafety').serviceUrl('CLIENT_URL')}/pricing?canceled=true`,
             client_reference_id: user._id.toString(),
             metadata: {
                 userId: user._id.toString()
@@ -158,6 +130,7 @@ router.post('/create-checkout-session', auth, async (req, res) => {
 router.post('/upgrade-subscription', auth, async (req, res) => {
     try {
         const { newPriceId } = req.body;
+        getPlanFromPriceId(newPriceId);
         const user = await User.findById(req.user.id);
 
         if (!user) {
@@ -451,7 +424,7 @@ router.post('/portal', auth, async (req, res) => {
 
         const session = await stripe.billingPortal.sessions.create({
             customer: user.subscription.stripeCustomerId,
-            return_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/settings`,
+            return_url: `${require('../config/runtimeSafety').serviceUrl('CLIENT_URL')}/settings`,
         });
 
         res.json({ url: session.url });
@@ -496,25 +469,7 @@ router.post('/sync-subscription', auth, async (req, res) => {
         const priceId = stripeSubscription.items.data[0].price.id;
 
         // Map price ID to plan
-        const priceMapping = {
-            [process.env.STRIPE_PRICE_STARTER]: 'starter',
-            [process.env.STRIPE_PRICE_PRO]: 'pro',
-            [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-            [process.env.STRIPE_PRICE_ELITE]: 'elite'
-        };
-
-        const hardcodedMapping = {
-            'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
-            'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
-            'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
-            'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
-            'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
-            'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
-            'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
-            'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
-        };
-
-        const plan = priceMapping[priceId] || hardcodedMapping[priceId] || 'starter';
+        const plan = getPlanFromPriceId(priceId);
 
         const oldPlan = user.subscription.status || 'free';
 

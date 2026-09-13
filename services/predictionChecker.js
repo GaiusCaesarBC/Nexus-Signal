@@ -474,6 +474,7 @@ function getCheckerStats() {
 let isStarted = false;
 
 function startPredictionChecker() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     if (isStarted) {
         console.log('[PredictionChecker] ⚠️ Already started, skipping duplicate initialization');
         return;

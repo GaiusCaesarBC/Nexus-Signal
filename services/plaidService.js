@@ -89,6 +89,7 @@ async function verifyWebhookSignature(body, plaidVerificationHeader) {
  * Initialize Plaid client
  */
 function initializePlaidClient() {
+    require('../config/runtimeSafety').assertIntegration('ENABLE_BROKERAGE_SYNC');
     if (plaidClient) return plaidClient;
 
     const configuration = new Configuration({

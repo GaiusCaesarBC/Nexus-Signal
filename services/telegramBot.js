@@ -351,6 +351,8 @@ async function postDailyRecap() {
 
 // ─── Initialize ───────────────────────────────────────────
 function initializeTelegramBot() {
+    const safety = require('../config/runtimeSafety');
+    if (!safety.enabled('ENABLE_NOTIFICATIONS') || !safety.enabled('ENABLE_SCHEDULED_JOBS') || safety.environment() === 'staging') return;
     const token = process.env.TELEGRAM_BOT_TOKEN;
     channelId = process.env.TELEGRAM_CHANNEL_ID;
     groupId = process.env.TELEGRAM_GROUP_ID;

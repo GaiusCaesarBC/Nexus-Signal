@@ -921,6 +921,7 @@ async function checkPatternAlerts() {
 
 // Start the alert checker service
 function startAlertChecker() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log('[AlertChecker] Starting alert checker service...');
 
     // Check price alerts every 1 minute

@@ -7,7 +7,7 @@ if (process.env.SENDGRID_API_KEY) {
     sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-const FROM_EMAIL = process.env.EMAIL_FROM || 'security@nexussignal.ai';
+const FROM_EMAIL = process.env.EMAIL_FROM;
 const FROM_NAME = 'Nexus Signal';
 
 /**
@@ -119,7 +119,7 @@ async function send2FACode(email, code, username = 'Trader') {
     };
 
     try {
-        await sgMail.send(msg);
+        await (require('../config/runtimeSafety').assertEmailRecipients(msg), sgMail.send(msg));
         console.log(`[Email] 2FA code sent to ${email}`);
         return true;
     } catch (error) {
@@ -216,7 +216,7 @@ async function send2FAEnabledNotification(email, username, method) {
     };
 
     try {
-        await sgMail.send(msg);
+        await (require('../config/runtimeSafety').assertEmailRecipients(msg), sgMail.send(msg));
         console.log(`[Email] 2FA enabled notification sent to ${email}`);
         return true;
     } catch (error) {
@@ -309,7 +309,7 @@ async function sendBackupCodes(email, username, backupCodes) {
     };
 
     try {
-        await sgMail.send(msg);
+        await (require('../config/runtimeSafety').assertEmailRecipients(msg), sgMail.send(msg));
         console.log(`[Email] Backup codes sent to ${email}`);
         return true;
     } catch (error) {
@@ -421,7 +421,7 @@ async function sendPriceAlertEmail(email, username, alert) {
                             ` : ''}
 
                             <div style="text-align: center; margin-top: 24px;">
-                                <a href="https://nexussignal.ai/predictions" style="display: inline-block; background: linear-gradient(135deg, #00adef 0%, #00ff88 100%); color: #0f172a; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 700; font-size: 14px;">
+                                <a href="${require('../config/runtimeSafety').serviceUrl('CLIENT_URL')}/predictions" style="display: inline-block; background: linear-gradient(135deg, #00adef 0%, #00ff88 100%); color: #0f172a; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 700; font-size: 14px;">
                                     View on Nexus Signal
                                 </a>
                             </div>
@@ -433,7 +433,7 @@ async function sendPriceAlertEmail(email, username, alert) {
                         <td style="padding: 20px 40px 40px; border-top: 1px solid rgba(100, 116, 139, 0.2);">
                             <p style="color: #64748b; font-size: 12px; margin: 0; text-align: center;">
                                 You received this because you set up a price alert on Nexus Signal.<br>
-                                <a href="https://nexussignal.ai/settings" style="color: #00adef; text-decoration: none;">Manage your alerts</a>
+                                <a href="${require('../config/runtimeSafety').serviceUrl('CLIENT_URL')}/settings" style="color: #00adef; text-decoration: none;">Manage your alerts</a>
                             </p>
                         </td>
                     </tr>
@@ -447,7 +447,7 @@ async function sendPriceAlertEmail(email, username, alert) {
     };
 
     try {
-        await sgMail.send(msg);
+        await (require('../config/runtimeSafety').assertEmailRecipients(msg), sgMail.send(msg));
         console.log(`[Email] Price alert sent to ${email} for ${alert.symbol}`);
         return true;
     } catch (error) {

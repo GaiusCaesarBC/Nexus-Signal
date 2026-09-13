@@ -10,7 +10,7 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:support@nexussignal.c
 
 // Initialize web-push if keys are configured
 let pushConfigured = false;
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+if (require('../config/runtimeSafety').enabled('ENABLE_NOTIFICATIONS') && require('../config/runtimeSafety').environment() === 'production' && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
     try {
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
         pushConfigured = true;

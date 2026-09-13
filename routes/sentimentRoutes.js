@@ -28,7 +28,7 @@ const axios = require('axios');
 const { sanitizeSymbol } = require('../utils/symbolValidation');
 
 // ============ ML SERVICE CONFIG ============
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'https://nexus-signal-ml.onrender.com';
+const ML_SERVICE_URL = require('../config/runtimeSafety').serviceUrl('ML_SERVICE_URL');
 
 // ============ HELPER FUNCTIONS ============
 

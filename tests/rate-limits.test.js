@@ -15,10 +15,13 @@ test('CORS permits only explicitly configured additional origins', () => {
         process: { env: { NODE_ENV: 'production', CORS_ALLOWED_ORIGINS: ` ${preview}, ` } },
         app: { use() {} }, cors: value => { options = value; }, logger: { warn() {} }
     });
-    for (const origin of [preview, 'https://nexussignal.ai']) {
+    for (const origin of [preview]) {
         options.origin(origin, (error, allowed) => { assert.equal(error, null); assert.equal(allowed, true); });
     }
     options.origin('https://unrelated.vercel.app', (error, allowed) => {
+        assert.ok(error); assert.equal(allowed, false);
+    });
+    options.origin('https://nexussignal.ai', (error, allowed) => {
         assert.ok(error); assert.equal(allowed, false);
     });
 });

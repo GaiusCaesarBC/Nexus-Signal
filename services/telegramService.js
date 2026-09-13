@@ -15,6 +15,8 @@ const ADMIN_USER_IDS = process.env.TELEGRAM_ADMIN_IDS
 
 // Initialize the Telegram bot
 const initializeBot = () => {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_NOTIFICATIONS')) return null;
+    if (require('../config/runtimeSafety').environment() === 'staging') return null;
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {

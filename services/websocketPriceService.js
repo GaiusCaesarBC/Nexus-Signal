@@ -632,7 +632,11 @@ function getCurrentPrice(symbol) {
     return null;
 }
 
+let serviceStarted = false;
 function startWebSocketService() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
+    if (serviceStarted) return;
+    serviceStarted = true;
     console.log('[WebSocket] Starting real-time price streaming service...');
 
     // Connect to exchanges

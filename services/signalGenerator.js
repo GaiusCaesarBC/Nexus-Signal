@@ -344,6 +344,7 @@ async function runCycle() {
 // ─── Start ────────────────────────────────────────────────
 
 function startSignalGenerator() {
+    if (!require('../config/runtimeSafety').enabled('ENABLE_SCHEDULED_JOBS')) return;
     console.log(`[SignalGen] Starting automated signal generator`);
     console.log(`[SignalGen] Mode: Smart discovery pipeline (liquidity → movement → scoring)`);
     console.log(`[SignalGen] Quality gates:`);

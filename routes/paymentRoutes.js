@@ -18,13 +18,8 @@ const paymentLimiter = rateLimit({
 console.log('[DEBUG paymentRoutes.js] STRIPE_SECRET_KEY configured:', process.env.STRIPE_SECRET_KEY ? 'yes' : 'NO');
 
 // Initialize Stripe with your secret key from environment variables
-const stripeSecretKeyToUse = process.env.STRIPE_SECRET_KEY;
-if (!stripeSecretKeyToUse) {
-  console.error("FATAL: STRIPE_SECRET_KEY is missing from process.env when initializing Stripe in paymentRoutes.js. Server cannot start.");
-  // Optional: throw new Error('Stripe Secret Key is missing');
-  process.exit(1); // Exit if key is missing
-}
-const stripe = require('stripe')(stripeSecretKeyToUse);
+const stripe = require('../config/stripeClient').createStripeClient();
+const { getPlanFromPriceId } = require('../config/stripePrices');
 
 const User = require('../models/User'); // Ensure path is correct
 const auth = require('../middleware/authMiddleware'); // Ensure path is correct
@@ -38,16 +33,10 @@ router.post('/create-checkout-session', paymentLimiter, auth, async (req, res) =
     console.error('[Stripe Checkout] Error: Missing Price ID or Plan Name in request body');
     return res.status(400).json({ msg: 'Missing Price ID or Plan Name' });
   }
-  // Load dotenv again just for price IDs if not globally available
-  require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-  const validPriceIds = [process.env.STRIPE_PREMIUM_PRICE_ID, process.env.STRIPE_ELITE_PRICE_ID];
-   if (!process.env.STRIPE_PREMIUM_PRICE_ID || !process.env.STRIPE_ELITE_PRICE_ID) {
-     console.error('[Stripe Checkout] Error: Stripe Price IDs not found in environment variables.');
-     return res.status(500).json({ msg: 'Server configuration error: Price IDs missing.' });
-   }
-  if (!validPriceIds.includes(priceId)) {
-    console.error(`[Stripe Checkout] Error: Invalid Price ID received: ${priceId}. Valid IDs: ${validPriceIds.join(', ')}`);
-    return res.status(400).json({ msg: 'Invalid Price ID' });
+  try {
+    if (getPlanFromPriceId(priceId) !== planName.toLowerCase()) throw new Error('Plan mismatch');
+  } catch {
+    return res.status(400).json({ msg: 'Price and plan must match the configured catalog' });
   }
   // -------------------------
 

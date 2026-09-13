@@ -9,9 +9,10 @@
  */
 
 require('dotenv').config();
+require('../config/runtimeSafety').validateRuntime();
 
 const mongoose = require('mongoose');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('../config/stripeClient').createStripeClient();
 const User = require('../models/User');
 
 const args = Object.fromEntries(
@@ -22,31 +23,14 @@ const args = Object.fromEntries(
 );
 
 const target = {
-    subscriptionId: args.subscription || 'sub_1TjHudCd6gxWUimRWYQ6KXPs',
-    chargeId: args.charge || 'ch_3TjHueCd6gxWUimR1aQnoNmc',
-    paymentIntentId: args.payment_intent || 'pi_3TjHueCd6gxWUimR17BkJnfd',
-    invoiceNumber: args.invoice_number || 'US24HWFG-0001',
+    subscriptionId: args.subscription,
+    chargeId: args.charge,
+    paymentIntentId: args.payment_intent,
+    invoiceNumber: args.invoice_number,
     since: args.since || '2026-06-17'
 };
 
-const priceToPlan = (priceId) => {
-    const mapping = {
-        [process.env.STRIPE_PRICE_STARTER]: 'starter',
-        [process.env.STRIPE_PRICE_PRO]: 'pro',
-        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-        [process.env.STRIPE_PRICE_ELITE]: 'elite',
-        price_1SfTvNCd6gxWUimRapg2v7zC: 'starter',
-        price_1SfTxUCd6gxWUimRfpe40Nr2: 'pro',
-        price_1SfU0WCd6gxWUimRjjA8XnFr: 'premium',
-        price_1SfU1VCd6gxWUimReOuVaFb4: 'elite',
-        price_1SfTvNCd6gxWUimR5g3pUz9g: 'starter',
-        price_1SfTxUCd6gxWUimRDKXxf5B9: 'pro',
-        price_1SfU0WCd6gxWUimRj1tdL545: 'premium',
-        price_1SfU1VCd6gxWUimR0tUeO70P: 'elite'
-    };
-
-    return mapping[priceId] || 'unknown';
-};
+const { getPlanFromPriceId: priceToPlan } = require('../config/stripePrices');
 
 const fmtDate = (timestamp) => timestamp ? new Date(timestamp * 1000).toISOString() : null;
 const dollars = (amount) => typeof amount === 'number' ? `$${(amount / 100).toFixed(2)}` : null;

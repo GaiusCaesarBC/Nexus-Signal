@@ -3,6 +3,9 @@ const requireAdmin = require('./middleware/adminMiddleware');
 // server/app.js - Updated with Portfolio, Predictions, Chat, Alerts, and PATTERN Routes
 
 require('dotenv').config();
+const safety = require('./config/runtimeSafety');
+const jobStatus = safety.validateRuntime();
+console.info('[Runtime safety]', jobStatus);
 
 // Structured logging
 const logger = require('./utils/logger');
@@ -22,7 +25,7 @@ const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('./config/stripeClient').createStripeClient();
 const app = express();
 // These routes are registered before the general API middleware.
 const adminLimiter = rateLimit({
@@ -52,41 +55,7 @@ const User = require('./models/User');
 const { PLAN_LIMITS } = require('./middleware/subscriptionMiddleware');
 
 // Price mapping function for webhook - uses env vars with hardcoded fallbacks
-const getPlanFromPriceId = (priceId) => {
-    // Environment variable mapping (preferred)
-    const envMapping = {
-        [process.env.STRIPE_PRICE_STARTER]: 'starter',
-        [process.env.STRIPE_PRICE_PRO]: 'pro',
-        [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
-        [process.env.STRIPE_PRICE_ELITE]: 'elite'
-    };
-
-    // Hardcoded LIVE price IDs as fallback (must match Stripe dashboard)
-    const hardcodedMapping = {
-        // Monthly
-        'price_1SfTvNCd6gxWUimRapg2v7zC': 'starter',
-        'price_1SfTxUCd6gxWUimRfpe40Nr2': 'pro',
-        'price_1SfU0WCd6gxWUimRjjA8XnFr': 'premium',
-        'price_1SfU1VCd6gxWUimReOuVaFb4': 'elite',
-        // Yearly
-        'price_1SfTvNCd6gxWUimR5g3pUz9g': 'starter',
-        'price_1SfTxUCd6gxWUimRDKXxf5B9': 'pro',
-        'price_1SfU0WCd6gxWUimRj1tdL545': 'premium',
-        'price_1SfU1VCd6gxWUimR0tUeO70P': 'elite'
-    };
-
-    // Try env mapping first, then hardcoded
-    let plan = envMapping[priceId] || hardcodedMapping[priceId];
-
-    if (!plan) {
-        console.log(`[Stripe Webhook] ⚠️ Unknown price ID: ${priceId}`);
-        console.log(`[Stripe Webhook] Env vars: STARTER=${process.env.STRIPE_PRICE_STARTER}, PRO=${process.env.STRIPE_PRICE_PRO}`);
-        plan = 'starter'; // Default fallback
-    }
-
-    console.log(`[Stripe Webhook] Price ${priceId} → Plan: ${plan}`);
-    return plan;
-};
+const { getPlanFromPriceId } = require('./config/stripePrices');
 
 const getStripeId = (value) => (typeof value === 'string' ? value : value?.id);
 
@@ -219,6 +188,10 @@ const webhookLimiter = rateLimit({
 
 // Stripe webhook endpoint - raw body parser applied inline
 app.post('/api/stripe/webhook',
+    (req, res, next) => {
+        try { safety.assertIntegration('ENABLE_BILLING'); next(); }
+        catch { res.status(503).json({ error: 'Billing is disabled or misconfigured' }); }
+    },
     webhookLimiter,
     express.raw({ type: 'application/json' }),
     async (req, res) => {
@@ -236,7 +209,8 @@ app.post('/api/stripe/webhook',
                 sig,
                 process.env.STRIPE_WEBHOOK_SECRET
             );
-            console.log(`[Stripe Webhook] ✅ Signature verified! Event type: ${event.type}`);
+            if (event.livemode !== (safety.environment() === 'production')) throw new Error('Stripe event mode mismatch');
+            console.log('[Stripe Webhook] Signature and environment verified');
         } catch (err) {
             console.error('Webhook signature verification failed:', err.message);
             return res.status(400).json({ error: 'Webhook signature verification failed' });
@@ -326,6 +300,10 @@ const BrokerageConnection = require('./models/BrokerageConnection');
 const plaidService = require('./services/plaidService');
 
 app.post('/api/brokerage/plaid/webhook',
+    (req, res, next) => {
+        try { safety.assertIntegration('ENABLE_BROKERAGE_SYNC'); next(); }
+        catch { res.status(503).json({ error: 'Brokerage sync is disabled or misconfigured' }); }
+    },
     webhookLimiter,
     express.raw({ type: 'application/json' }),
     async (req, res) => {
@@ -343,7 +321,7 @@ app.post('/api/brokerage/plaid/webhook',
                 console.error(`[Plaid Webhook] ❌ Signature verification failed:`, verifyError.message);
                 return res.status(401).json({ error: 'Webhook signature verification failed' });
             }
-        } else if (process.env.PLAID_ENV === 'production') {
+        } else if (process.env.PLAID_ENV === 'production' || safety.environment() === 'staging') {
             // In production, require signature verification
             console.error(`[Plaid Webhook] ❌ Missing Plaid-Verification header in production`);
             return res.status(401).json({ error: 'Missing webhook signature' });
@@ -732,7 +710,7 @@ const connectDB = async () => {
         // ✅ INITIALIZE DISCORD NOTIFICATION SCHEDULERS
         const { initializeSchedulers: initializeDiscordSchedulers } = require('./services/discordScheduler');
         // Delay scheduler start to ensure bot is fully initialized (after Telegram)
-        setTimeout(() => initializeDiscordSchedulers(), 7000);
+        if (safety.enabled('ENABLE_SCHEDULED_JOBS')) setTimeout(() => initializeDiscordSchedulers(), 7000);
 
         // ✅ START WEBSOCKET PRICE SERVICE (Real-time price streaming)
         const { startWebSocketService } = require('./services/websocketPriceService');
@@ -753,8 +731,7 @@ const allowedOrigins = [
     'http://localhost:5000',
     'http://localhost:3000/', // ✅ Added with trailing slash
     'http://localhost:5000/', // ✅ Added with trailing slash
-    'https://www.nexussignal.ai',
-    'https://nexussignal.ai',
+    // Hosted origins are supplied explicitly through CORS_ALLOWED_ORIGINS.
     // Explicit additional origins, e.g. a staging frontend; never allow all Vercel sites.
     ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
 ];
@@ -921,7 +898,7 @@ app.get('/health', async (req, res) => {
         heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB'
     };
 
-    const statusCode = health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503;
+    const statusCode = health.status === 'healthy' ? 200 : 503;
     res.status(statusCode).json(health);
 });
 

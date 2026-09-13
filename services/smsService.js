@@ -1,11 +1,12 @@
 // server/services/smsService.js - SMS Service using Twilio
 
 const twilio = require('twilio');
+const safety = require('../config/runtimeSafety');
 
 // Initialize Twilio client
 let twilioClient = null;
 
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+if (safety.enabled('ENABLE_NOTIFICATIONS') && safety.environment() === 'production' && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
     twilioClient = twilio(
         process.env.TWILIO_ACCOUNT_SID,
         process.env.TWILIO_AUTH_TOKEN

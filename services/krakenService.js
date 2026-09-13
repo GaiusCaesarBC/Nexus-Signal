@@ -37,6 +37,8 @@ function createSignature(path, data, secret) {
  * @returns {Promise<object>} API response
  */
 async function krakenRequest(endpoint, params, apiKey, apiSecret) {
+    require('../config/runtimeSafety').assertKrakenPrivate();
+    if (!['Balance', 'TradesHistory', 'OpenOrders'].includes(endpoint)) throw new Error('Kraken execution endpoints are not supported');
     const path = `/0/private/${endpoint}`;
     const nonce = Date.now() * 1000;
 
