@@ -1,7 +1,8 @@
 # Dependency maintenance
 
 Use npm and the committed package-lock.json: `npm ci --legacy-peer-deps`.
-Render build commands must use npm, including production before this branch is merged.
+The staging Render build command must be `npm ci --legacy-peer-deps`.
+Production configuration changes require a separate, explicitly authorized release.
 The obsolete Yarn lockfile was removed because Yarn does not enforce npm overrides.
 
 The security repair removes unused Nodemailer and pins patched compatible dependency
