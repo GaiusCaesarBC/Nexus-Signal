@@ -6,6 +6,23 @@ const vm = require('node:vm');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 
+test('CORS permits only explicitly configured additional origins', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+    const block = source.slice(source.indexOf('const allowedOrigins ='), source.indexOf("app.options('*', cors());"));
+    let options;
+    const preview = 'https://nexus-preview.example';
+    vm.runInNewContext(block, {
+        process: { env: { NODE_ENV: 'production', CORS_ALLOWED_ORIGINS: ` ${preview}, ` } },
+        app: { use() {} }, cors: value => { options = value; }, logger: { warn() {} }
+    });
+    for (const origin of [preview, 'https://nexussignal.ai']) {
+        options.origin(origin, (error, allowed) => { assert.equal(error, null); assert.equal(allowed, true); });
+    }
+    options.origin('https://unrelated.vercel.app', (error, allowed) => {
+        assert.ok(error); assert.equal(allowed, false);
+    });
+});
+
 test('admin and prediction limits stop requests before database middleware', async () => {
     for (const [file, name, max] of [['app.js', 'adminLimiter', 20], ['routes/predictionsRoutes.js', 'predictionReadLimiter', 100]]) {
         const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');

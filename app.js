@@ -755,6 +755,8 @@ const allowedOrigins = [
     'http://localhost:5000/', // ✅ Added with trailing slash
     'https://www.nexussignal.ai',
     'https://nexussignal.ai',
+    // Explicit additional origins, e.g. a staging frontend; never allow all Vercel sites.
+    ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
 ];
 
 app.use(cors({
