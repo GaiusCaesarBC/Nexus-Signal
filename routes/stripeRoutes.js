@@ -299,12 +299,7 @@ router.post('/start-trial', auth, async (req, res) => {
 router.get('/plan-limits', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        const { plan: effectivePlan, expired, trial } = getEffectivePlan(user);
-
-        if (expired) {
-            user.subscription.status = 'free';
-            await user.save();
-        }
+        const { plan: effectivePlan, trial } = getEffectivePlan(user);
 
         const limits = PLAN_LIMITS[effectivePlan];
 

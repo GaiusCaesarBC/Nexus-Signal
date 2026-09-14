@@ -242,3 +242,18 @@ test('HTTP raw-body transport validates signed bytes before JSON middleware', as
         assert.ok(source.indexOf("app.post('/api/stripe/webhook'")<source.indexOf("app.use(express.json("));
     } finally { await new Promise(resolve=>server.close(resolve)); }
 });
+test('an expiry access check cannot erase the tier needed for a delayed failure grace period', async () => {
+    const h=harness(); await h.deliver('customer.subscription.created',h.sub,{id:'evt_initial'});
+    h.user.subscription.currentPeriodEnd=new Date(Date.now()-1000);
+    const User=require('../models/User');
+    const {requireSubscription,getEffectivePlan}=require('../middleware/subscriptionMiddleware');
+    const original=User.findById; let saves=0;
+    User.findById=async()=>({...h.user,save:async()=>{saves++;}});
+    const res={code:200,status(code){this.code=code;return this;},json(){return this;}};
+    try {await requireSubscription('starter')({user:{id:h.user._id}},res,()=>assert.fail('Expired access permitted'));}
+    finally {User.findById=original;}
+    assert.equal(res.code,403); assert.equal(saves,0); assert.equal(h.user.subscription.status,'starter');
+    h.sub.status='past_due'; h.sub.latest_invoice.paid=false;
+    await h.deliver('invoice.payment_failed',{customer:'cus_fixture',subscription:'sub_fixture'},{id:'evt_late_failure'});
+    assert.equal(getEffectivePlan(h.user).plan,'starter');
+});

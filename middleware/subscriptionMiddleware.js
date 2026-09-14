@@ -304,9 +304,6 @@ const requireSubscription = (minPlan = 'starter') => {
 
             // Handle expired paid subscription
             if (expired) {
-                user.subscription.status = 'free';
-                await user.save();
-
                 return res.status(403).json({
                     success: false,
                     error: 'Subscription expired',
