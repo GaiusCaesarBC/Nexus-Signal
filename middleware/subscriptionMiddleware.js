@@ -274,10 +274,8 @@ function getEffectivePlan(user) {
     let plan = user.subscription?.status || 'free';
 
     // Check if paid subscription expired
-    if (plan !== 'free' && user.subscription?.currentPeriodEnd) {
-        if (new Date() > user.subscription.currentPeriodEnd) {
-            return { plan: 'free', expired: true, trial: false };
-        }
+    if (plan !== 'free' && require('../utils/subscriptionAccess').paidAccessExpired(user.subscription)) {
+        return { plan: 'free', expired: true, trial: false };
     }
 
     // Check active free trial (grants premium access)
@@ -465,7 +463,7 @@ const checkUsageLimit = (limitType, modelName = null) => {
 const getPlanLimits = async (userId) => {
     try {
         const user = await User.findById(userId);
-        const userPlan = user?.subscription?.status || 'free';
+        const userPlan = getEffectivePlan(user || {}).plan;
         return {
             plan: userPlan,
             limits: PLAN_LIMITS[userPlan]

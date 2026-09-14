@@ -61,7 +61,8 @@ router.post('/create-checkout-session', paymentLimiter, auth, async (req, res) =
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    let customerId = user.stripeCustomerId;
+    user.subscription = user.subscription || {};
+    let customerId = user.subscription.stripeCustomerId;
 
     // --- Create Stripe Customer ---
     if (!customerId) {
@@ -69,10 +70,10 @@ router.post('/create-checkout-session', paymentLimiter, auth, async (req, res) =
       const customer = await stripe.customers.create({
         email: user.email || `${user.username}@example.com`,
         name: user.username,
-        metadata: { mongoUserId: userId.toString() },
+        metadata: { userId: userId.toString() },
       });
       customerId = customer.id;
-      user.stripeCustomerId = customerId;
+      user.subscription.stripeCustomerId = customerId;
       await user.save();
       console.log(`[Stripe Checkout] Created Stripe Customer ID ${customerId} for user ID: ${userId}`);
     } else {
@@ -89,7 +90,9 @@ router.post('/create-checkout-session', paymentLimiter, auth, async (req, res) =
       mode: 'subscription',
       success_url: `${clientUrl}/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${clientUrl}/pricing?canceled=true`,
-      metadata: { userId: userId.toString(), selectedPlan: planName },
+      metadata: { userId: userId.toString() },
+      client_reference_id: userId.toString(),
+      subscription_data: { metadata: { userId: userId.toString() } },
     });
     // -----------------------------
 

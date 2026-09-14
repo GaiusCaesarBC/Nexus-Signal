@@ -268,6 +268,10 @@ const UserSchema = new mongoose.Schema({
         stripePriceId: { type: String, default: null },
         currentPeriodStart: { type: Date, default: null },
         currentPeriodEnd: { type: Date, default: null },
+        paymentStatus: { type: String, default: null },
+        billingInterval: { type: String, enum: ['month', 'year', null], default: null },
+        graceEndsAt: { type: Date, default: null },
+        canceledSubscriptionId: { type: String, default: null },
         cancelAtPeriodEnd: { type: Boolean, default: false },
         // Free trial
         trialUsed: { type: Boolean, default: false },

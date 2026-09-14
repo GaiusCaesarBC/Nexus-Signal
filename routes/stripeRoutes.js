@@ -9,6 +9,7 @@ const { PLAN_LIMITS, getEffectivePlan } = require('../middleware/subscriptionMid
 
 // Price mapping - Use a function to get fresh env vars
 const { getPlanFromPriceId } = require('../config/stripePrices');
+const { subscriptionPeriod } = require('../config/stripeObjects');
 
 // @route   POST /api/stripe/create-checkout-session
 // @desc    Create Stripe checkout session
@@ -191,8 +192,8 @@ router.post('/upgrade-subscription', auth, async (req, res) => {
         const prorationDetails = {
             fromPlan: currentPlan,
             toPlan: newPlan,
-            effectiveDate: new Date(updatedSubscription.current_period_start * 1000),
-            nextBillingDate: new Date(updatedSubscription.current_period_end * 1000),
+            effectiveDate: subscriptionPeriod(updatedSubscription).start,
+            nextBillingDate: subscriptionPeriod(updatedSubscription).end,
             amountDue: upcomingInvoice ? (upcomingInvoice.amount_due / 100) : 0,
             amountCredit: upcomingInvoice ? Math.max(0, -(upcomingInvoice.amount_due / 100)) : 0,
             message: upcomingInvoice && upcomingInvoice.amount_due > 0 
@@ -206,8 +207,8 @@ router.post('/upgrade-subscription', auth, async (req, res) => {
             success: true,
             subscription: {
                 status: newPlan,
-                currentPeriodStart: new Date(updatedSubscription.current_period_start * 1000),
-                currentPeriodEnd: new Date(updatedSubscription.current_period_end * 1000),
+                currentPeriodStart: subscriptionPeriod(updatedSubscription).start,
+                currentPeriodEnd: subscriptionPeriod(updatedSubscription).end,
             },
             proration: prorationDetails
         });
@@ -362,7 +363,7 @@ router.get('/plan-limits', auth, async (req, res) => {
 router.get('/check-feature/:feature', auth, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        const userPlan = user?.subscription?.status || 'free';
+        const userPlan = getEffectivePlan(user || {}).plan;
         const limits = PLAN_LIMITS[userPlan];
         const feature = req.params.feature;
 
@@ -466,6 +467,18 @@ router.post('/sync-subscription', auth, async (req, res) => {
         }
 
         const stripeSubscription = subscriptions.data[0];
+        if (stripeSubscription.customer !== customerId ||
+            (stripeSubscription.metadata?.userId && stripeSubscription.metadata.userId !== String(user._id))) {
+            return res.status(409).json({ error: 'Subscription ownership mismatch' });
+        }
+        const paidInvoice = typeof stripeSubscription.latest_invoice === 'object' ? stripeSubscription.latest_invoice
+            : await stripe.invoices.retrieve(stripeSubscription.latest_invoice);
+        if (!(paidInvoice?.paid === true || paidInvoice?.status === 'paid')) {
+            return res.status(409).json({ error: 'Latest invoice is not paid; awaiting billing reconciliation' });
+        }
+        if (user.subscription.stripeSubscriptionId && user.subscription.stripeSubscriptionId !== stripeSubscription.id) {
+            return res.status(409).json({ error: 'A different subscription is attached' });
+        }
         const priceId = stripeSubscription.items.data[0].price.id;
 
         // Map price ID to plan
@@ -477,9 +490,12 @@ router.post('/sync-subscription', auth, async (req, res) => {
         user.subscription.status = plan;
         user.subscription.stripeSubscriptionId = stripeSubscription.id;
         user.subscription.stripePriceId = priceId;
-        user.subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
-        user.subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
+        user.subscription.currentPeriodStart = subscriptionPeriod(stripeSubscription).start;
+        user.subscription.currentPeriodEnd = subscriptionPeriod(stripeSubscription).end;
         user.subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
+        user.subscription.paymentStatus = stripeSubscription.status;
+        user.subscription.billingInterval = stripeSubscription.items.data[0].price.recurring.interval;
+        user.subscription.graceEndsAt = null;
 
         await user.save();
 

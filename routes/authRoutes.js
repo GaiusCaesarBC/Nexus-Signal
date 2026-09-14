@@ -9,7 +9,7 @@ const User = require('../models/User');
 const auth = require('../middleware/authMiddleware');
 const { upload, cloudinary } = require('../config/cloudinaryConfig');
 const { strictBotProtection } = require('../middleware/botProtection');
-const { PLAN_LIMITS } = require('../middleware/subscriptionMiddleware');
+const { PLAN_LIMITS, getEffectivePlan } = require('../middleware/subscriptionMiddleware');
 const NotificationService = require('../services/notificationService');
 
 // ✅ Cookie settings that work for BOTH localhost and production
@@ -45,7 +45,7 @@ router.get('/me', auth, async (req, res) => {
         console.log(`[Auth Route /me] Successfully fetched user: ${user.email}`);
 
         // Get user's subscription plan and limits
-        const userPlan = user.subscription?.status || 'free';
+        const userPlan = getEffectivePlan(user).plan;
         const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
 
         // Return user with subscription info
